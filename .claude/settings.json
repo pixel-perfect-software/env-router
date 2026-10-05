@@ -1,0 +1,8 @@
+{
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "opus",
+    "CLAUDE_CODE_NO_FLICKER": "1"
+  },
+  "effortLevel": "high",
+  "fileDenyPatterns": [".env", ".env.*", "**/.env", "**/.env.*"]
+}
