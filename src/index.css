@@ -1,1 +1,228 @@
 @import "tailwindcss";
+
+/*
+ * Three surface layers, each visibly distinct: the window ground, cards on it, and raised
+ * surfaces (popovers, the editor, the check result) above those. The accent follows the
+ * user's macOS accent colour where WebKit exposes it.
+ */
+:root {
+  color-scheme: light dark;
+  --er-window: #eeeef1;
+  --er-card: #ffffff;
+  --er-card-muted: #f6f6f8;
+  --er-raised: #ffffff;
+  --er-field: #ffffff;
+  --er-button: #ffffff;
+  --er-border: rgb(0 0 0 / 0.09);
+  --er-rule: #e6e6ea;
+  --er-ink: #1d1d1f;
+  --er-ink-2: #66666c;
+  --er-ink-3: #9a9aa0;
+  --er-accent: #0a64d8;
+  --er-on-accent: #ffffff;
+  --er-ok: #24a148;
+  --er-warn: #c47f00;
+  --er-problem: #d4372c;
+  --er-shadow-card: 0 1px 2px rgb(0 0 0 / 0.05), 0 0 0 0.5px var(--er-border);
+  --er-shadow-raised: 0 10px 30px -6px rgb(0 0 0 / 0.18), 0 2px 6px rgb(0 0 0 / 0.06), 0 0 0 0.5px var(--er-border);
+  --er-tint: color-mix(in srgb, var(--er-accent) 9%, var(--er-card));
+  --hair: 1px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --er-window: #18181a;
+    --er-card: #252527;
+    --er-card-muted: #1f1f21;
+    --er-raised: #2c2c2f;
+    --er-field: #1c1c1e;
+    --er-button: #3a3a3d;
+    --er-border: rgb(255 255 255 / 0.09);
+    --er-rule: #343437;
+    --er-ink: #f2f2f4;
+    --er-ink-2: #a3a3a9;
+    --er-ink-3: #6f6f75;
+    --er-accent: #3d8af7;
+    --er-ok: #3ec46d;
+    --er-warn: #e5a83a;
+    --er-problem: #ff6b61;
+    --er-shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 0 0 0.5px var(--er-border);
+    --er-shadow-raised: 0 12px 32px -6px rgb(0 0 0 / 0.55), 0 0 0 0.5px var(--er-border);
+    --er-tint: color-mix(in srgb, var(--er-accent) 18%, var(--er-card));
+  }
+}
+
+@supports (color: AccentColor) {
+  :root {
+    --er-accent: AccentColor;
+    --er-on-accent: AccentColorText;
+  }
+}
+
+@media (min-resolution: 2dppx) {
+  :root {
+    --hair: 0.5px;
+  }
+}
+
+@theme inline {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+
+  --text-caption: 11px;
+  --text-caption--line-height: 14px;
+  --text-small: 12px;
+  --text-small--line-height: 16px;
+  --text-body: 13px;
+  --text-body--line-height: 18px;
+  --text-title: 14px;
+  --text-title--line-height: 19px;
+
+  --color-window: var(--er-window);
+  --color-card: var(--er-card);
+  --color-card-muted: var(--er-card-muted);
+  --color-raised: var(--er-raised);
+  --color-field: var(--er-field);
+  --color-button: var(--er-button);
+  --color-rule: var(--er-rule);
+  --color-ink: var(--er-ink);
+  --color-ink-2: var(--er-ink-2);
+  --color-ink-3: var(--er-ink-3);
+  --color-accent: var(--er-accent);
+  --color-on-accent: var(--er-on-accent);
+  --color-ok: var(--er-ok);
+  --color-warn: var(--er-warn);
+  --color-problem: var(--er-problem);
+  --color-tint: var(--er-tint);
+
+  --radius-card: 10px;
+  --radius-control: 6px;
+
+  --shadow-card: var(--er-shadow-card);
+  --shadow-raised: var(--er-shadow-raised);
+
+  --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@utility hair-t {
+  border-top: var(--hair) solid var(--er-rule);
+}
+@utility hair-b {
+  border-bottom: var(--hair) solid var(--er-rule);
+}
+@utility hair-l {
+  border-left: var(--hair) solid var(--er-rule);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 18px;
+    background: var(--er-window);
+    color: var(--er-ink);
+    -webkit-font-smoothing: antialiased;
+    /* A Mac window, not a page: text is selectable only where it's a value worth copying. */
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
+    overflow: hidden;
+  }
+
+  code,
+  kbd,
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "calt" 0;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--er-accent) 30%, transparent);
+  }
+
+  input {
+    caret-color: var(--er-accent);
+  }
+
+  :focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--er-accent) 50%, transparent);
+    outline-offset: 1px;
+    border-radius: 6px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--er-ink) 22%, transparent);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must beat every component's own timing */
+    animation-duration: 1ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: as above */
+    transition-duration: 1ms !important;
+  }
+}
+
+@keyframes er-stamp {
+  from {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes er-pending {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes er-open {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes er-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes er-slide {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+
+@keyframes er-fade {
+  from {
+    opacity: 0;
+  }
+}
