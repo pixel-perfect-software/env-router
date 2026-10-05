@@ -50,8 +50,8 @@ export interface SetupStatus {
 export type FolderCheck =
   /** The shim runs. `profile` is null when no profile owns the folder. */
   | { status: 'routed'; profile: string | null; envVar: string | null; value: string | null; real: string }
-  /** An alias or function with the tool's name runs before PATH is searched. */
-  | { status: 'shadowedByShell'; kind: string }
+  /** An alias or function with the tool's name runs before PATH is searched. `origin`: the file defining it, when the shell can say. */
+  | { status: 'shadowedByShell'; kind: string; origin: string | null }
   /** Another copy of the tool comes before the shims directory on PATH. */
   | { status: 'shadowedOnPath'; path: string }
   /** Nothing named after the tool is on PATH, usually because shell setup isn't active. */
@@ -61,6 +61,7 @@ export type FolderCheck =
 
 /** `shell::Preview`: the route from the config alone, without consulting a shell. */
 export interface Preview {
+  profileId: string | null
   profile: string | null
   envVar: string | null
   value: string | null

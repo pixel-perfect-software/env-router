@@ -21,5 +21,8 @@ export const checkFolder = (shell: Shell, folder: string, tool: string) => invok
 /** Instant: which profile the given, possibly unsaved, config picks for `folder`. */
 export const previewFolder = (payload: ConfigState, folder: string, tool: string) => invoke<Preview>('preview_folder', { payload, folder, tool })
 
+/** Opens a file inside the home folder in the default text editor. */
+export const openInEditor = (path: string) => invoke<void>('open_in_editor', { path })
+
 /** Normalizes a rejection, which is a string from our commands but may be an Error from Tauri itself. */
 export const errorMessage = (err: unknown) => (typeof err === 'string' ? err : err instanceof Error ? err.message : String(err))

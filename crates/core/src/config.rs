@@ -136,6 +136,25 @@ pub fn tool_names(config: &ConfigState) -> BTreeSet<&str> {
         .collect()
 }
 
+/// The folders configured tools are pointed at, with `~` expanded. Some tools (Codex) refuse
+/// a config folder that doesn't exist, so the app creates any that are missing.
+pub fn tool_dirs(config: &ConfigState, home: &Path) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = config
+        .profiles
+        .iter()
+        .flat_map(|profile| {
+            profile
+                .tools
+                .keys()
+                .filter_map(|name| profile.tool(name))
+                .map(|tool| expand_home(tool.path.trim(), home))
+        })
+        .collect();
+    dirs.sort();
+    dirs.dedup();
+    dirs
+}
+
 /// Expands a leading `~` to `home`. The rest is split on either separator, so the result
 /// uses the platform's own.
 pub fn expand_home(path: &str, home: &Path) -> PathBuf {
@@ -344,6 +363,19 @@ mod tests {
             profile("b", &[], Some(("aider", "X", " "))),
         ]);
         assert_eq!(tool_names(&config), BTreeSet::from(["claude"]));
+    }
+
+    #[test]
+    fn tool_dirs_expands_and_skips_unconfigured_tools() {
+        let config = config(vec![
+            profile("a", &[], Some(("codex", "CODEX_HOME", "~/.codex-a"))),
+            profile("b", &[], Some(("claude", "CLAUDE_CONFIG_DIR", " "))),
+            profile("c", &[], Some(("codex", "CODEX_HOME", "~/.codex-a"))),
+        ]);
+        assert_eq!(
+            tool_dirs(&config, &home()),
+            vec![PathBuf::from("/home/me/.codex-a")]
+        );
     }
 
     #[test]

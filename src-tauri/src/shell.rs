@@ -48,7 +48,7 @@ pub enum Shell {
 impl Shell {
     pub const ALL: [Shell; 3] = [Shell::Zsh, Shell::Bash, Shell::Fish];
 
-    fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Shell::Zsh => "zsh",
             Shell::Bash => "bash",
@@ -109,18 +109,31 @@ impl Shell {
     /// `tool` has passed `is_command_name`, so it's safe to interpolate.
     fn probe(self, tool: &str) -> String {
         match self {
+            // `whence -v` names the file a function came from: "claude is a shell function
+            // from /Users/me/.zshrc".
             Shell::Zsh => format!(
-                "print -r -- \"{KIND}$(whence -w -- {tool})\"; print -r -- \"{PATH_MARK}$PATH\""
+                "print -r -- \"{KIND}$(whence -w -- {tool})\"; print -r -- \"{ORIGIN}$(whence -v -- {tool})\"; print -r -- \"{PATH_MARK}$PATH\""
             ),
+            // With extdebug, `declare -F` prints "claude 12 /Users/me/.bashrc".
             Shell::Bash => format!(
-                "printf '%s\\n' \"{KIND}$(type -t -- {tool})\" \"{PATH_MARK}$PATH\""
+                "printf '%s\\n' \"{KIND}$(type -t -- {tool})\" \"{ORIGIN}$(shopt -s extdebug; declare -F -- {tool} 2>/dev/null)\" \"{PATH_MARK}$PATH\""
             ),
-            // An empty command substitution would drop the whole argument in fish, so the
-            // kind goes through a variable.
+            // An empty command substitution would drop the whole argument in fish, so each
+            // value goes through a variable.
             Shell::Fish => format!(
-                "set -l kind (type -t {tool} 2>/dev/null); printf '%s\\n' \"{KIND}$kind\" \"{PATH_MARK}\"(string join : $PATH)"
+                "set -l kind (type -t {tool} 2>/dev/null); set -l origin (functions --details {tool} 2>/dev/null); printf '%s\\n' \"{KIND}$kind\" \"{ORIGIN}$origin\" \"{PATH_MARK}\"(string join : $PATH)"
             ),
         }
+    }
+
+    /// The file named in this shell's origin line, if it names one.
+    fn origin_file(self, line: &str) -> Option<String> {
+        let path = match self {
+            Shell::Zsh => line.rsplit_once(" from ")?.1,
+            Shell::Bash => line.splitn(3, ' ').nth(2)?,
+            Shell::Fish => line,
+        };
+        path.starts_with('/').then(|| path.trim().to_string())
     }
 }
 
@@ -258,6 +271,7 @@ fn block_range(text: &str) -> Option<(usize, usize)> {
 
 const KIND: &str = "__ENVROUTER_KIND__=";
 const PATH_MARK: &str = "__ENVROUTER_PATH__=";
+const ORIGIN: &str = "__ENVROUTER_ORIGIN__=";
 
 /// What running `tool` in `folder` would do in a fresh terminal window.
 #[derive(Debug, PartialEq, Serialize)]
@@ -275,7 +289,11 @@ pub enum FolderCheck {
         real: String,
     },
     /// An alias or function with the tool's name runs instead of anything on PATH.
-    ShadowedByShell { kind: String },
+    ShadowedByShell {
+        kind: String,
+        /// The startup file that defines it, when the shell can say (functions, not aliases).
+        origin: Option<String>,
+    },
     /// Another `tool` comes before the shims directory on PATH.
     ShadowedOnPath { path: String },
     /// The shell integration isn't active. Nothing named `tool` is on PATH.
@@ -291,6 +309,12 @@ pub fn check_folder(shell: Shell, home: &Path, folder: &Path, tool: &str) -> Res
     if !config::is_command_name(tool) {
         return Err(Error::Invalid(format!(
             "\"{tool}\" isn't a valid command name."
+        )));
+    }
+    if !folder.is_dir() {
+        return Err(Error::Invalid(format!(
+            "{} isn't a folder. Drop or choose a folder to check.",
+            folder.display()
         )));
     }
     let binary = shell
@@ -324,7 +348,10 @@ pub fn check_folder(shell: Shell, home: &Path, folder: &Path, tool: &str) -> Res
     let kind = kind.rsplit(": ").next().unwrap_or(kind);
     match kind {
         "alias" | "function" | "builtin" | "keyword" | "reserved" => {
-            return Ok(FolderCheck::ShadowedByShell { kind: kind.into() })
+            return Ok(FolderCheck::ShadowedByShell {
+                kind: kind.into(),
+                origin: field(ORIGIN).and_then(|line| shell.origin_file(line)),
+            })
         }
         "" | "none" => return Ok(FolderCheck::NotFound),
         _ => {}
@@ -376,6 +403,7 @@ pub fn preview(config: &ConfigState, home: &Path, folder: &Path, tool: &str) -> 
     let resolution = resolve::resolve(config, home, folder, tool);
     let (env_var, value) = resolution.env.unzip();
     Preview {
+        profile_id: resolution.profile.map(|p| p.id.clone()),
         profile: resolution.profile.map(|p| p.name.clone()),
         env_var,
         value,
@@ -385,6 +413,7 @@ pub fn preview(config: &ConfigState, home: &Path, folder: &Path, tool: &str) -> 
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Preview {
+    pub profile_id: Option<String>,
     pub profile: Option<String>,
     pub env_var: Option<String>,
     pub value: Option<String>,
@@ -480,9 +509,10 @@ mod tests {
         );
         assert_eq!(
             json(&FolderCheck::ShadowedByShell {
-                kind: "alias".into()
+                kind: "function".into(),
+                origin: Some("/h/.zshrc".into()),
             }),
-            r#"{"status":"shadowedByShell","kind":"alias"}"#
+            r#"{"status":"shadowedByShell","kind":"function","origin":"/h/.zshrc"}"#
         );
         assert_eq!(
             json(&FolderCheck::ShadowedOnPath { path: "/p".into() }),
@@ -682,9 +712,32 @@ mod tests {
         assert_eq!(
             check(&home),
             FolderCheck::ShadowedByShell {
-                kind: "function".into()
+                kind: "function".into(),
+                origin: Some(home.join(".zshrc").display().to_string()),
             }
         );
+    }
+
+    #[test]
+    fn origin_file_reads_each_shells_report() {
+        assert_eq!(
+            Shell::Zsh.origin_file("claude is a shell function from /h/.zshrc"),
+            Some("/h/.zshrc".into())
+        );
+        assert_eq!(
+            Shell::Zsh.origin_file("claude is an alias for claude --x"),
+            None
+        );
+        assert_eq!(
+            Shell::Bash.origin_file("claude 12 /h/.bashrc"),
+            Some("/h/.bashrc".into())
+        );
+        assert_eq!(Shell::Bash.origin_file(""), None);
+        assert_eq!(
+            Shell::Fish.origin_file("/h/.config/fish/functions/claude.fish"),
+            Some("/h/.config/fish/functions/claude.fish".into())
+        );
+        assert_eq!(Shell::Fish.origin_file("stdin"), None);
     }
 
     #[test]

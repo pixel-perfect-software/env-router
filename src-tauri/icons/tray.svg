@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 22">
+  <!-- A three-slot sorting frame with one slot filled. Rendered as a macOS template image. -->
+  <rect x="2.75" y="4.75" width="16.5" height="12.5" rx="1.25" fill="none" stroke="#000" stroke-width="1.5"/>
+  <path d="M8.25 5v12M13.75 5v12M3 11h16" stroke="#000" stroke-width="1.5"/>
+  <rect x="8.5" y="5" width="5" height="6" fill="#000"/>
+</svg>

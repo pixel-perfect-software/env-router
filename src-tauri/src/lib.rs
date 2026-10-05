@@ -1,12 +1,13 @@
 mod shell;
 mod shims;
+mod tray;
 
 use std::path::{Path, PathBuf};
 
 use envrouter_core::config::{self, ConfigState};
 use envrouter_core::{paths, Error, Result};
 use serde::Serialize;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 
 use shell::{FolderCheck, Preview, Shell, ShellStatus};
 
@@ -23,12 +24,6 @@ async fn blocking<T: Send + 'static>(
         .map_err(|err| Error::Command(err.to_string()))?
 }
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 #[tauri::command]
 async fn get_config(app: AppHandle) -> Result<ConfigState> {
     let home = home(&app)?;
@@ -43,8 +38,16 @@ async fn save_config(app: AppHandle, payload: ConfigState) -> Result<()> {
     blocking(move || {
         config::validate(&payload, &home)?;
         shims::install_binary(&home, &shims::bundled()?)?;
+        // Only inside home: a typo'd absolute path shouldn't create folders elsewhere.
+        for dir in config::tool_dirs(&payload, &home) {
+            if dir.starts_with(&home) && !dir.exists() {
+                std::fs::create_dir_all(&dir).map_err(|source| Error::Io { path: dir, source })?;
+            }
+        }
         config::save(&paths::root(&home), &payload)?;
-        shims::sync(&home, &payload)
+        shims::sync(&home, &payload)?;
+        tray::refresh(&app);
+        Ok(())
     })
     .await
 }
@@ -80,7 +83,9 @@ async fn set_shell_integration(app: AppHandle, shell: Shell, enabled: bool) -> R
         if enabled {
             shims::install_binary(&home, &shims::bundled()?)?;
         }
-        shell::set_integration(shell, &home, enabled)
+        let status = shell::set_integration(shell, &home, enabled)?;
+        tray::refresh(&app);
+        Ok(status)
     })
     .await
 }
@@ -98,6 +103,36 @@ async fn check_folder(
     blocking(move || shell::check_folder(shell, &home, Path::new(&folder), &tool)).await
 }
 
+/// Opens a file in the user's default text editor, e.g. the startup file that defines an alias
+/// shadowing the shim. Limited to existing files inside the home folder.
+#[tauri::command]
+async fn open_in_editor(app: AppHandle, path: String) -> Result<()> {
+    let home = home(&app)?;
+    blocking(move || {
+        let file = std::fs::canonicalize(&path).map_err(|source| Error::Io {
+            path: PathBuf::from(&path),
+            source,
+        })?;
+        let home = std::fs::canonicalize(&home).unwrap_or(home);
+        if !file.is_file() || !file.starts_with(&home) {
+            return Err(Error::Invalid(format!(
+                "{path} isn't a file in your home folder."
+            )));
+        }
+        let status = std::process::Command::new("/usr/bin/open")
+            .arg("-t")
+            .arg(&file)
+            .status()
+            .map_err(|err| Error::Command(format!("couldn't run open: {err}")))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(Error::Command(format!("couldn't open {}", file.display())))
+        }
+    })
+    .await
+}
+
 /// What the given, possibly unsaved, config would route for `tool` in `folder`.
 #[tauri::command]
 async fn preview_folder(
@@ -112,7 +147,7 @@ async fn preview_folder(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -125,17 +160,32 @@ pub fn run() {
                     eprintln!("envrouter: couldn't install the shim: {err}");
                 }
             }
+            tray::create(app.handle())?;
             Ok(())
         })
+        // Closing the window keeps EnvRouter in the menu bar; Quit lives in its menu.
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                tray::hide_window(window.app_handle());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
-            greet,
             get_config,
             save_config,
             get_setup_status,
             set_shell_integration,
             check_folder,
-            preview_folder
+            preview_folder,
+            open_in_editor
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app, event| {
+        // Clicking the Dock icon while the window is hidden.
+        if let RunEvent::Reopen { .. } = event {
+            tray::show_window(app);
+        }
+    });
 }
