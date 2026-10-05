@@ -462,6 +462,51 @@ mod tests {
     use crate::shims;
     use envrouter_core::config::{Profile, ToolConfig};
 
+    /// Pins the JSON the frontend's `FolderCheck` and `ShellStatus` types in
+    /// `src/lib/types.ts` expect. Update both together.
+    #[test]
+    fn wire_format_matches_the_typescript_types() {
+        fn json(value: impl Serialize) -> String {
+            serde_json::to_string(&value).unwrap()
+        }
+        assert_eq!(
+            json(&FolderCheck::Routed {
+                profile: None,
+                env_var: Some("V".into()),
+                value: Some("/x".into()),
+                real: "/bin/t".into(),
+            }),
+            r#"{"status":"routed","profile":null,"envVar":"V","value":"/x","real":"/bin/t"}"#
+        );
+        assert_eq!(
+            json(&FolderCheck::ShadowedByShell {
+                kind: "alias".into()
+            }),
+            r#"{"status":"shadowedByShell","kind":"alias"}"#
+        );
+        assert_eq!(
+            json(&FolderCheck::ShadowedOnPath { path: "/p".into() }),
+            r#"{"status":"shadowedOnPath","path":"/p"}"#
+        );
+        assert_eq!(json(&FolderCheck::NotFound), r#"{"status":"notFound"}"#);
+        assert_eq!(
+            json(&FolderCheck::ShimFailed {
+                message: "m".into()
+            }),
+            r#"{"status":"shimFailed","message":"m"}"#
+        );
+        assert_eq!(
+            json(&ShellStatus {
+                shell: Shell::Zsh,
+                available: true,
+                is_default: false,
+                installed: true,
+                startup_files: vec!["/h/.zshrc".into()],
+            }),
+            r#"{"shell":"zsh","available":true,"isDefault":false,"installed":true,"startupFiles":["/h/.zshrc"]}"#
+        );
+    }
+
     #[test]
     fn upsert_appends_once_and_replaces_in_place() {
         let block = Shell::Zsh.block();
