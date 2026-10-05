@@ -898,12 +898,14 @@ dependencies = [
 name = "envrouter"
 version = "0.1.0"
 dependencies = [
+ "envrouter-core",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
+ "tempfile",
 ]
 
 [[package]]
