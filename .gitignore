@@ -30,3 +30,8 @@ dist-ssr
 # Rust build output (Cargo workspace) and the shim staged by src-tauri/build.rs
 /target
 /src-tauri/binaries
+
+# Impeccable design-review artifacts (the surface brief in .impeccable/surfaces is kept)
+/.impeccable/review
+/.impeccable/questions
+/.impeccable/hook.cache.json

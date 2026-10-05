@@ -3,7 +3,7 @@
 @.claude/context/ai-context/docs-overview.md
 
 EnvRouter is a macOS desktop app (Tauri v2) that sets per-folder environment variables for
-developer CLIs, so `claude` run in `~/dev/work` uses a different `CLAUDE_CONFIG_DIR` than in
+coding agents (Claude Code, Codex, Copilot CLI, Gemini CLI), so `claude` run in `~/dev/work` uses a different `CLAUDE_CONFIG_DIR` than in
 `~/dev/personal`. The user defines **profiles**: each one maps trigger folders to a variable
 per tool. Profiles are stored in `~/.envrouter/config.json`. It's meant to be distributed to
 other macOS users, so plan for code signing and notarization.
@@ -14,8 +14,13 @@ startup files puts `shims/` first on PATH. On each run the shim reads `config.js
 profile for the current folder, sets that tool's variable, and `exec`s the real tool found
 later on PATH. Config edits apply on the next run in every terminal, with nothing to reload.
 
-Status: the backend is done. The TypeScript types and UI (Steps 3–4) aren't built, so
-`src/App.tsx` and `greet` in `lib.rs` are still template demo code.
+The window is built around a direction called **the Sorting Frame**: one card per profile
+with its folders filed inside, rendered as modern layered Mac cards (the user asked for
+clearly separated surfaces, so don't regress to flat ruled grids). Before changing the UI, read `PRODUCT.md` and
+`.impeccable/surfaces/src-app-tsx.md` (the direction contract), and `DESIGN.md` (tokens and
+rules: one accent button per state, status-free profile colours, the editor is a right-side
+inspector). The app also lives in the menu bar (`src-tauri/src/tray.rs`), and closing the window
+only hides it.
 
 ## How routing resolves (`crates/core/src/resolve.rs`)
 - **The most specific profile wins outright.** The deepest trigger containing the folder picks the profile. If that profile doesn't configure the tool, the tool runs with **no** override; it never falls back to a shallower profile. The user chose this deliberately.
@@ -30,7 +35,7 @@ A missing config means the tool runs silently. A broken one prints a warning and
 - **No OAuth or credential handling.** EnvRouter only routes env vars; it never logs anyone into a tool.
 - **Tauri v2 APIs only.** v1 examples (`tauri.conf.json > allowlist`, `@tauri-apps/api/fs`) are wrong here. Use plugins and `capabilities/*.json`.
 - **All file access happens in Rust commands.** There's deliberately no fs plugin, and the frontend has only the dialog permission. Don't add `@tauri-apps/plugin-fs` back.
-- **Keep the data model tool-agnostic.** `Profile.tools` is a `Record<toolName, { envVar, path }>`. Nothing in Rust special-cases `claude`.
+- **Keep the data model tool-agnostic.** `Profile.tools` is a `Record<toolName, { envVar, path }>`. Nothing in Rust special-cases an agent. Add an agent with one entry in `src/lib/tools.ts`, and only after checking its docs: the variable must relocate logins too, not just settings. Note quirks such as Gemini's parent-folder semantics in the entry's `note`. `save_config` creates missing agent folders inside home, because Codex refuses a `CODEX_HOME` that doesn't exist.
 - **Bump `CONFIG_VERSION` in `config.rs`** for any change to the shape of `config.json`, and migrate older versions in `config::load`. The shim refuses configs from a newer version.
 
 ## Conventions
@@ -44,4 +49,6 @@ A missing config means the tool runs silently. A broken one prints a warning and
 - **The shell block is POSIX sh** (`shell.rs`, `POSIX_BODY`), so it's safe when bash's login file is `.profile`. It moves the shims directory to the front of PATH rather than skipping it when it's already there, because nested shells re-prepend `~/.local/bin`.
 - **`check_folder` emulates a new Terminal window,** with a cleared environment and a login, interactive shell. Output goes to temp files, not pipes, because prompt themes leave background jobs holding pipes open. It never runs the real tool. The shim's `ENVROUTER_EXPLAIN=1` mode reports the route instead.
 - **`src-tauri/build.rs` builds the shim** into `target/shim/` and stages it as `src-tauri/binaries/envrouter-shim-<triple>` for `bundle.externalBin`. The bundle is arm64-only for now; Intel support needs a universal build plus `lipo` of the shim.
+- **Review the UI in a browser, never against the real home folder.** `pnpm dev` and then `http://localhost:1420/?scenario=first-run|populated|shadowed` runs the frontend with every Tauri call answered by `src/dev/mockTauri.ts` (dev-only; `window.__mockDrop(path, x, y)` simulates a Finder drop). Running the real app touches `~/.envrouter`, and its shell toggles edit the real startup files. To try the real app safely, launch the built binary with `HOME` set to a scratch folder.
+- **Wire types live in `src/lib/types.ts`.** A Rust test (`wire_format_matches_the_typescript_types` in `shell.rs`) pins the JSON, so change both sides together.
 - `.claude/settings.json` denies Claude read access to `.env` files. Ask the user for variable names instead.

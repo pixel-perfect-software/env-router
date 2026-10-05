@@ -18,12 +18,20 @@ env-router/
 │   ├── src/lib.rs             # Tauri commands (below) and app setup
 │   ├── src/shims.rs           # installs the shim binary; syncs one symlink per tool
 │   ├── src/shell.rs           # startup-file blocks for zsh/bash/fish, check_folder, preview
+│   ├── src/tray.rs            # menu bar icon and menu; close-to-hide; Dock icon only while the window is open
 │   ├── capabilities/default.json  # core, opener, dialog only; no fs
 │   ├── tauri.conf.json        # id com.tylerrobertson.envrouter, externalBin, app/dmg bundles
 │   └── binaries/, gen/        # generated, gitignored
-├── src/                       # React frontend (Vite); still template code until Step 4
-│   ├── main.tsx               # entry; imports index.css
-│   └── index.css              # Tailwind v4 entry; put @theme tokens here
+├── src/                       # React frontend (Vite)
+│   ├── App.tsx                # state, health derivation, check flow, shortcuts (⌘N, ⌘O)
+│   ├── index.css              # design tokens (light/dark, system accent), hairline utilities
+│   ├── components/            # Chrome (titlebar, health line, shells panel), Frame (slots),
+│   │                          # ProfileInspector (slide-in editor), Docket (check result), ui (controls, status, icons)
+│   ├── lib/                   # api.ts (typed commands), types.ts (wire types), tools.ts (tool registry),
+│   │                          # verdict.ts (check wording), paths.ts, useFolderDrop.ts
+│   └── dev/mockTauri.ts       # dev-only browser mock; never bundled
+├── PRODUCT.md                 # product truth for design work
+├── .impeccable/               # design-workflow state: surface brief, review captures
 ├── .claude/                   # Claude Code settings and context docs
 ├── .vscode/                   # Biome-on-save settings, recommended extensions
 └── biome.json
