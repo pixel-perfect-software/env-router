@@ -1,0 +1,14 @@
+[package]
+name = "envrouter-core"
+version = "0.1.0"
+description = "EnvRouter's profile model, validation and folder resolution, shared by the app and the shim"
+edition = "2021"
+publish = false
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
