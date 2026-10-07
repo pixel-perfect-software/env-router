@@ -2,6 +2,7 @@
 name = "envrouter-shim"
 version = "0.1.0"
 description = "Installed as ~/.envrouter/shims/<tool>; routes one invocation to the real tool"
+license = "MIT"
 edition = "2021"
 publish = false
 

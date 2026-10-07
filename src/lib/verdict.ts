@@ -8,7 +8,6 @@ import type { FolderCheck, ShellStatus } from './types'
 export type VerdictAction = { kind: 'enableShell' } | { kind: 'openFile'; path: string } | { kind: 'reinstall' }
 
 export type Verdict = {
-  mark: 'on' | 'problem'
   /** The status tile: routed (ok), owned but this agent unset (warn), nobody's folder (neutral). */
   tone: Tone
   headline: string
@@ -34,28 +33,32 @@ export function verdictOf(
 ): Verdict {
   const name = shell.shell
   const startupFile = shell.startupFiles[0] ?? ''
+  /** The shell has no EnvRouter block, so the shims directory isn't on its PATH at all. */
+  const off = (runs?: string): Verdict => ({
+    tone: 'problem',
+    headline: `EnvRouter is off in ${name}`,
+    values: [...(runs ? [{ label: 'runs', value: tildify(runs, home) }] : []), { label: 'adds a block to', value: tildify(startupFile, home) }],
+    action: { kind: 'enableShell' },
+  })
   switch (check.status) {
     case 'routed': {
       const values = check.envVar && check.value ? [{ label: 'sets', value: `${check.envVar}=${tildify(check.value, home)}` }] : []
       if (check.profile && trigger) values.push({ label: 'via', value: tildify(trigger, home) })
       values.push({ label: 'runs', value: tildify(check.real, home) })
-      if (!check.profile)
-        return { mark: 'on', tone: 'neutral', headline: 'No profile owns this folder', note: `${tool} uses its default config here.`, values }
+      if (!check.profile) return { tone: 'neutral', headline: 'No profile owns this folder', note: `${tool} uses its default config here.`, values }
       if (!check.envVar) {
         return {
-          mark: 'on',
           tone: 'warn',
           headline: `Owned by ${check.profile}`,
           note: `${check.profile} doesn't set ${tool}, so it uses its default config here.`,
           values,
         }
       }
-      return { mark: 'on', tone: 'ok', headline: `Routed to ${check.profile}`, values }
+      return { tone: 'ok', headline: `Routed to ${check.profile}`, values }
     }
     case 'shadowedByShell': {
       const file = check.origin ?? startupFile
       return {
-        mark: 'problem',
         tone: 'problem',
         headline: `A ${name} ${check.kind} named ${tool} runs first`,
         note: `It runs instead of anything on PATH. Remove it, then open a new terminal.`,
@@ -67,15 +70,15 @@ export function verdictOf(
     case 'shadowedOnPath':
       if (!toolRouted) {
         return {
-          mark: 'problem',
           tone: 'problem',
           headline: `No profile sets ${tool} yet`,
           note: `With no shim for it, new windows run ${tool} directly.`,
           values: [{ label: 'runs', value: tildify(check.path, home) }],
         }
       }
+      // Nothing is "ahead of" the shim when its directory isn't on PATH in the first place.
+      if (!shell.installed) return off(check.path)
       return {
-        mark: 'problem',
         tone: 'problem',
         headline: `Another ${tool} comes first on PATH`,
         note: `Keep EnvRouter's block at the end of ${tildify(startupFile, home)}.`,
@@ -89,22 +92,21 @@ export function verdictOf(
     case 'notFound':
       return shell.installed
         ? {
-            mark: 'problem',
             tone: 'problem',
             headline: `${tool} isn't on PATH in new ${name} windows`,
             note: `No profile sets ${tool}, and ${tool} itself isn't installed.`,
             values: [],
           }
-        : {
-            mark: 'problem',
-            tone: 'problem',
-            headline: `EnvRouter is off in ${name}`,
-            values: [{ label: 'adds a block to', value: tildify(startupFile, home) }],
-            action: { kind: 'enableShell' },
-          }
+        : off()
+    case 'notInstalled':
+      return {
+        tone: 'problem',
+        headline: `${tool} isn't installed`,
+        note: `EnvRouter's shim is first on PATH, but there's no ${tool} after it to run. Install it, then check again.`,
+        values: [{ label: 'shim', value: tildify(`${shimsDir}/${tool}`, home) }],
+      }
     case 'shimFailed':
       return {
-        mark: 'problem',
         tone: 'problem',
         headline: `EnvRouter couldn't route ${tool}`,
         note: check.message,

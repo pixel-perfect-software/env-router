@@ -73,6 +73,8 @@ export function TitleBand({
 export type Health =
   | { kind: 'loading' }
   | { kind: 'error'; message: string }
+  /** config.json couldn't be read, so there are no profiles to show. Coming back to the window retries. */
+  | { kind: 'unloaded'; message: string; canOpen: boolean }
   | { kind: 'setup'; step: 1 | 2 | 3; shell: ShellStatus | undefined }
   | { kind: 'ok'; on: Shell[] }
   | { kind: 'off'; shell: ShellStatus }
@@ -101,6 +103,7 @@ export function HealthLine({
   onCheckFolder,
   onReinstall,
   onRecheck,
+  onOpenConfig,
 }: {
   health: Health
   onNewProfile: () => void
@@ -108,6 +111,7 @@ export function HealthLine({
   onCheckFolder: () => void
   onReinstall: () => void
   onRecheck: (folder: string, shell: Shell, tool: string) => void
+  onOpenConfig: () => void
 }) {
   if (health.kind === 'loading') {
     return <div className="mx-4 h-[58px] shrink-0 animate-pulse rounded-card bg-card-muted" />
@@ -169,6 +173,21 @@ export function HealthLine({
   switch (health.kind) {
     case 'error':
       return <Banner tone="problem" title="Something went wrong" detail={health.message} />
+    case 'unloaded':
+      return (
+        <Banner
+          tone="problem"
+          title="EnvRouter can't read config.json"
+          detail={health.message}
+          action={
+            health.canOpen ? (
+              <Button kind="primary" onClick={onOpenConfig}>
+                Open config.json
+              </Button>
+            ) : undefined
+          }
+        />
+      )
     case 'shim':
       return (
         <Banner

@@ -9,7 +9,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use envrouter_core::config::{self, ConfigState};
-use envrouter_core::{paths, resolve, Error, Result};
+use envrouter_core::{paths, resolve, Error, Result, EXIT_TOOL_NOT_FOUND};
 use serde::{Deserialize, Serialize};
 
 const BEGIN: &str = "# >>> envrouter >>>";
@@ -252,12 +252,14 @@ fn remove_block(text: &str) -> String {
 }
 
 /// Byte range of the block, from the start of the BEGIN line through the END line's newline.
+/// The range starts at the last BEGIN before the END: if an earlier block lost its END line,
+/// the user's own lines between that orphan and a later block must never be taken for ours.
 fn block_range(text: &str) -> Option<(usize, usize)> {
     let mut offset = 0;
     let mut start = None;
     for line in text.split_inclusive('\n') {
         let trimmed = line.trim_end_matches(['\n', '\r']);
-        if trimmed == BEGIN && start.is_none() {
+        if trimmed == BEGIN {
             start = Some(offset);
         } else if trimmed == END {
             if let Some(start) = start {
@@ -294,11 +296,14 @@ pub enum FolderCheck {
         /// The startup file that defines it, when the shell can say (functions, not aliases).
         origin: Option<String>,
     },
-    /// Another `tool` comes before the shims directory on PATH.
+    /// Another `tool` is found before the shim: it's earlier on PATH than the shims
+    /// directory, or the shims directory isn't on PATH at all (the integration is off).
     ShadowedOnPath { path: String },
-    /// The shell integration isn't active. Nothing named `tool` is on PATH.
+    /// Nothing named `tool` is on PATH: no shim and no real tool.
     NotFound,
-    /// The shim is first on PATH but couldn't route, e.g. the real tool isn't installed.
+    /// The shim is first on PATH, but there's no real `tool` after it to run.
+    NotInstalled,
+    /// The shim is first on PATH but couldn't report a route.
     ShimFailed { message: String },
 }
 
@@ -378,6 +383,9 @@ pub fn check_folder(shell: Shell, home: &Path, folder: &Path, tool: &str) -> Res
         .env("PATH", path)
         .env("ENVROUTER_EXPLAIN", "1");
     let output = run(explain, Duration::from_secs(5))?;
+    if output.code == Some(i32::from(EXIT_TOOL_NOT_FOUND)) {
+        return Ok(FolderCheck::NotInstalled);
+    }
     if !output.success {
         return Ok(FolderCheck::ShimFailed {
             message: output
@@ -430,6 +438,7 @@ struct Explanation {
 
 struct Finished {
     success: bool,
+    code: Option<i32>,
     stdout: String,
     stderr: String,
 }
@@ -474,6 +483,7 @@ fn run(mut command: Command, timeout: Duration) -> Result<Finished> {
     };
     Ok(Finished {
         success: status.success(),
+        code: status.code(),
         stdout: read_all(&mut stdout),
         stderr: read_all(&mut stderr),
     })
@@ -520,6 +530,10 @@ mod tests {
         );
         assert_eq!(json(&FolderCheck::NotFound), r#"{"status":"notFound"}"#);
         assert_eq!(
+            json(&FolderCheck::NotInstalled),
+            r#"{"status":"notInstalled"}"#
+        );
+        assert_eq!(
             json(&FolderCheck::ShimFailed {
                 message: "m".into()
             }),
@@ -561,6 +575,16 @@ mod tests {
             };
             assert_eq!(without, expected, "{original:?}");
         }
+    }
+
+    #[test]
+    fn a_block_missing_its_end_line_never_costs_the_user_their_own_lines() {
+        let block = Shell::Zsh.block();
+        let orphan = format!("export A=1\n{BEGIN}\n{NOTE}\nexport B=2\n");
+        let with = upsert_block(&orphan, &block);
+        assert_eq!(with, format!("{orphan}\n{block}"));
+        assert_eq!(upsert_block(&with, &block), with);
+        assert_eq!(remove_block(&with), orphan);
     }
 
     #[test]
@@ -715,6 +739,25 @@ mod tests {
                 kind: "function".into(),
                 origin: Some(home.join(".zshrc").display().to_string()),
             }
+        );
+    }
+
+    /// A shim with no real tool behind it. The name is one no machine has installed.
+    #[test]
+    fn check_folder_tells_a_missing_tool_from_a_failed_shim() {
+        if Shell::Zsh.binary().is_none() {
+            return;
+        }
+        let tool = "envrouter-absent-tool";
+        let (_root, home) = zsh_home("");
+        let mut config = config();
+        let settings = config.profiles[0].tools["claude"].clone();
+        config.profiles[0].tools.insert(tool.into(), settings);
+        shims::sync(&home, &config).unwrap();
+        set_integration(Shell::Zsh, &home, true).unwrap();
+        assert_eq!(
+            check_folder(Shell::Zsh, &home, &home.join("work/app"), tool).unwrap(),
+            FolderCheck::NotInstalled
         );
     }
 

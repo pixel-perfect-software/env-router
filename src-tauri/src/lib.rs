@@ -145,7 +145,6 @@ async fn preview_folder(
     Ok(shell::preview(&payload, &home, Path::new(&folder), &tool))
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

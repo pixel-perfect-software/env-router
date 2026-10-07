@@ -41,10 +41,13 @@ type Blocked = { shell: Shell; tool: string; headline: string; folder: string }
 function healthOf(
   config: ConfigState | null,
   setup: SetupStatus | null,
+  loadError: string | null,
   error: string | null,
+  home: string,
   checkedOnce: boolean,
   blocked: Blocked | null,
 ): Health {
+  if (loadError) return { kind: 'unloaded', message: loadError, canOpen: home !== '' }
   if (error) return { kind: 'error', message: error }
   if (!config || !setup) return { kind: 'loading' }
   const available = setup.shells.filter((s) => s.available)
@@ -65,7 +68,10 @@ export default function App() {
   const [home, setHome] = useState('')
   const [config, setConfig] = useState<ConfigState | null>(null)
   const [setup, setSetup] = useState<SetupStatus | null>(null)
+  // config.json (or the home folder) couldn't be read, so there's nothing to show yet.
   const [loadError, setLoadError] = useState<string | null>(null)
+  // A failed status refresh. Cleared by the next one that works.
+  const [setupError, setSetupError] = useState<string | null>(null)
   // A failed one-off action (turning on a shell, reinstalling). Cleared by the next success.
   const [actionError, setActionError] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | 'new' | null>(null)
@@ -80,23 +86,36 @@ export default function App() {
   const refreshSetup = useCallback(async () => {
     try {
       setSetup(await getSetupStatus())
+      setSetupError(null)
     } catch (err) {
-      setLoadError(errorMessage(err))
+      setSetupError(errorMessage(err))
     }
   }, [])
 
-  useEffect(() => {
-    Promise.all([homeDir(), getConfig(), getSetupStatus()])
-      .then(([h, c, s]) => {
-        setHome(h)
-        setConfig(c)
-        setSetup(s)
-      })
-      .catch((err) => setLoadError(errorMessage(err)))
-    // Startup files can change from a terminal while the window is open.
-    window.addEventListener('focus', refreshSetup)
-    return () => window.removeEventListener('focus', refreshSetup)
+  const load = useCallback(async () => {
+    refreshSetup()
+    try {
+      // Home first: if the config can't be read, the banner still needs it to open the file.
+      setHome(await homeDir())
+      setConfig(await getConfig())
+      setLoadError(null)
+    } catch (err) {
+      setLoadError(errorMessage(err))
+    }
   }, [refreshSetup])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  // Startup files can change from a terminal while the window is open. Until the config has
+  // loaded, coming back retries that too: the user may have just fixed the file.
+  const unloaded = config === null
+  useEffect(() => {
+    const onFocus = unloaded ? load : refreshSetup
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [unloaded, load, refreshSetup])
 
   const defaultShell = (): Shell => {
     const available = setup?.shells.filter((s) => s.available) ?? []
@@ -147,11 +166,18 @@ export default function App() {
     if (typeof picked === 'string') runCheck(picked, defaultShell(), null)
   }
   // The menu bar's "Check Folder…" and keyboard shortcuts reach the latest handlers through a ref.
-  const actions = useRef({ pickAndCheck, newProfile: () => setEditing('new') })
-  actions.current = { pickAndCheck, newProfile: () => setEditing((e) => e ?? 'new') }
+  // While the inspector is open a check stands down, as it does for a folder dropped on the window.
+  const shortcuts = {
+    checkFolder: () => {
+      if (editing === null) pickAndCheck()
+    },
+    newProfile: () => setEditing((e) => e ?? 'new'),
+  }
+  const actions = useRef(shortcuts)
+  actions.current = shortcuts
 
   useEffect(() => {
-    const unlisten = listen('check-folder', () => actions.current.pickAndCheck())
+    const unlisten = listen('check-folder', () => actions.current.checkFolder())
     const onKey = (e: KeyboardEvent) => {
       if (!e.metaKey || e.altKey || e.ctrlKey) return
       if (e.key === 'n') {
@@ -159,7 +185,7 @@ export default function App() {
         actions.current.newProfile()
       } else if (e.key === 'o') {
         e.preventDefault()
-        actions.current.pickAndCheck()
+        actions.current.checkFolder()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -277,14 +303,14 @@ export default function App() {
   const closeShells = useCallback(() => setShellsOpen(false), [])
   // A Mac window has one default button. The banner's action outranks the check result's,
   // which outranks Check Folder… in the titlebar.
-  const bannerHasPrimary = (h: Health) => h.kind === 'setup' || h.kind === 'shim' || h.kind === 'off'
+  const bannerHasPrimary = (h: Health) => h.kind === 'setup' || h.kind === 'shim' || h.kind === 'off' || (h.kind === 'unloaded' && h.canOpen)
   const docketHasAction = (() => {
     const status = check?.result && setup?.shells.find((s) => s.shell === check.shell)
     return status && check?.result && setup
       ? Boolean(verdictOf(check.result, status, check.tool, routedTools.includes(check.tool), setup.shimsDir, home).action)
       : false
   })()
-  const health = healthOf(config, setup, loadError ?? actionError, checkedOnce, blocked)
+  const health = healthOf(config, setup, loadError, setupError ?? actionError, home, checkedOnce, blocked)
 
   return (
     <div className={`relative flex h-full flex-col ${hovering ? 'shadow-[inset_0_0_0_2px_var(--er-accent)]' : ''}`}>
@@ -303,6 +329,7 @@ export default function App() {
         onCheckFolder={pickAndCheck}
         onReinstall={() => config && commit(config).catch((err) => setActionError(errorMessage(err)))}
         onRecheck={(folder, shell, tool) => runCheck(folder, shell, null, tool)}
+        onOpenConfig={() => openInEditor(`${home}/.envrouter/config.json`).catch((err) => setLoadError(errorMessage(err)))}
       />
       {shellsOpen && setup && <ShellsPopover setup={setup} home={home} onSet={setShell} onClose={closeShells} />}
       {/* Soft edges where cards scroll under the banner and the floating check card. */}

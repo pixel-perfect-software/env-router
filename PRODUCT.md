@@ -31,7 +31,7 @@ general env-var manager like direnv or mise.
 - **A macOS desktop app** (Tauri v2: a native window around a web view; React frontend). It's opened occasionally, not kept running. The real usage happens in the terminal.
 - **Typical session:** first-run setup (create a profile, enable shell integration for the login shell, check a folder), then rare edits when a new client or repo appears, or a diagnosis when a folder doesn't route.
 - **Terms the UI uses:** profile, trigger folder, tool, shell integration (the block added to `.zshrc` and similar files), shim, check a folder.
-- **Diagnosis results:** routed (profile, variable, value, real binary); blocked by a shell alias or function; blocked by another copy earlier on PATH; not found (integration inactive); shim failed (e.g. the tool isn't installed).
+- **Diagnosis results:** routed (profile, variable, value, real binary); blocked by a shell alias or function; blocked by another copy earlier on PATH; integration off in that shell; not found; tool not installed; shim failed.
 
 ## Capabilities and Constraints
 - Profiles: a name, trigger folders (the native folder picker; a trigger covers its whole subtree), and per-tool settings. The agents offered come from a registry (`src/lib/tools.ts`). An agent qualifies only if one variable separates its whole account, logins included. opencode (logins kept outside its config dir) and Aider (API keys) don't qualify. GUI apps such as Cursor can't be routed this way.

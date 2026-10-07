@@ -29,12 +29,14 @@ pub fn resolve<'a>(
     let env = profile
         .and_then(|profile| profile.tool(tool))
         .filter(|settings| config::is_env_var_name(&settings.env_var))
-        .map(|settings| {
-            let value = config::expand_home(settings.path.trim(), home);
-            (
+        // A folder `validate` would reject only reaches here in a hand-edited config. The
+        // tool then runs unrouted rather than with a variable pointing somewhere unintended.
+        .and_then(|settings| {
+            let value = config::tool_dir(&settings.path, home)?;
+            Some((
                 settings.env_var.clone(),
                 value.to_string_lossy().into_owned(),
-            )
+            ))
         });
     Resolution { profile, env }
 }
@@ -150,6 +152,21 @@ mod tests {
                 home.join(".claude-work").display().to_string()
             ))
         );
+    }
+
+    #[test]
+    fn a_relative_tool_folder_is_never_applied() {
+        let (_root, home) = home_with(&["dev"]);
+        let config = ConfigState {
+            profiles: vec![profile("Personal", &["~/dev"], Some("claude-config"))],
+            ..Default::default()
+        };
+        let resolution = resolve(&config, &home, &home.join("dev"), "claude");
+        assert_eq!(
+            resolution.profile.map(|p| p.name.as_str()),
+            Some("Personal")
+        );
+        assert_eq!(resolution.env, None);
     }
 
     #[cfg(unix)]

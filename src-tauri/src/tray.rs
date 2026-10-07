@@ -19,7 +19,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         .icon(icon)
         .icon_as_template(true)
         .tooltip("EnvRouter")
-        .menu(&menu(app)?)
+        .menu(&menu(app, ("EnvRouter".into(), None))?)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => show_window(app),
@@ -31,12 +31,17 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             _ => {}
         })
         .build(app)?;
+    // The status lines ask zsh where its startup files live. That happens off the main
+    // thread, so a slow `.zshenv` can't hold up launch.
+    let handle = app.clone();
+    std::thread::spawn(move || refresh(&handle));
     Ok(())
 }
 
 /// Rebuilds the menu after anything its status lines depend on changes.
 pub fn refresh(app: &AppHandle) {
-    if let (Some(tray), Ok(menu)) = (app.tray_by_id(TRAY_ID), menu(app)) {
+    let summary = summary(app);
+    if let (Some(tray), Ok(menu)) = (app.tray_by_id(TRAY_ID), menu(app, summary)) {
         let _ = tray.set_menu(Some(menu));
     }
 }
@@ -59,8 +64,7 @@ pub fn hide_window(app: &AppHandle) {
     let _ = app.set_activation_policy(ActivationPolicy::Accessory);
 }
 
-fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
-    let (status, profiles) = summary(app);
+fn menu(app: &AppHandle, (status, profiles): (String, Option<String>)) -> tauri::Result<Menu<Wry>> {
     let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = vec![Box::new(MenuItem::with_id(
         app,
         "status",
@@ -110,10 +114,10 @@ fn summary(app: &AppHandle) -> (String, Option<String>) {
     let Ok(home) = app.path().home_dir() else {
         return ("EnvRouter".into(), None);
     };
-    let count = config::load(&paths::root(&home))
-        .ok()
-        .flatten()
-        .map_or(0, |config| config.profiles.len());
+    let count = match config::load(&paths::root(&home)) {
+        Ok(config) => config.map_or(0, |config| config.profiles.len()),
+        Err(_) => return ("Can't read config.json".into(), None),
+    };
     if count == 0 {
         return ("Not set up yet".into(), None);
     }

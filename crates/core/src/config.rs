@@ -3,8 +3,8 @@
 //! These structs mirror the frontend's TypeScript types; serde renames fields to camelCase.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fs;
-use std::io::ErrorKind;
+use std::fs::{self, File};
+use std::io::{ErrorKind, Write};
 use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -103,7 +103,8 @@ pub fn save(dir: &Path, config: &ConfigState) -> Result<()> {
 }
 
 /// Writes through a sibling temp file and a rename, so a reader never sees a half-written
-/// file. An existing file keeps its permissions.
+/// file. The contents are flushed to disk before the rename, so a crash can't leave the file
+/// (which may be someone's `.zshrc`) empty. An existing file keeps its permissions.
 pub fn write_atomic(path: &Path, contents: impl AsRef<[u8]>) -> Result<()> {
     let io_err = |source| Error::Io {
         path: path.to_path_buf(),
@@ -114,7 +115,10 @@ pub fn write_atomic(path: &Path, contents: impl AsRef<[u8]>) -> Result<()> {
     }
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".envrouter-tmp");
-    fs::write(&tmp, contents).map_err(io_err)?;
+    let mut file = File::create(&tmp).map_err(io_err)?;
+    file.write_all(contents.as_ref()).map_err(io_err)?;
+    file.sync_all().map_err(io_err)?;
+    drop(file);
     if let Ok(meta) = fs::metadata(path) {
         fs::set_permissions(&tmp, meta.permissions()).map_err(io_err)?;
     }
@@ -147,7 +151,7 @@ pub fn tool_dirs(config: &ConfigState, home: &Path) -> Vec<PathBuf> {
                 .tools
                 .keys()
                 .filter_map(|name| profile.tool(name))
-                .map(|tool| expand_home(tool.path.trim(), home))
+                .filter_map(|tool| tool_dir(&tool.path, home))
         })
         .collect();
     dirs.sort();
@@ -155,12 +159,19 @@ pub fn tool_dirs(config: &ConfigState, home: &Path) -> Vec<PathBuf> {
     dirs
 }
 
-/// Expands a leading `~` to `home`. The rest is split on either separator, so the result
-/// uses the platform's own.
+/// The folder a tool's variable is set to, with `~` expanded, or `None` if it isn't one the
+/// shim may apply. It must be absolute: a relative value would resolve against whatever
+/// folder the tool happens to run in, and the tool would write its config there.
+pub fn tool_dir(raw: &str, home: &Path) -> Option<PathBuf> {
+    let dir = expand_home(raw.trim(), home);
+    (dir.is_absolute() && !dir.components().any(|c| c == Component::ParentDir)).then_some(dir)
+}
+
+/// Expands a leading `~` to `home`, dropping repeated and trailing slashes after it.
 pub fn expand_home(path: &str, home: &Path) -> PathBuf {
     match path.strip_prefix('~') {
-        Some(rest) if rest.is_empty() || rest.starts_with(['/', '\\']) => rest
-            .split(['/', '\\'])
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => rest
+            .split('/')
             .filter(|part| !part.is_empty())
             .fold(home.to_path_buf(), |acc, part| acc.join(part)),
         _ => PathBuf::from(path),
@@ -172,7 +183,7 @@ pub fn expand_home(path: &str, home: &Path) -> PathBuf {
 /// rather than silently matched as a literal character.
 pub fn trigger_base(raw: &str, home: &Path) -> Result<PathBuf> {
     let trimmed = raw.trim();
-    let without_glob = ["/**", "\\**", "/*", "\\*"]
+    let without_glob = ["/**", "/*"]
         .iter()
         .find_map(|suffix| trimmed.strip_suffix(suffix))
         .unwrap_or(trimmed);
@@ -198,7 +209,8 @@ pub fn trigger_base(raw: &str, home: &Path) -> Result<PathBuf> {
 }
 
 /// Rejects anything the shim can't apply safely: names that aren't valid command or
-/// environment variable names, bad trigger paths, and a folder claimed by two profiles.
+/// environment variable names, tool folders that aren't absolute, bad trigger paths, and a
+/// folder claimed by two profiles.
 pub fn validate(config: &ConfigState, home: &Path) -> Result<()> {
     let mut owners: HashMap<PathBuf, &Profile> = HashMap::new();
     for profile in &config.profiles {
@@ -209,10 +221,20 @@ pub fn validate(config: &ConfigState, home: &Path) -> Result<()> {
                     profile.name
                 )));
             }
-            if profile.tool(name).is_some() && !is_env_var_name(&tool.env_var) {
+            if profile.tool(name).is_none() {
+                continue;
+            }
+            if !is_env_var_name(&tool.env_var) {
                 return Err(Error::Invalid(format!(
                     "\"{}\" in profile \"{}\" isn't a valid environment variable name.",
                     tool.env_var, profile.name
+                )));
+            }
+            if tool_dir(&tool.path, home).is_none() {
+                return Err(Error::Invalid(format!(
+                    "The {name} folder \"{}\" in profile \"{}\" must be an absolute path or start with ~, without \"..\".",
+                    tool.path.trim(),
+                    profile.name
                 )));
             }
         }
@@ -326,6 +348,11 @@ mod tests {
             trigger_base("~/[archive]/v?", &home()).unwrap(),
             PathBuf::from("/home/me/[archive]/v?")
         );
+        // A backslash is an ordinary file name character here, not a separator.
+        assert_eq!(
+            trigger_base("~/a\\b", &home()).unwrap(),
+            PathBuf::from("/home/me/a\\b")
+        );
     }
 
     #[test]
@@ -354,6 +381,19 @@ mod tests {
 
         let bad_tool = config(vec![profile("a", &[], Some(("../claude", "X", "")))]);
         assert!(validate(&bad_tool, &home()).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_a_tool_folder_that_is_not_absolute() {
+        for path in ["relative/dir", "./here", "~user/.c", "~/../elsewhere"] {
+            let bad = config(vec![profile("a", &[], Some(("claude", "X", path)))]);
+            let err = validate(&bad, &home()).unwrap_err().to_string();
+            assert!(err.contains(path), "{path}: {err}");
+        }
+        for path in ["~/.c", "~", "/opt/claude", " ~/.c "] {
+            let good = config(vec![profile("a", &[], Some(("claude", "X", path)))]);
+            validate(&good, &home()).unwrap();
+        }
     }
 
     #[test]

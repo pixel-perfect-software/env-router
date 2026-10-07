@@ -173,12 +173,6 @@ export const BranchIcon = () => (
   </Icon>
 )
 
-export const ChevronIcon = ({ open }: { open: boolean }) => (
-  <Icon width="12" height="12" className={`transition-transform duration-150 ${open ? 'rotate-180' : ''}`}>
-    <path d="M4 6l4 4 4-4" />
-  </Icon>
-)
-
 export const FolderIcon = () => (
   <Icon width="14" height="14" strokeWidth="1.4">
     <path d="M2 4.5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z" />

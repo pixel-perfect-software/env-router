@@ -1,8 +1,9 @@
 // Development only: lets the frontend run in a plain browser for design review, with the
 // Tauri commands answered from memory. main.tsx loads it only when `import.meta.env.DEV` and no
 // Tauri runtime is present, so it never ships. Pick a state with `?scenario=`:
-// first-run (default), populated, or shadowed. `window.__mockDrop(path, x, y)` simulates a
-// Finder drop.
+// first-run (default), populated, shadowed, or broken (config.json can't be read until
+// "Open config.json" is clicked, which stands in for fixing it). `window.__mockDrop(path, x, y)`
+// simulates a Finder drop.
 
 import { emit } from '@tauri-apps/api/event'
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
@@ -27,6 +28,7 @@ const profile = (id: string, name: string, triggerPaths: string[], configDir?: s
 })
 
 const populated = scenario !== 'first-run'
+let configBroken = scenario === 'broken'
 let config: ConfigState = {
   version: 1,
   profiles: populated
@@ -76,74 +78,86 @@ const owner = (cfg: ConfigState, folder: string) => {
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-mockWindows('main')
-mockIPC(
-  async (cmd, args) => {
-    const a = (args ?? {}) as Record<string, unknown>
-    switch (cmd) {
-      case 'plugin:path|resolve_directory':
-        return HOME
-      case 'plugin:dialog|open': {
-        const opts = (a.options ?? {}) as { multiple?: boolean; title?: string }
-        if (opts.title === 'Choose Config Folder') return `${HOME}/.claude-acme`
-        return opts.multiple ? [`${HOME}/clients/acme`, `${HOME}/dev/acme-api`] : `${HOME}/dev/work/billing-api`
-      }
-      case 'plugin:dialog|ask':
-        return true
-      case 'get_config':
-        return config
-      case 'save_config': {
-        const next = a.payload as ConfigState
-        const seen = new Map<string, string>()
-        for (const p of next.profiles) {
-          for (const t of p.triggerPaths) {
-            const other = seen.get(expand(t))
-            if (other && other !== p.name)
-              throw `${expand(t)} is a trigger path in both "${other}" and "${p.name}". A folder can belong to only one profile.`
-            seen.set(expand(t), p.name)
-          }
-        }
-        await delay(250)
-        config = next
-        return null
-      }
-      case 'open_in_editor':
-        return null
-      case 'get_setup_status':
-        return setup
-      case 'set_shell_integration': {
-        await delay(300)
-        const s = setup.shells.find((x) => x.shell === a.shell)
-        if (!s) throw 'unknown shell'
-        s.installed = Boolean(a.enabled)
-        return s
-      }
-      case 'preview_folder': {
-        const p = owner(a.payload as ConfigState, a.folder as string)
-        const tool = p?.tools[a.tool as string]
-        return { profileId: p?.id ?? null, profile: p?.name ?? null, envVar: tool ? tool.envVar : null, value: tool ? expand(tool.path) : null }
-      }
-      case 'check_folder': {
-        await delay(1100)
-        const s = setup.shells.find((x) => x.shell === a.shell)
-        if (scenario === 'shadowed') return { status: 'shadowedByShell', kind: 'function', origin: `${HOME}/.zshrc` } satisfies FolderCheck
-        if (!s?.installed) return { status: 'notFound' } satisfies FolderCheck
-        const p = owner(config, a.folder as string)
-        const tool = p?.tools[a.tool as string]
-        return {
-          status: 'routed',
-          profile: p?.name ?? null,
-          envVar: tool ? tool.envVar : null,
-          value: tool ? expand(tool.path) : null,
-          real: `${HOME}/.local/bin/${a.tool as string}`,
-        } satisfies FolderCheck
-      }
-      default:
-        throw `mock: unhandled ${cmd}`
+const respond = async (cmd: string, args: unknown): Promise<unknown> => {
+  const a = (args ?? {}) as Record<string, unknown>
+  switch (cmd) {
+    case 'plugin:path|resolve_directory':
+      return HOME
+    case 'plugin:dialog|open': {
+      const opts = (a.options ?? {}) as { multiple?: boolean; title?: string }
+      if (opts.title === 'Choose Config Folder') return `${HOME}/.claude-acme`
+      return opts.multiple ? [`${HOME}/clients/acme`, `${HOME}/dev/acme-api`] : `${HOME}/dev/work/billing-api`
     }
-  },
-  { shouldMockEvents: true },
-)
+    case 'plugin:dialog|message': {
+      // `ask` is sent as a message with custom buttons and resolves to the label clicked. Always confirm.
+      const [labels] = Object.values((a.buttons ?? {}) as Record<string, unknown>)
+      return Array.isArray(labels) ? labels[0] : 'Ok'
+    }
+    case 'get_config':
+      if (configBroken) throw `${HOME}/.envrouter/config.json is not valid JSON: expected \`,\` or \`}\` at line 7 column 5`
+      return config
+    case 'save_config': {
+      const next = a.payload as ConfigState
+      const seen = new Map<string, string>()
+      for (const p of next.profiles) {
+        for (const [name, tool] of Object.entries(p.tools)) {
+          const path = tool.path.trim()
+          if (path && !/^(~$|~\/|\/)/.test(path))
+            throw `The ${name} folder "${path}" in profile "${p.name}" must be an absolute path or start with ~, without "..".`
+        }
+        for (const t of p.triggerPaths) {
+          const other = seen.get(expand(t))
+          if (other && other !== p.name)
+            throw `${expand(t)} is a trigger path in both "${other}" and "${p.name}". A folder can belong to only one profile.`
+          seen.set(expand(t), p.name)
+        }
+      }
+      await delay(250)
+      config = next
+      return null
+    }
+    case 'open_in_editor':
+      configBroken = false
+      return null
+    case 'get_setup_status':
+      return setup
+    case 'set_shell_integration': {
+      await delay(300)
+      const s = setup.shells.find((x) => x.shell === a.shell)
+      if (!s) throw 'unknown shell'
+      s.installed = Boolean(a.enabled)
+      return s
+    }
+    case 'preview_folder': {
+      const p = owner(a.payload as ConfigState, a.folder as string)
+      const tool = p?.tools[a.tool as string]
+      return { profileId: p?.id ?? null, profile: p?.name ?? null, envVar: tool ? tool.envVar : null, value: tool ? expand(tool.path) : null }
+    }
+    case 'check_folder': {
+      await delay(1100)
+      const s = setup.shells.find((x) => x.shell === a.shell)
+      if (scenario === 'shadowed') return { status: 'shadowedByShell', kind: 'function', origin: `${HOME}/.zshrc` } satisfies FolderCheck
+      // With the shell off, the real backend finds the tool itself on PATH, not nothing.
+      if (!s?.installed) return { status: 'shadowedOnPath', path: `${HOME}/.local/bin/${a.tool as string}` } satisfies FolderCheck
+      const p = owner(config, a.folder as string)
+      const tool = p?.tools[a.tool as string]
+      return {
+        status: 'routed',
+        profile: p?.name ?? null,
+        envVar: tool ? tool.envVar : null,
+        value: tool ? expand(tool.path) : null,
+        real: `${HOME}/.local/bin/${a.tool as string}`,
+      } satisfies FolderCheck
+    }
+    default:
+      throw `mock: unhandled ${cmd}`
+  }
+}
+
+mockWindows('main')
+// Real IPC deserializes a fresh value every time. Handing React the mock's own objects would
+// let a later mutation here pass for "nothing changed" and skip the re-render.
+mockIPC(async (cmd, args) => structuredClone(await respond(cmd, args)), { shouldMockEvents: true })
 
 declare global {
   interface Window {

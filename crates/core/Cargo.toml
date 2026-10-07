@@ -2,6 +2,7 @@
 name = "envrouter-core"
 version = "0.1.0"
 description = "EnvRouter's profile model, validation and folder resolution, shared by the app and the shim"
+license = "MIT"
 edition = "2021"
 publish = false
 

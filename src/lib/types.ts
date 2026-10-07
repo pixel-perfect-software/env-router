@@ -52,11 +52,13 @@ export type FolderCheck =
   | { status: 'routed'; profile: string | null; envVar: string | null; value: string | null; real: string }
   /** An alias or function with the tool's name runs before PATH is searched. `origin`: the file defining it, when the shell can say. */
   | { status: 'shadowedByShell'; kind: string; origin: string | null }
-  /** Another copy of the tool comes before the shims directory on PATH. */
+  /** Another copy of the tool is found before the shim: it's earlier on PATH, or the shims directory isn't on PATH at all (shell setup is off). */
   | { status: 'shadowedOnPath'; path: string }
-  /** Nothing named after the tool is on PATH, usually because shell setup isn't active. */
+  /** Nothing named after the tool is on PATH: no shim and no real tool. */
   | { status: 'notFound' }
-  /** The shim is first on PATH but couldn't route, e.g. the real tool isn't installed. */
+  /** The shim is first on PATH, but there's no real tool after it to run. */
+  | { status: 'notInstalled' }
+  /** The shim is first on PATH but couldn't report a route. */
   | { status: 'shimFailed'; message: string }
 
 /** `shell::Preview`: the route from the config alone, without consulting a shell. */

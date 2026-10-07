@@ -13,7 +13,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-use envrouter_core::{config, paths, resolve};
+use envrouter_core::{config, paths, resolve, EXIT_TOOL_NOT_FOUND};
 
 /// When set, print how this invocation would be routed, as one line of JSON, and exit
 /// without running the tool. The app uses it to check a folder.
@@ -42,7 +42,7 @@ fn main() -> ExitCode {
         eprintln!(
             "envrouter: can't find `{tool}` on PATH outside ~/.envrouter/shims. Is it installed?"
         );
-        return ExitCode::from(127);
+        return ExitCode::from(EXIT_TOOL_NOT_FOUND);
     };
     let (profile, env_var) = route(&tool, home.as_deref());
 
