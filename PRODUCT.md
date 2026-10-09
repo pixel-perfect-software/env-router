@@ -43,8 +43,11 @@ general env-var manager like direnv or mise.
 - macOS only (11 or later). Distributed as source that each user builds: no paid Apple Developer ID, so no notarized downloads.
 
 ## Brand Commitments
-Name: EnvRouter. No icon, logo or established voice yet; the Tauri template icons are
-placeholders to replace. The user's direction: a quiet, precise, native-feeling Mac utility.
+Name: EnvRouter. The app icon is "Points": a Finder-blue folder on a dark navy tile whose track
+forks to two accounts and lights the one it uses; the menu bar glyph is that folder with the
+fork cut through it. It says the product's one idea: the folder decides. No established voice
+yet. The user's direction: a quiet, precise, native-feeling Mac utility; the icon should be
+clear and creative, never loud or abstract.
 
 ## Evidence on Hand
 No users, testimonials, metrics or press yet. Don't invent any. Free and open source, with

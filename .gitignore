@@ -35,3 +35,6 @@ dist-ssr
 /.impeccable/review
 /.impeccable/questions
 /.impeccable/hook.cache.json
+
+# Impeccable decision boards: concept comps from design rounds (the chosen direction lives in .impeccable/surfaces)
+/.impeccable/mocks

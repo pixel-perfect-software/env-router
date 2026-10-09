@@ -17,7 +17,7 @@ Mac developers with separate coding-agent accounts. Jobs, by frequency: first-ru
 The Sorting Frame (roll, seed 9c112fdb), code-led. On 2026-10-05 the user overrode the original "no cards, hairline grid" rendering: "make the UI feel more like a modern app UI… it's hard to tell between surfaces." The topology stays (one container per profile, folders filed inside, carve-outs, Everywhere else, a check docket); the materials are now layered modern-Mac cards.
 
 ## Unresolved
-App icon and tray glyph are first-pass. Agents offered: Claude Code, Codex, Copilot CLI, Gemini CLI (src/lib/tools.ts); saving creates missing agent folders inside home. opencode and Aider are excluded because their variables don't separate logins.
+App icon and tray glyph are decided (see the src-tauri-icons brief); the titlebar shows the icon's small cut before the app name. Agents offered: Claude Code, Codex, Copilot CLI, Gemini CLI (src/lib/tools.ts); saving creates missing agent folders inside home. opencode and Aider are excluded because their variables don't separate logins.
 
 ## Direction contract
 THESIS: Each profile is a card that holds the folders it owns, so "the most specific folder wins" is visible structure: a nested folder sits as a carve-out inside its parent's card, tagged with the owning profile's colour. It refuses both the System Settings sidebar-and-switches default and the flat ruled sheet the user rejected.

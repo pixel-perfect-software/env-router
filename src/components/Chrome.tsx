@@ -1,7 +1,9 @@
-// The top of the window: the titlebar (traffic lights, shell status, Shells…, Check Folder…),
+// The top of the window: the titlebar (traffic lights, app icon and name, shell status, Shells…, Check Folder…),
 // the health banner beneath it, and the shell setup popover.
 
 import { type ReactNode, useEffect, useRef, useState } from 'react'
+// The small cut: it's drawn for 64 px and under, and the titlebar shows it at 18.
+import appIcon from '../../src-tauri/icons/app-icon-small.svg'
 import { errorMessage } from '../lib/api'
 import { tildify } from '../lib/paths'
 import type { SetupStatus, Shell, ShellStatus } from '../lib/types'
@@ -27,9 +29,12 @@ export function TitleBand({
   const shells = setup?.shells.filter((s) => s.available) ?? []
   return (
     <div data-tauri-drag-region className="flex h-[52px] shrink-0 items-center gap-3 pr-4 pl-[86px]">
-      <h1 data-tauri-drag-region className="text-title font-semibold">
-        EnvRouter
-      </h1>
+      <div data-tauri-drag-region className="flex items-center gap-2">
+        <img data-tauri-drag-region src={appIcon} alt="" width={18} height={18} draggable={false} />
+        <h1 data-tauri-drag-region className="text-title font-semibold">
+          EnvRouter
+        </h1>
+      </div>
       <div data-tauri-drag-region className="ml-auto flex items-center gap-2">
         {shells.length > 0 && (
           <>

@@ -21,6 +21,7 @@ env-router/
 │   ├── src/tray.rs            # menu bar icon and menu; close-to-hide; Dock icon only while the window is open
 │   ├── capabilities/default.json  # core, plus the three dialog/opener calls the window makes; no fs
 │   ├── tauri.conf.json        # id com.tylerrobertson.envrouter, CSP, externalBin, an .app bundle signed ad hoc
+│   ├── icons/                 # app icon and menu bar glyph: SVG sources plus the PNGs and icon.icns rendered from them
 │   └── binaries/, gen/        # generated, gitignored
 ├── src/                       # React frontend (Vite)
 │   ├── App.tsx                # state, health derivation, check flow, shortcuts (⌘N, ⌘O)

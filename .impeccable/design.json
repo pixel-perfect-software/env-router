@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-05T19:21:52+00:00",
+  "generatedAt": "2026-10-09T12:00:00+00:00",
   "title": "Design System: EnvRouter",
   "extensions": {
     "theming": {
@@ -334,6 +334,114 @@
         "canonical": "#8a8f99",
         "oklch": "oklch(64.9% 0.016 264.5)",
         "tonalRamp": ["#080b12", "#20242c", "#3b4048", "#595e67", "#7b808a", "#a0a5af", "#c5cbd5", "#e9effa"]
+      },
+      "mark-plate-top": {
+        "role": "mark",
+        "displayName": "Signal-Box Navy",
+        "theme": "fixed",
+        "canonical": "#202b42",
+        "oklch": "oklch(29.0% 0.045 264.2)",
+        "tonalRamp": ["#030a1e", "#1a253b", "#36425a", "#54617b", "#75839e", "#97a5c2", "#bbcae7", "#e7efff"],
+        "purpose": "App icon plate gradient, top stop."
+      },
+      "mark-plate-bottom": {
+        "role": "mark",
+        "displayName": "Signal-Box Navy, deep",
+        "theme": "fixed",
+        "canonical": "#0d1320",
+        "oklch": "oklch(18.8% 0.028 264.8)",
+        "tonalRamp": ["#060b17", "#1e2533", "#3b4251", "#596172", "#7a8294", "#9ca5b7", "#c0c9dc", "#e7efff"],
+        "purpose": "App icon plate gradient, bottom stop; also the lit coin's figure."
+      },
+      "mark-plate-glow": {
+        "role": "mark",
+        "displayName": "Plate Glow",
+        "theme": "fixed",
+        "canonical": "#9fb6ff",
+        "oklch": "oklch(78.7% 0.108 270.4)",
+        "tonalRamp": ["#030033", "#131c58", "#2d3c7a", "#4a5c9e", "#6a7ec3", "#8ba1e9", "#b5c7fe", "#e8eeff"],
+        "purpose": "Radial top glow at 5% and the 3px plate rim at 18%."
+      },
+      "mark-folder-back": {
+        "role": "mark",
+        "displayName": "Finder Blue, back",
+        "theme": "fixed",
+        "canonical": "#2b7be0",
+        "oklch": "oklch(58.9% 0.172 256.3)",
+        "tonalRamp": ["#000a21", "#02244e", "#054083", "#0c5ebb", "#3181e6", "#68a7fb", "#a8ccfd", "#e5f0fe"],
+        "purpose": "Folder back and tab."
+      },
+      "mark-folder-front-top": {
+        "role": "mark",
+        "displayName": "Finder Blue, front top",
+        "theme": "fixed",
+        "canonical": "#72b8fb",
+        "oklch": "oklch(76.3% 0.120 248.7)",
+        "tonalRamp": ["#000c1b", "#002646", "#014475", "#1b64a2", "#4187c7", "#65abed", "#9ecefe", "#e2f0ff"],
+        "purpose": "Folder front panel gradient, top stop."
+      },
+      "mark-folder-front-bottom": {
+        "role": "mark",
+        "displayName": "Finder Blue, front bottom",
+        "theme": "fixed",
+        "canonical": "#3d8ff0",
+        "oklch": "oklch(64.7% 0.165 254.7)",
+        "tonalRamp": ["#000b20", "#01244d", "#024180", "#0660b7", "#2f82e2", "#63a7fc", "#a6ccfd", "#e4f0ff"],
+        "purpose": "Folder front panel gradient, bottom stop."
+      },
+      "mark-lit": {
+        "role": "mark",
+        "displayName": "Lit Route",
+        "theme": "fixed",
+        "canonical": "#4aa3e8",
+        "oklch": "oklch(69.1% 0.133 244.9)",
+        "tonalRamp": ["#000c1a", "#012742", "#04456f", "#0b66a0", "#2c89cc", "#54adf2", "#9bd0fc", "#e2f1fe"],
+        "purpose": "The branch the folder uses. Same hex as profile-sky; in the mark it means the route taken."
+      },
+      "mark-lit-coin-top": {
+        "role": "mark",
+        "displayName": "Lit Coin, top",
+        "theme": "fixed",
+        "canonical": "#6cbcf6",
+        "oklch": "oklch(76.7% 0.115 241.8)",
+        "tonalRamp": ["#000c19", "#002840", "#01466d", "#05679c", "#388ac1", "#5dade7", "#95d1fe", "#e0f1ff"],
+        "purpose": "Lit account coin gradient, top stop."
+      },
+      "mark-lit-coin-bottom": {
+        "role": "mark",
+        "displayName": "Lit Coin, bottom",
+        "theme": "fixed",
+        "canonical": "#3d93e0",
+        "oklch": "oklch(64.7% 0.142 248.9)",
+        "tonalRamp": ["#000c1c", "#002646", "#004476", "#0264a9", "#2f87d3", "#56abf9", "#9eceff", "#e2f0ff"],
+        "purpose": "Lit account coin gradient, bottom stop."
+      },
+      "mark-idle": {
+        "role": "mark",
+        "displayName": "Idle Route",
+        "theme": "fixed",
+        "canonical": "#3a4560",
+        "oklch": "oklch(39.3% 0.048 267.1)",
+        "tonalRamp": ["#04091f", "#1a243d", "#36415c", "#55617d", "#7582a0", "#97a5c4", "#bbc9ea", "#e7eeff"],
+        "purpose": "The branch not taken, regular cut."
+      },
+      "mark-idle-small": {
+        "role": "mark",
+        "displayName": "Idle Route, lifted",
+        "theme": "fixed",
+        "canonical": "#56627f",
+        "oklch": "oklch(49.7% 0.049 267.1)",
+        "tonalRamp": ["#04091f", "#1a243d", "#36415c", "#55617e", "#7582a0", "#97a5c5", "#bbc9ea", "#e8eefe"],
+        "purpose": "The branch not taken, small cut (64 px and under), lifted so it survives at 16 to 32 px."
+      },
+      "mark-pivot": {
+        "role": "mark",
+        "displayName": "Points Pivot",
+        "theme": "fixed",
+        "canonical": "#e9eef8",
+        "oklch": "oklch(94.8% 0.014 264.5)",
+        "tonalRamp": ["#080b11", "#22252c", "#3e424a", "#5d616a", "#7e828b", "#a0a5ae", "#c4c9d3", "#eaeff9"],
+        "purpose": "The disc where the track forks."
       }
     },
     "typographyMeta": {
@@ -479,7 +587,80 @@
         "value": "240px",
         "note": "repeat(auto-fill, minmax(240px, 1fr)); no media-query breakpoints."
       }
-    ]
+    ],
+    "mark": {
+      "source": "src-tauri/icons/",
+      "grid": {
+        "canvas": 1024,
+        "plate": "continuous-corner squircle, 824 wide, 100 to 924 on both axes",
+        "plateRim": "3px #9fb6ff at 18%",
+        "plateGlow": "radial from top centre, r 0.75, #9fb6ff 5% to 0"
+      },
+      "cuts": [
+        {
+          "name": "regular",
+          "file": "app-icon.svg",
+          "sizes": "128 px and up",
+          "rasters": ["128x128.png", "128x128@2x.png", "icon.png", "icon.icns 128 to 1024"],
+          "folder": "x 312 to 712, y 186 to 486",
+          "track": "34 wide, round caps, from y 470",
+          "pivot": "r 22 at (512, 598)",
+          "coins": "r 58 at (330, 790) idle and (694, 790) lit",
+          "figures": true,
+          "railSheen": "#cfe8ff at 55%, 8.2 wide",
+          "idleCoin": "#46526d to #333d55",
+          "figureFill": {
+            "idle": "#1a2236",
+            "lit": "#0d1320"
+          }
+        },
+        {
+          "name": "small",
+          "file": "app-icon-small.svg",
+          "sizes": "64 px and under",
+          "rasters": ["32x32.png", "icon.icns 16, 32, 64"],
+          "folder": "x 262 to 762, y 150 to 530",
+          "track": "72 wide, round caps, from y 500",
+          "pivot": "r 40 at (512, 650)",
+          "coins": "r 96 at (312, 800) idle and (712, 800) lit",
+          "figures": false,
+          "railSheen": null,
+          "idleCoin": "#5e6a87 to #4e5a76"
+        }
+      ],
+      "coinRim": "4px #e6f3ff, 90% to 0 at 60% height, lit coin only",
+      "folderDetails": "front highlight 5px #fff at 50%; overlap band 14px #000 at 10%",
+      "shadows": [
+        {
+          "name": "plate-lift",
+          "value": "feDropShadow dx 0 dy 10 stdDeviation 12 #000 0.28",
+          "purpose": "Lifts the plate."
+        },
+        {
+          "name": "folder-drop",
+          "value": "feDropShadow dx 0 dy 10 stdDeviation 14 #000 0.45",
+          "purpose": "Folder and pivot above the track."
+        },
+        {
+          "name": "contact",
+          "value": "feDropShadow dx 0 dy 6 stdDeviation 7 #000 0.45",
+          "purpose": "Track and coins on the plate."
+        }
+      ],
+      "menuBarGlyph": {
+        "file": "tray.svg",
+        "raster": "tray.png 36 x 36 (2x)",
+        "shownAt": "18 pt tall (tray-icon), icon_as_template(true) in src-tauri/src/tray.rs",
+        "viewBox": "2 2.15 18 18, hugging the folder",
+        "folder": "solid #000, 1.6 corner radii",
+        "mask": {
+          "litBranch": "stem and curve, stroke 1.6 round caps, #000 (alpha 0, full cut)",
+          "litCoin": "r 1.8, #000 (full cut)",
+          "idleBranch": "curve only, stroke 1.6, #808080 (alpha 0.5, half cut), no coin"
+        }
+      },
+      "provenance": "Each top-level PNG carries an impeccable:prompt tEXt chunk naming its SVG and pixel size."
+    }
   },
   "components": [
     {
@@ -487,7 +668,7 @@
       "kind": "button",
       "refersTo": "button-push",
       "description": "Default action button; most actions in the window.",
-      "html": "<button class=\"ds-btn-push\">Shells\u2026</button>",
+      "html": "<button class=\"ds-btn-push\">Shells…</button>",
       "css": ".ds-btn-push{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 12px;border:0;border-radius:6px;background:var(--er-button);color:var(--er-ink);font:400 13px/18px -apple-system,BlinkMacSystemFont,\"SF Pro Text\",sans-serif;box-shadow:0 0 0 0.5px rgb(0 0 0/0.14),0 1px 2px rgb(0 0 0/0.08);white-space:nowrap}.ds-btn-push:hover{filter:brightness(0.97)}.ds-btn-push:active{filter:brightness(0.9)}.ds-btn-push:focus-visible{outline:3px solid color-mix(in srgb,var(--er-accent) 50%,transparent);outline-offset:1px}"
     },
     {
@@ -495,7 +676,7 @@
       "kind": "button",
       "refersTo": "button-primary",
       "description": "The single accent action for the current window state.",
-      "html": "<button class=\"ds-btn-primary\">Check Folder\u2026</button>",
+      "html": "<button class=\"ds-btn-primary\">Check Folder…</button>",
       "css": ".ds-btn-primary{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 12px;border:0;border-radius:6px;background:var(--er-accent);color:var(--er-on-accent);font:500 13px/18px -apple-system,BlinkMacSystemFont,\"SF Pro Text\",sans-serif;box-shadow:0 1px 2px rgb(0 0 0/0.18);white-space:nowrap}.ds-btn-primary:hover{filter:brightness(1.05)}.ds-btn-primary:active{filter:brightness(0.9)}.ds-btn-primary:focus-visible{outline:3px solid color-mix(in srgb,var(--er-accent) 50%,transparent);outline-offset:1px}"
     },
     {
@@ -511,7 +692,7 @@
       "kind": "input",
       "refersTo": "text-field-mono",
       "description": "Path field in the inspector; mono variant for values.",
-      "html": "<input class=\"ds-field ds-field-mono\" placeholder=\"Not set \u00b7 uses ~/.claude\" />",
+      "html": "<input class=\"ds-field ds-field-mono\" placeholder=\"Not set · uses ~/.claude\" />",
       "css": ".ds-field{height:28px;padding:0 8px;border:0;border-radius:6px;background:var(--er-field);color:var(--er-ink);font:400 13px/18px -apple-system,BlinkMacSystemFont,sans-serif;box-shadow:inset 0 0 0 1px var(--er-rule);caret-color:var(--er-accent)}.ds-field-mono{font:400 12px/16px ui-monospace,\"SF Mono\",Menlo,monospace}.ds-field::placeholder{color:var(--er-ink-2);font-style:italic}.ds-field:focus{outline:none;box-shadow:inset 0 0 0 1.5px var(--er-accent)}"
     },
     {
@@ -543,7 +724,7 @@
       "kind": "custom",
       "refersTo": "docket-result",
       "description": "Floating check result; idle state is a dashed drop zone.",
-      "html": "<footer class=\"ds-docket ds-docket-idle\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 2.5v6M5.5 6L8 8.5 10.5 6M2.5 9.5v3.5h11V9.5\"/></svg><p>Drop a folder on this window, or press <kbd>\u2318O</kbd>, to see which profile a new zsh window uses there.</p></footer><footer class=\"ds-docket ds-docket-result\"><span class=\"ds-tile ds-ok\" style=\"width:28px;height:28px\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3.5 8.4l2.8 2.8 6.2-6.4\"/></svg></span><div><strong>Routed to Work</strong> <span class=\"ds-mono\">~/dev/work/billing-api</span><p>sets <code class=\"ds-mono\">CLAUDE_CONFIG_DIR=~/.claude-work</code></p></div></footer>",
+      "html": "<footer class=\"ds-docket ds-docket-idle\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 2.5v6M5.5 6L8 8.5 10.5 6M2.5 9.5v3.5h11V9.5\"/></svg><p>Drop a folder on this window, or press <kbd>⌘O</kbd>, to see which profile a new zsh window uses there.</p></footer><footer class=\"ds-docket ds-docket-result\"><span class=\"ds-tile ds-ok\" style=\"width:28px;height:28px\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3.5 8.4l2.8 2.8 6.2-6.4\"/></svg></span><div><strong>Routed to Work</strong> <span class=\"ds-mono\">~/dev/work/billing-api</span><p>sets <code class=\"ds-mono\">CLAUDE_CONFIG_DIR=~/.claude-work</code></p></div></footer>",
       "css": ".ds-docket{display:flex;align-items:center;gap:16px;min-height:60px;margin-bottom:12px;padding:12px 16px;border-radius:10px;font:400 13px/18px -apple-system,BlinkMacSystemFont,sans-serif;box-sizing:border-box}.ds-docket p{margin:0}.ds-docket kbd{font:inherit}.ds-docket-idle{border:1.5px dashed color-mix(in srgb,var(--er-ink-3) 45%,transparent);color:var(--er-ink-2)}.ds-docket-result{background:var(--er-raised);color:var(--er-ink);box-shadow:var(--er-shadow-raised);animation:ds-rise 180ms cubic-bezier(0.16,1,0.3,1)}.ds-docket-result p{font-size:12px;line-height:16px;color:var(--er-ink-2)}.ds-docket-result code{color:var(--er-ink)}.ds-docket .ds-mono{font:400 12px/16px ui-monospace,\"SF Mono\",Menlo,monospace}.ds-tile{display:inline-grid;place-items:center;border-radius:8px;flex-shrink:0;background:color-mix(in srgb,currentColor 14%,transparent)}.ds-ok{color:var(--er-ok)}@keyframes ds-rise{from{transform:translateY(6px);opacity:0}}"
     },
     {
@@ -553,23 +734,40 @@
       "description": "Agent and shell switchers in the docket.",
       "html": "<fieldset class=\"ds-seg\"><button aria-pressed=\"true\">Claude Code</button><button aria-pressed=\"false\">Codex</button></fieldset>",
       "css": ".ds-seg{display:inline-flex;margin:0;padding:2px;border:0;border-radius:7px;background:color-mix(in srgb,var(--er-ink) 7%,transparent)}.ds-seg button{height:22px;padding:0 10px;border:0;border-radius:5px;background:transparent;color:var(--er-ink-2);font:400 12px/16px -apple-system,BlinkMacSystemFont,sans-serif}.ds-seg button:hover{color:var(--er-ink)}.ds-seg button[aria-pressed=\"true\"]{background:var(--er-button);color:var(--er-ink);box-shadow:0 0.5px 1.5px rgb(0 0 0/0.18)}.ds-seg button:focus-visible{outline:3px solid color-mix(in srgb,var(--er-accent) 50%,transparent);outline-offset:1px}"
+    },
+    {
+      "name": "App Icon",
+      "kind": "custom",
+      "refersTo": "app-icon",
+      "description": "Points: a Finder-blue folder on a navy squircle whose track forks to two account coins and lights the one it uses. Simplified preview; the source of truth is src-tauri/icons/app-icon.svg.",
+      "html": "<svg class=\"ds-mark\" viewBox=\"0 0 1024 1024\" width=\"128\" height=\"128\" aria-label=\"EnvRouter\"><defs><linearGradient id=\"ds-plate\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#202b42\"/><stop offset=\"1\" stop-color=\"#0d1320\"/></linearGradient><linearGradient id=\"ds-front\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#72b8fb\"/><stop offset=\"1\" stop-color=\"#3d8ff0\"/></linearGradient><linearGradient id=\"ds-coin\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#6cbcf6\"/><stop offset=\"1\" stop-color=\"#3d93e0\"/></linearGradient></defs><rect x=\"100\" y=\"100\" width=\"824\" height=\"824\" rx=\"185\" fill=\"url(#ds-plate)\" stroke=\"#9fb6ff\" stroke-opacity=\"0.18\" stroke-width=\"3\"/><g fill=\"none\" stroke-linecap=\"round\" stroke-width=\"34\"><path d=\"M512,470 V598 C512,703.6 352,694.96 334,750\" stroke=\"#3a4560\"/><path d=\"M512,470 V598 C512,703.6 672,694.96 690,750\" stroke=\"#4aa3e8\"/></g><circle cx=\"330\" cy=\"790\" r=\"58\" fill=\"#46526d\"/><circle cx=\"694\" cy=\"790\" r=\"58\" fill=\"url(#ds-coin)\"/><path d=\"M312,242 V199.2 Q312,186 325.2,186 H451.8 C465.8,186 468.6,220 484,220 H690 Q712,220 712,242 V464 Q712,486 690,486 H334 Q312,486 312,464 Z\" fill=\"#2b7be0\"/><rect x=\"312\" y=\"259\" width=\"400\" height=\"227\" rx=\"22\" fill=\"url(#ds-front)\"/><circle cx=\"512\" cy=\"598\" r=\"22\" fill=\"#e9eef8\"/></svg>",
+      "css": ".ds-mark{display:block;filter:drop-shadow(0 4px 8px rgb(0 0 0/0.25))}"
+    },
+    {
+      "name": "Menu Bar Glyph",
+      "kind": "custom",
+      "refersTo": "menu-bar-glyph",
+      "description": "Template image: a solid folder with the fork cut through it, lit branch full cut, idle branch half cut. Shown 18 pt tall; macOS reads only alpha.",
+      "html": "<span class=\"ds-menubar\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"2 2.15 18 18\" width=\"36\" height=\"36\"> <defs> <mask id=\"ds-fork\"> <rect x=\"0\" y=\"0\" width=\"22\" height=\"22\" fill=\"#fff\"/> <path d=\"M11 11c0 1.7-3 2.1-3.6 4.4\" stroke=\"#808080\" stroke-width=\"1.6\" fill=\"none\" stroke-linecap=\"round\"/> <path d=\"M11 8.7v2.3c0 1.7 3 2.1 3.6 4.4\" stroke=\"#000\" stroke-width=\"1.6\" fill=\"none\" stroke-linecap=\"round\"/> <circle cx=\"14.6\" cy=\"15.7\" r=\"1.8\" fill=\"#000\"/> </mask> </defs> <path d=\"M2.5 6.3V5a1.6 1.6 0 0 1 1.6-1.6h3.7l1.7 1.9h8.4a1.6 1.6 0 0 1 1.6 1.6v10.5a1.6 1.6 0 0 1-1.6 1.6H4.1a1.6 1.6 0 0 1-1.6-1.6z\" fill=\"#000\" mask=\"url(#ds-fork)\"/> </svg></span>",
+      "css": ".ds-menubar{display:inline-flex;align-items:center;padding:6px 10px;border-radius:6px;background:#f2f2f4}.ds-menubar svg{width:18px;height:18px}"
     }
   ],
   "narrative": {
     "northStar": "The Sorting Frame",
-    "overview": "**Creative North Star: \"The Sorting Frame\"**\n\nEnvRouter is a native-feeling Mac utility, opened occasionally to set up profiles or to find out why a folder didn't route. It is quiet, precise and dense in the way System Settings is: 13px system type, 26px controls, nothing decorative. The structure carries the product's one rule. Each profile is a card that holds the folders it owns, and a nested folder owned by another profile sits inside its parent's card as a carve-out tagged with the owner's colour, so \"the most specific folder wins\" is something you see.\n\nThe world is a post-office pigeonhole frame rendered as layered modern-Mac cards. The user overrode an earlier flat, hairline-ruled sheet (\"it's hard to tell between surfaces\"), so depth is now structural: a soft window ground, cards on it, and raised surfaces above those. The system accent follows the user's macOS accent colour and is spent on the one action that matters, selection, and the filed slip. Status always pairs colour with shape. Mono appears only where the text is a path or a value worth copying.\n\nRejected, by the user: a web-app look, the System Settings sidebar-and-switches default, the flat ruled sheet, and an inline profile editor in the grid.",
+    "overview": "**Creative North Star: \"The Sorting Frame\"**\n\nEnvRouter is a native-feeling Mac utility, opened occasionally to set up profiles or to find out why a folder didn't route. It is quiet, precise and dense in the way System Settings is: 13px system type, 26px controls, nothing decorative. The structure carries the product's one rule. Each profile is a card that holds the folders it owns, and a nested folder owned by another profile sits inside its parent's card as a carve-out tagged with the owner's colour, so \"the most specific folder wins\" is something you see.\n\nThe world is a post-office pigeonhole frame rendered as layered modern-Mac cards. The user overrode an earlier flat, hairline-ruled sheet (\"it's hard to tell between surfaces\"), so depth is now structural: a soft window ground, cards on it, and raised surfaces above those. The system accent follows the user's macOS accent colour and is spent on the one action that matters, selection, and the filed slip. Status always pairs colour with shape. Mono appears only where the text is a path or a value worth copying.\n\nThe product's mark, \"Points\", carries the same idea into system chrome: a Finder-blue folder on a dark navy tile whose track forks to two accounts and lights the one it uses. In the menu bar it becomes a solid template folder with the fork cut through it. The mark is drawn as SVG and rendered by hand into every raster; it has its own fixed palette and does not theme.\n\nRejected, by the user: a web-app look, the System Settings sidebar-and-switches default, the flat ruled sheet, and an inline profile editor in the grid.",
     "keyCharacteristics": [
       "Three surface layers (window ground, card, raised), each visibly distinct in light and dark.",
       "One accent button per window state.",
       "Status is shape plus colour, in a tinted tile.",
       "Id-keyed profile colours drawn from a status-free palette.",
       "System sans for everything; mono only for paths and values.",
-      "Damped motion around 140 to 300ms on one settle curve; reduced motion respected."
+      "Damped motion around 140 to 300ms on one settle curve; reduced motion respected.",
+      "One mark in two cuts (128 px and up, 64 px and under) plus an alpha-only menu bar template."
     ],
     "rules": [
       {
         "name": "The One Accent Rule",
-        "body": "At most one accent-filled button is visible per window state. The health banner's action outranks the check result's action, which outranks Check Folder\u2026 in the titlebar; whichever loses renders as a push button. With the inspector open, Save takes the accent and Check Folder\u2026 stands down.",
+        "body": "At most one accent-filled button is visible per window state. The health banner's action outranks the check result's action, which outranks Check Folder… in the titlebar; whichever loses renders as a push button. With the inspector open, Save takes the accent and Check Folder… stands down.",
         "section": "colors"
       },
       {
@@ -601,10 +799,30 @@
         "name": "The Outline Selection Rule",
         "body": "Selection and drop-target states on cards use an outline (2px accent, 2px offset), never a box-shadow, because a card's own shadow utility would override a shadow ring. A drop target adds the accent tint behind the outline.",
         "section": "elevation"
+      },
+      {
+        "name": "The Fixed Mark Rule",
+        "body": "The mark's palette is fixed in its SVGs. It is not recoloured for a profile, the system accent or dark mode; below the folder, the lit branch is the only blue and the idle branch stays grey.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two Cuts Rule",
+        "body": "The mark is drawn twice on one grid. Sizes of 64 px and under use the small cut (thicker track, solid coins, no figures); 128 px and up use the regular cut. Never downscale the regular cut into a small slot.",
+        "section": "components"
+      },
+      {
+        "name": "The Alpha-Only Rule",
+        "body": "The menu bar glyph is a template image: macOS reads only its alpha and paints it for the menu bar's appearance. Every inner shape is a mask cutout, full for the lit route and half for the idle one; colour inside the glyph means nothing.",
+        "section": "components"
+      },
+      {
+        "name": "The Rendered-From-Source Rule",
+        "body": "Rasters are outputs of the SVGs, rendered one size at a time. They are never edited by hand and never regenerated from a single source.",
+        "section": "components"
       }
     ],
     "dos": [
-      "Do keep exactly one accent button per window state, ranked banner action, then the check result's action, then Check Folder\u2026; every other action is a push or plain button.",
+      "Do keep exactly one accent button per window state, ranked banner action, then the check result's action, then Check Folder…; every other action is a push or plain button.",
       "Do pair every status with a shape as well as a colour: check (ok), bang (warn), cross (problem), dash (neutral), dashed ring (pending).",
       "Do give each profile an id-keyed colour from the eight profile hues, shifting it only when two profiles on screen clash.",
       "Do set paths, variables and values in mono and keep them selectable; everything else stays system sans and unselectable.",
@@ -613,7 +831,10 @@
       "Do draw icons as inline SVG on the 16px, 1.5px-stroke grid.",
       "Do show the idle docket as a dashed drop zone, and the result as a single raised card.",
       "Do keep motion on the settle curve (`cubic-bezier(0.16, 1, 0.3, 1)`) between 140 and 300ms, and let reduced motion collapse it.",
-      "Do verify both themes and a non-blue system accent at 900 \u00d7 620 and 680 \u00d7 460."
+      "Do verify both themes and a non-blue system accent at 900 × 620 and 680 × 460.",
+      "Do render each icon raster from its SVG at its exact pixel size: the small cut for 64 px and under, the regular cut for 128 px and up, and `tray.svg` at 36 px.",
+      "Do make every inner shape of the menu bar glyph a mask cutout: full for the lit branch and its coin, half (alpha 0.5) for the idle branch.",
+      "Do check the mark at 16 and 32 px and the glyph in a light and a dark menu bar after any change."
     ],
     "donts": [
       "Don't use red, amber or green for a profile colour; those belong to status.",
@@ -621,11 +842,16 @@
       "Don't use mono for labels, headings or prose.",
       "Don't edit a profile inline in the grid; the user rejected it because the editor got hidden.",
       "Don't use a box-shadow ring for card selection or drop target; the card's own shadow overrides it.",
-      "Don't use Unicode glyphs (\u2713, \u2717, \u26a0, \u2192) as icons. \u2318 shortcut notation in a `kbd` is text, not an icon, and is fine.",
+      "Don't use Unicode glyphs (✓, ✗, ⚠, →) as icons. ⌘ shortcut notation in a `kbd` is text, not an icon, and is fine.",
       "Don't use `ink-tertiary` for any text that must be read.",
       "Don't put a second accent-filled button on screen.",
       "Don't return to the flat, hairline-ruled sheet or to a System Settings sidebar-and-switches layout; surfaces must stay visibly layered.",
-      "Don't add help paragraphs; a verdict is one headline, one note, its values and one action."
+      "Don't add help paragraphs; a verdict is one headline, one note, its values and one action.",
+      "Don't run `tauri icon`: it rebuilds every size from one source, losing the small cut and the provenance, and recreates the Windows tiles.",
+      "Don't draw the menu bar glyph's cutouts with white fills; a template reads only alpha, so white paint renders as solid.",
+      "Don't recolour the mark per profile, per system accent or per theme, or use the profile palette as a set in it.",
+      "Don't make the mark a terminal prompt, a config gear or a generic folder with a badge.",
+      "Don't size `tray.svg`'s viewBox with padding around the glyph; tray-icon scales the whole image to 18 pt, so padding shrinks the folder."
     ],
     "knownDrift": [
       "The New Profile card's creating state, the hovering docket, and the whole-window drag ring use inset or outer box-shadow rings rather than outlines. They don't sit under a card shadow, so they render, but they predate The Outline Selection Rule.",
