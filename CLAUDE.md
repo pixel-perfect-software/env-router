@@ -41,7 +41,7 @@ A missing config means the tool runs silently. A broken one prints a warning and
 - **Bump `CONFIG_VERSION` in `config.rs`** for any change to the shape of `config.json`, and migrate older versions in `config::load`. The shim refuses configs from a newer version.
 
 ## Conventions
-- **pnpm only.** `packageManager` pins `pnpm@12.9.1`, and `devEngines` downloads it if it's missing.
+- **pnpm only.** `packageManager` pins `pnpm@12.10.1`, and `devEngines` downloads it if it's missing.
 - **Biome, not ESLint or Prettier:** 2-space indentation, **single quotes, no semicolons**, 150-column lines. Don't copy the double-quote/semicolon style from Tauri docs. Run `pnpm format-and-lint:fix`.
 - **Tailwind v4** through `@tailwindcss/vite`: no config file and no PostCSS; theme tokens go in `src/index.css` with `@theme`.
 - **Rust is a Cargo workspace** rooted at the repo (`crates/core`, `crates/shim`, `src-tauri`), with one `target/` at the root. Use `cargo fmt --all`. Release profile settings live in the root `Cargo.toml`.

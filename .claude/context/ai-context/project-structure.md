@@ -65,7 +65,7 @@ adds a marked block to the end of `~/.zshrc` (or `$ZDOTDIR/.zshrc`), bash's logi
 | Styling | Tailwind CSS 4 via `@tailwindcss/vite` |
 | Lint / format | Biome 2.5 (TS/JSON/CSS); `cargo fmt` and clippy (Rust) |
 | Tests | `cargo test` (Rust, including the built shim and a real zsh); Vitest (`src/**/*.test.ts`) |
-| Package manager | pnpm 12.9.1 (pinned) |
+| Package manager | pnpm 12.10.1 (pinned) |
 | Platform | macOS 11+; built from source on each user's Mac (no notarized downloads) |
 
 ## Commands
