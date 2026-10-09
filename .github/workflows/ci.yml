@@ -26,6 +26,8 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
+      # The runner has zsh and bash; fish's folder check is only tested where fish is installed.
+      - run: brew install fish
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm format-and-lint

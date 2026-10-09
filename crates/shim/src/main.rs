@@ -15,8 +15,9 @@ use std::process::{Command, ExitCode};
 
 use envrouter_core::{config, paths, resolve, EXIT_TOOL_NOT_FOUND};
 
-/// When set, print how this invocation would be routed, as one line of JSON, and exit
-/// without running the tool. The app uses it to check a folder.
+/// When set to `1`, print how this invocation would be routed, as one line of JSON, and exit
+/// without running the tool. The app uses it to check a folder. Any other value is ignored, so
+/// a stray `ENVROUTER_EXPLAIN=0` can't quietly stop every tool from running.
 const EXPLAIN_VAR: &str = "ENVROUTER_EXPLAIN";
 
 fn main() -> ExitCode {
@@ -46,7 +47,7 @@ fn main() -> ExitCode {
     };
     let (profile, env_var) = route(&tool, home.as_deref());
 
-    if env::var_os(EXPLAIN_VAR).is_some() {
+    if env::var_os(EXPLAIN_VAR).is_some_and(|value| value == "1") {
         let (var, value) = env_var.unzip();
         let explanation = serde_json::json!({
             "tool": tool,
@@ -78,7 +79,12 @@ fn route(tool: &str, home: Option<&Path>) -> (Option<String>, Option<(String, St
         Ok(Some(config)) => config,
         Ok(None) => return (None, None),
         Err(err) => {
-            eprintln!("envrouter: {err}. Running {tool} without a profile.");
+            // Some messages already end in a full stop.
+            let err = err.to_string();
+            eprintln!(
+                "envrouter: {}. Running {tool} without a profile.",
+                err.trim_end_matches('.')
+            );
             return (None, None);
         }
     };
@@ -90,9 +96,9 @@ fn route(tool: &str, home: Option<&Path>) -> (Option<String>, Option<(String, St
     (resolution.profile.map(|p| p.name.clone()), resolution.env)
 }
 
-/// The first `tool` on PATH that isn't this shim. It skips the shims directory and anything
-/// that resolves to this binary, so a duplicated PATH entry or a stray link can't make the
-/// shim exec itself in a loop.
+/// The first `tool` on PATH that isn't a shim. It skips the shims directory and anything
+/// that resolves to this binary or another copy of it, so a duplicated PATH entry, a stray
+/// link or a second install can't make shims exec themselves or each other in a loop.
 fn find_real(tool: &str, home: Option<&Path>) -> Option<PathBuf> {
     let me = env::current_exe().and_then(fs::canonicalize).ok();
     let shims = home.and_then(|home| fs::canonicalize(paths::shims(home)).ok());
@@ -101,9 +107,19 @@ fn find_real(tool: &str, home: Option<&Path>) -> Option<PathBuf> {
         .filter(|dir| !dir.as_os_str().is_empty())
         .filter(|dir| shims.is_none() || fs::canonicalize(dir).ok() != shims)
         .map(|dir| dir.join(tool))
-        .find(|candidate| {
-            is_executable(candidate) && (me.is_none() || fs::canonicalize(candidate).ok() != me)
-        })
+        .find(|candidate| is_executable(candidate) && !is_shim(candidate, me.as_deref()))
+}
+
+/// Whether `candidate` runs this binary or another installed copy of it, say one under a
+/// scratch HOME. Two copies on PATH would otherwise exec each other back and forth.
+fn is_shim(candidate: &Path, me: Option<&Path>) -> bool {
+    let Ok(target) = fs::canonicalize(candidate) else {
+        return false;
+    };
+    me == Some(target.as_path())
+        || target
+            .file_name()
+            .is_some_and(|name| name == paths::SHIM_NAME)
 }
 
 fn is_executable(path: &Path) -> bool {

@@ -48,8 +48,14 @@ impl Profile {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ConfigState {
+    /// A file without one predates versioning, so it's version 1, not the current version.
+    #[serde(default = "first_version")]
     pub version: u32,
     pub profiles: Vec<Profile>,
+}
+
+fn first_version() -> u32 {
+    1
 }
 
 impl Default for ConfigState {
@@ -240,11 +246,14 @@ pub fn validate(config: &ConfigState, home: &Path) -> Result<()> {
         }
         for raw in &profile.trigger_paths {
             let base = trigger_base(raw, home)?;
-            if let Some(other) = owners.insert(base.clone(), profile) {
+            // Compared as `resolve` compares them: through symlinks and letter case, two
+            // spellings of one folder are still one folder.
+            let folder = fs::canonicalize(&base).unwrap_or(base);
+            if let Some(other) = owners.insert(folder.clone(), profile) {
                 if other.id != profile.id {
                     return Err(Error::Invalid(format!(
                         "{} is a trigger path in both \"{}\" and \"{}\". A folder can belong to only one profile.",
-                        base.display(),
+                        folder.display(),
                         other.name,
                         profile.name
                     )));
@@ -362,6 +371,21 @@ mod tests {
             profile("b", &["/home/me/dev/*"], None),
         ]);
         let err = validate(&config, &home()).unwrap_err().to_string();
+        assert!(err.contains("\"a\" and \"b\""), "{err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validate_rejects_one_folder_spelled_two_ways() {
+        let root = tempfile::tempdir().unwrap();
+        let home = fs::canonicalize(root.path()).unwrap();
+        fs::create_dir_all(home.join("dev/work")).unwrap();
+        std::os::unix::fs::symlink(home.join("dev/work"), home.join("work")).unwrap();
+        let config = config(vec![
+            profile("a", &["~/dev/work"], None),
+            profile("b", &["~/work"], None),
+        ]);
+        let err = validate(&config, &home).unwrap_err().to_string();
         assert!(err.contains("\"a\" and \"b\""), "{err}");
     }
 

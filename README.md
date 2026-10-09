@@ -32,9 +32,10 @@ still runs, without a profile.
 folder picks the profile. If that profile doesn't set the tool you're running, the tool runs
 with its default config; it does not fall back to a profile further up.
 
-The app can also check a folder: it starts your shell the way a new terminal window would and
-reports what running the tool there would really do, including an alias, a shell function or
-another copy on `PATH` getting in the way.
+The app can also check a folder: it starts your shell the way a new terminal window would, runs
+its prompt hooks once, and reports what running the tool there would really do, including an
+alias, a shell function or another copy on `PATH` getting in the way. That includes a copy a
+prompt hook (mise, direnv) moves ahead of EnvRouter's shims.
 
 ## Status
 

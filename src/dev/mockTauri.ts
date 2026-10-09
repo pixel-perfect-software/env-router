@@ -76,6 +76,12 @@ const owner = (cfg: ConfigState, folder: string) => {
   return best?.profile ?? null
 }
 
+/** The profile's settings for a tool, if it sets one: an empty path means unset, as `Profile::tool` treats it. */
+const setTool = (p: Profile | null, tool: string) => {
+  const settings = p?.tools[tool]
+  return settings?.path.trim() ? settings : undefined
+}
+
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const respond = async (cmd: string, args: unknown): Promise<unknown> => {
@@ -98,7 +104,7 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       return config
     case 'save_config': {
       const next = a.payload as ConfigState
-      const seen = new Map<string, string>()
+      const seen = new Map<string, Profile>()
       for (const p of next.profiles) {
         for (const [name, tool] of Object.entries(p.tools)) {
           const path = tool.path.trim()
@@ -107,9 +113,9 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
         }
         for (const t of p.triggerPaths) {
           const other = seen.get(expand(t))
-          if (other && other !== p.name)
-            throw `${expand(t)} is a trigger path in both "${other}" and "${p.name}". A folder can belong to only one profile.`
-          seen.set(expand(t), p.name)
+          if (other && other.id !== p.id)
+            throw `${expand(t)} is a trigger path in both "${other.name}" and "${p.name}". A folder can belong to only one profile.`
+          seen.set(expand(t), p)
         }
       }
       await delay(250)
@@ -130,17 +136,21 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
     }
     case 'preview_folder': {
       const p = owner(a.payload as ConfigState, a.folder as string)
-      const tool = p?.tools[a.tool as string]
+      const tool = setTool(p, a.tool as string)
       return { profileId: p?.id ?? null, profile: p?.name ?? null, envVar: tool ? tool.envVar : null, value: tool ? expand(tool.path) : null }
     }
     case 'check_folder': {
       await delay(1100)
+      if (!(a.folder as string).startsWith('/')) throw `${a.folder} isn't a folder. Drop or choose a folder to check.`
       const s = setup.shells.find((x) => x.shell === a.shell)
       if (scenario === 'shadowed') return { status: 'shadowedByShell', kind: 'function', origin: `${HOME}/.zshrc` } satisfies FolderCheck
-      // With the shell off, the real backend finds the tool itself on PATH, not nothing.
-      if (!s?.installed) return { status: 'shadowedOnPath', path: `${HOME}/.local/bin/${a.tool as string}` } satisfies FolderCheck
+      // With the shell off, or no profile setting the tool (so no shim for it), the real backend
+      // finds the tool itself on PATH, not nothing.
+      const shimmed = config.profiles.some((p) => setTool(p, a.tool as string))
+      if (!s?.installed || !shimmed)
+        return { status: 'shadowedOnPath', path: `${HOME}/.local/bin/${a.tool as string}`, byPromptHook: false } satisfies FolderCheck
       const p = owner(config, a.folder as string)
-      const tool = p?.tools[a.tool as string]
+      const tool = setTool(p, a.tool as string)
       return {
         status: 'routed',
         profile: p?.name ?? null,

@@ -31,7 +31,7 @@ env-router/
 │   │                          # verdict.ts (check wording, tested in verdict.test.ts), paths.ts, useFolderDrop.ts, confirm.ts
 │   └── dev/mockTauri.ts       # dev-only browser mock; never bundled
 ├── README.md, LICENSE         # what it is, how it works, build, uninstall; MIT
-├── .github/workflows/ci.yml   # lint, type check, frontend and Rust tests on macOS
+├── .github/workflows/ci.yml   # lint, type check, frontend and Rust tests on macOS (with fish installed)
 ├── PRODUCT.md                 # product truth for design work
 ├── .impeccable/               # design-workflow state: surface brief, review captures
 ├── .claude/                   # Claude Code settings and context docs
@@ -51,7 +51,7 @@ adds a marked block to the end of `~/.zshrc` (or `$ZDOTDIR/.zshrc`), bash's logi
 | `save_config(payload)` | Validates, saves, installs the shim, syncs the symlinks |
 | `get_setup_status` | Whether the shim is installed, plus per-shell availability, default shell and block status |
 | `set_shell_integration(shell, enabled)` | Adds or removes the startup-file block |
-| `check_folder(shell, folder, tool)` | Real-shell check: routed, shadowed by an alias/function, shadowed on PATH (which includes a shell that's off), not found, tool not installed, or shim failed |
+| `check_folder(shell, folder, tool)` | Real-shell check, after running the prompt hooks once: routed, shadowed by an alias/function, shadowed on PATH (which includes a shell that's off, and says whether a prompt hook did it), not found, tool not installed, or shim failed |
 | `preview_folder(payload, folder, tool)` | Instant profile preview from an unsaved config |
 | `open_in_editor(path)` | Opens an existing file inside the home folder in the default text editor |
 

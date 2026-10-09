@@ -43,9 +43,10 @@ pub fn is_installed(home: &Path, source: &Path) -> bool {
     }
 }
 
-/// Makes the shims directory hold exactly one link per tool the config routes. Only links
-/// pointing at the shim are ever removed or replaced, so anything else in there is left
-/// alone and reported.
+/// Makes the shims directory hold exactly one link per tool the config routes. Links to the
+/// shim for tools no longer routed are removed, and a link named after a routed tool is
+/// pointed at the shim. Anything that isn't a link is left alone, and reported if it's in
+/// the way.
 pub fn sync(home: &Path, config: &ConfigState) -> Result<()> {
     let dir = paths::shims(home);
     let target = paths::shim_binary(home);

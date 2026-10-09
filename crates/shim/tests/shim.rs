@@ -5,7 +5,9 @@
 use std::fs;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 const SHIM: &str = env!("CARGO_BIN_EXE_envrouter-shim");
 
@@ -173,6 +175,54 @@ fn never_execs_itself_through_duplicate_or_aliased_shim_dirs() {
     );
 }
 
+/// A second install of the shim (one made under a scratch HOME, say) is on PATH too, and
+/// HOME names neither install, so the shims-directory filter can't help. Without the copy
+/// check, each shim would exec the other forever; the deadline turns that into a failure.
+#[test]
+fn never_execs_another_copy_of_the_shim() {
+    let f = Fixture::new(Some(CONFIG));
+    let other = f.home.join("scratch/.envrouter");
+    fs::create_dir_all(other.join("bin")).unwrap();
+    fs::create_dir_all(other.join("shims")).unwrap();
+    fs::copy(SHIM, other.join("bin/envrouter-shim")).unwrap();
+    symlink(other.join("bin/envrouter-shim"), other.join("shims/claude")).unwrap();
+
+    let mut child = Command::new(f.shims.join("claude"))
+        .args(["two words", "x"])
+        .current_dir(f.home.join("elsewhere"))
+        .env("HOME", f.home.join("elsewhere"))
+        .env(
+            "PATH",
+            format!(
+                "{}:{}:{}:/usr/bin:/bin",
+                f.shims.display(),
+                other.join("shims").display(),
+                f.real_bin.display()
+            ),
+        )
+        .env_remove("CLAUDE_CONFIG_DIR")
+        .env_remove("ENVROUTER_EXPLAIN")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while child.try_wait().unwrap().is_none() {
+        if Instant::now() > deadline {
+            child.kill().unwrap();
+            panic!("the shim and its copy kept exec'ing each other");
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(
+        stdout(&output),
+        "unset 2 two words x\n",
+        "{}",
+        stderr(&output)
+    );
+}
+
 #[test]
 fn skips_empty_path_entries_instead_of_searching_the_current_directory() {
     let f = Fixture::new(Some(CONFIG));
@@ -216,7 +266,28 @@ fn explain_reports_the_route_without_running_the_tool() {
 }
 
 #[test]
+fn explain_needs_exactly_1_so_a_stray_value_still_runs_the_tool() {
+    let f = Fixture::new(Some(CONFIG));
+    for value in ["0", ""] {
+        let output = Command::new(f.shims.join("claude"))
+            .current_dir(f.home.join("elsewhere"))
+            .env("HOME", &f.home)
+            .env("PATH", f.default_path())
+            .env("ENVROUTER_EXPLAIN", value)
+            .env_remove("CLAUDE_CONFIG_DIR")
+            .output()
+            .unwrap();
+        assert_eq!(stdout(&output), "unset 0 \n", "ENVROUTER_EXPLAIN={value:?}");
+    }
+}
+
+#[test]
 fn refuses_to_run_under_its_own_name() {
-    let output = Command::new(SHIM).output().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let output = Command::new(SHIM)
+        .env_clear()
+        .env("HOME", home.path())
+        .output()
+        .unwrap();
     assert_eq!(output.status.code(), Some(2));
 }

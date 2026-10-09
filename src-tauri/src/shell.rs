@@ -2,7 +2,8 @@
 //! the end of each startup file, and checks the result in a real shell.
 
 use std::fs::{self, File};
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -57,15 +58,21 @@ impl Shell {
     }
 
     /// The installed binary. The app is launched from Finder with a minimal PATH, so this
-    /// looks in `/etc/shells`, where Homebrew users register shells like fish, and then the
-    /// usual install locations.
+    /// looks at the login shell, then in `/etc/shells`, where Homebrew users register shells
+    /// like fish, and then the usual install locations. The login shell comes first because
+    /// Homebrew lists its bash after `/bin/bash`, and a check should run the bash Terminal does.
     pub fn binary(self) -> Option<PathBuf> {
         let listed = fs::read_to_string("/etc/shells").unwrap_or_default();
-        listed
-            .lines()
-            .map(str::trim)
-            .filter(|line| line.starts_with('/'))
+        std::env::var_os("SHELL")
             .map(PathBuf::from)
+            .into_iter()
+            .chain(
+                listed
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| line.starts_with('/'))
+                    .map(PathBuf::from),
+            )
             .chain(
                 ["/bin", "/opt/homebrew/bin", "/usr/local/bin"]
                     .iter()
@@ -105,23 +112,30 @@ impl Shell {
         format!("{BEGIN}\n{NOTE}\n{body}\n{END}\n")
     }
 
-    /// One command, in this shell's syntax, that prints how `tool` resolves and the PATH.
+    /// One command, in this shell's syntax, that prints the PATH the startup files left, runs
+    /// the prompt hooks once as drawing the first prompt would (mise and direnv change PATH
+    /// there), then prints how `tool` resolves and the PATH. Hook output is discarded: a
+    /// terminal title has no newline and would run into the next line.
     /// `tool` has passed `is_command_name`, so it's safe to interpolate.
     fn probe(self, tool: &str) -> String {
         match self {
             // `whence -v` names the file a function came from: "claude is a shell function
-            // from /Users/me/.zshrc".
+            // from /Users/me/.zshrc". `cd` runs the chpwd hooks; each prompt runs precmd's.
+            // `check_folder` runs this as a script file, not with `-c`: only a script's
+            // commands run at the shell's top level, and direnv's hook does nothing elsewhere.
             Shell::Zsh => format!(
-                "print -r -- \"{KIND}$(whence -w -- {tool})\"; print -r -- \"{ORIGIN}$(whence -v -- {tool})\"; print -r -- \"{PATH_MARK}$PATH\""
+                "print -r -- \"{STARTUP_PATH}$PATH\"; for __envrouter_hook in chpwd $chpwd_functions precmd $precmd_functions; do (( $+functions[$__envrouter_hook] )) && $__envrouter_hook >/dev/null; done; print -r -- \"{KIND}$(whence -w -- {tool})\"; print -r -- \"{ORIGIN}$(whence -v -- {tool})\"; print -r -- \"{PATH_MARK}$PATH\""
             ),
-            // With extdebug, `declare -F` prints "claude 12 /Users/me/.bashrc".
+            // PROMPT_COMMAND is a string, or an array from bash 5.1; `[@]` reads both. With
+            // extdebug, `declare -F` prints "claude 12 /Users/me/.bashrc".
             Shell::Bash => format!(
-                "printf '%s\\n' \"{KIND}$(type -t -- {tool})\" \"{ORIGIN}$(shopt -s extdebug; declare -F -- {tool} 2>/dev/null)\" \"{PATH_MARK}$PATH\""
+                "printf '%s\\n' \"{STARTUP_PATH}$PATH\"; for __envrouter_hook in \"${{PROMPT_COMMAND[@]}}\"; do eval \"$__envrouter_hook\" >/dev/null; done; printf '%s\\n' \"{KIND}$(type -t -- {tool})\" \"{ORIGIN}$(shopt -s extdebug; declare -F -- {tool} 2>/dev/null)\" \"{PATH_MARK}$PATH\""
             ),
-            // An empty command substitution would drop the whole argument in fish, so each
-            // value goes through a variable.
+            // Prompt hooks are `--on-event fish_prompt` functions. An empty command
+            // substitution would drop the whole argument in fish, so each value goes through
+            // a variable.
             Shell::Fish => format!(
-                "set -l kind (type -t {tool} 2>/dev/null); set -l origin (functions --details {tool} 2>/dev/null); printf '%s\\n' \"{KIND}$kind\" \"{ORIGIN}$origin\" \"{PATH_MARK}\"(string join : $PATH)"
+                "set -l startup (string join : $PATH); emit fish_prompt >/dev/null; set -l kind (type -t {tool} 2>/dev/null); set -l origin (functions --details {tool} 2>/dev/null); printf '%s\\n' \"{STARTUP_PATH}$startup\" \"{KIND}$kind\" \"{ORIGIN}$origin\" \"{PATH_MARK}\"(string join : $PATH)"
             ),
         }
     }
@@ -144,13 +158,24 @@ impl Shell {
 fn zsh_dotdir(home: &Path) -> PathBuf {
     let probe = Shell::Zsh.binary().and_then(|zsh| {
         let mut command = Command::new(zsh);
-        command.args(["-c", "print -r -- \"${ZDOTDIR:-$HOME}\""]);
+        command.args([
+            "-c",
+            &format!("print -r -- \"{ZDOTDIR_MARK}${{ZDOTDIR:-$HOME}}\""),
+        ]);
         fresh_env(&mut command, home);
         run(command, Duration::from_secs(5)).ok()
     });
+    // `.zshenv` may print something of its own, so the answer is the marked line.
     probe
         .filter(|output| output.success)
-        .map(|output| output.stdout.trim().to_string())
+        .and_then(|output| {
+            output
+                .stdout
+                .lines()
+                .rev()
+                .find_map(|line| line.split_once(ZDOTDIR_MARK))
+                .map(|(_, dir)| dir.trim().to_string())
+        })
         .filter(|dir| dir.starts_with('/'))
         .map_or_else(|| home.to_path_buf(), PathBuf::from)
 }
@@ -181,9 +206,10 @@ pub struct ShellStatus {
 
 pub fn status(shell: Shell, home: &Path) -> ShellStatus {
     let files = shell.startup_files(home);
-    let installed = files.iter().all(|file| {
-        fs::read_to_string(file).is_ok_and(|text| text.lines().any(|line| line == BEGIN))
-    });
+    // A whole block, not just its first line: a BEGIN that lost its END runs nothing.
+    let installed = files
+        .iter()
+        .all(|file| fs::read_to_string(file).is_ok_and(|text| block_range(&text).is_some()));
     let is_default = std::env::var_os("SHELL").is_some_and(|login| {
         Path::new(&login)
             .file_name()
@@ -209,7 +235,22 @@ pub fn set_integration(shell: Shell, home: &Path, enabled: bool) -> Result<Shell
     }
     for file in shell.startup_files(home) {
         // Write through symlinks, so a dotfiles-managed file stays a link.
-        let file = fs::canonicalize(&file).unwrap_or(file);
+        let file = match fs::canonicalize(&file) {
+            Ok(target) => target,
+            // A link to a file that's missing, say dotfiles on a volume that isn't mounted.
+            // Writing would replace the link with a new file, so leave it for the user to fix.
+            Err(_) if fs::symlink_metadata(&file).is_ok_and(|meta| meta.is_symlink()) => {
+                if !enabled {
+                    continue; // No block to remove from a file that isn't there.
+                }
+                return Err(Error::Invalid(format!(
+                    "{} links to a file that doesn't exist. Fix the link, then turn {} on again.",
+                    file.display(),
+                    shell.name()
+                )));
+            }
+            Err(_) => file,
+        };
         let current = match fs::read_to_string(&file) {
             Ok(text) => text,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
@@ -239,16 +280,18 @@ fn upsert_block(text: &str, block: &str) -> String {
     }
 }
 
-/// Removes the block and the blank line `upsert_block` put before it.
+/// Removes every block (a pasted copy would otherwise keep routing on), each with the blank
+/// line `upsert_block` put before it.
 fn remove_block(text: &str) -> String {
-    let Some((start, end)) = block_range(text) else {
-        return text.to_string();
-    };
-    let before = &text[..start];
-    let before = before
-        .strip_suffix("\n\n")
-        .map_or(before, |b| &before[..b.len() + 1]);
-    format!("{before}{}", &text[end..])
+    let mut text = text.to_string();
+    while let Some((start, end)) = block_range(&text) {
+        let before = &text[..start];
+        let before = before
+            .strip_suffix("\n\n")
+            .map_or(before, |b| &before[..b.len() + 1]);
+        text = format!("{before}{}", &text[end..]);
+    }
+    text
 }
 
 /// Byte range of the block, from the start of the BEGIN line through the END line's newline.
@@ -274,6 +317,9 @@ fn block_range(text: &str) -> Option<(usize, usize)> {
 const KIND: &str = "__ENVROUTER_KIND__=";
 const PATH_MARK: &str = "__ENVROUTER_PATH__=";
 const ORIGIN: &str = "__ENVROUTER_ORIGIN__=";
+/// PATH as the startup files left it, before any prompt hook ran.
+const STARTUP_PATH: &str = "__ENVROUTER_STARTUP_PATH__=";
+const ZDOTDIR_MARK: &str = "__ENVROUTER_ZDOTDIR__=";
 
 /// What running `tool` in `folder` would do in a fresh terminal window.
 #[derive(Debug, PartialEq, Serialize)]
@@ -298,7 +344,12 @@ pub enum FolderCheck {
     },
     /// Another `tool` is found before the shim: it's earlier on PATH than the shims
     /// directory, or the shims directory isn't on PATH at all (the integration is off).
-    ShadowedOnPath { path: String },
+    ShadowedOnPath {
+        path: String,
+        /// The startup files left the shim first, and a prompt hook (mise, direnv) moved
+        /// this ahead of it. Where the block sits in the file doesn't matter then.
+        by_prompt_hook: bool,
+    },
     /// Nothing named `tool` is on PATH: no shim and no real tool.
     NotFound,
     /// The shim is first on PATH, but there's no real `tool` after it to run.
@@ -307,9 +358,9 @@ pub enum FolderCheck {
     ShimFailed { message: String },
 }
 
-/// Starts the shell the way Terminal does (login, interactive) in `folder`, asks it how
-/// `tool` resolves, then asks the shim, run with that shell's PATH, how it would route.
-/// Nothing here runs the real tool.
+/// Starts the shell the way Terminal does (login, interactive) in `folder`, runs its prompt
+/// hooks once, asks it how `tool` resolves, then asks the shim, run with that shell's PATH,
+/// how it would route. Nothing here runs the real tool.
 pub fn check_folder(shell: Shell, home: &Path, folder: &Path, tool: &str) -> Result<FolderCheck> {
     if !config::is_command_name(tool) {
         return Err(Error::Invalid(format!(
@@ -325,22 +376,37 @@ pub fn check_folder(shell: Shell, home: &Path, folder: &Path, tool: &str) -> Res
     let binary = shell
         .binary()
         .ok_or_else(|| Error::Invalid(format!("{} isn't installed.", shell.name())))?;
+    let probe = shell.probe(tool);
+    let mut command = Command::new(binary);
+    command.args(["-l", "-i"]);
+    // zsh reads the probe from a file (see `probe`), which lives until the shell exits.
+    let _script = match shell {
+        Shell::Zsh => {
+            let temp_err = |err| Error::Command(format!("temp file: {err}"));
+            let mut script = tempfile::NamedTempFile::new().map_err(temp_err)?;
+            script.write_all(probe.as_bytes()).map_err(temp_err)?;
+            command.arg(script.path());
+            Some(script)
+        }
+        Shell::Bash | Shell::Fish => {
+            command.args(["-c", &probe]);
+            None
+        }
+    };
     // Not the app's environment: launched from a terminal (as in development), its PATH may
     // already contain the shims.
-    let mut command = Command::new(binary);
-    command
-        .args(["-l", "-i", "-c", &shell.probe(tool)])
-        .current_dir(folder);
+    command.current_dir(folder);
     fresh_env(&mut command, home);
     let output = run(command, Duration::from_secs(15))?;
 
+    // A marker may follow output a startup file printed without a newline.
     let field = |mark: &str| {
         output
             .stdout
             .lines()
             .rev()
-            .find_map(|line| line.strip_prefix(mark))
-            .map(str::trim)
+            .find_map(|line| line.split_once(mark))
+            .map(|(_, value)| value.trim())
     };
     let (Some(kind), Some(path)) = (field(KIND), field(PATH_MARK)) else {
         return Err(Error::Command(format!(
@@ -363,16 +429,17 @@ pub fn check_folder(shell: Shell, home: &Path, folder: &Path, tool: &str) -> Res
     }
 
     let shim = fs::canonicalize(paths::shim_binary(home)).ok();
-    let Some(first) = std::env::split_paths(path)
-        .filter(|dir| !dir.as_os_str().is_empty())
-        .map(|dir| dir.join(tool))
-        .find(|candidate| candidate.is_file())
-    else {
+    let is_shim = |candidate: &Path| shim.is_some() && fs::canonicalize(candidate).ok() == shim;
+    let Some(first) = first_on_path(path, tool) else {
         return Ok(FolderCheck::NotFound);
     };
-    if shim.is_none() || fs::canonicalize(&first).ok() != shim {
+    if !is_shim(&first) {
+        let by_prompt_hook = field(STARTUP_PATH)
+            .and_then(|startup| first_on_path(startup, tool))
+            .is_some_and(|before_hooks| is_shim(&before_hooks));
         return Ok(FolderCheck::ShadowedOnPath {
             path: first.display().to_string(),
+            by_prompt_hook,
         });
     }
 
@@ -489,6 +556,19 @@ fn run(mut command: Command, timeout: Duration) -> Result<Finished> {
     })
 }
 
+/// The `tool` a shell with this PATH runs. The shell skips a file it can't execute, so this
+/// does too.
+fn first_on_path(path: &str, tool: &str) -> Option<PathBuf> {
+    std::env::split_paths(path)
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .map(|dir| dir.join(tool))
+        .find(|candidate| is_executable(candidate))
+}
+
+fn is_executable(path: &Path) -> bool {
+    fs::metadata(path).is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+}
+
 fn read_all(file: &mut File) -> String {
     let mut bytes = Vec::new();
     let _ = file.rewind().and_then(|()| file.read_to_end(&mut bytes));
@@ -525,8 +605,11 @@ mod tests {
             r#"{"status":"shadowedByShell","kind":"function","origin":"/h/.zshrc"}"#
         );
         assert_eq!(
-            json(&FolderCheck::ShadowedOnPath { path: "/p".into() }),
-            r#"{"status":"shadowedOnPath","path":"/p"}"#
+            json(&FolderCheck::ShadowedOnPath {
+                path: "/p".into(),
+                by_prompt_hook: true,
+            }),
+            r#"{"status":"shadowedOnPath","path":"/p","byPromptHook":true}"#
         );
         assert_eq!(json(&FolderCheck::NotFound), r#"{"status":"notFound"}"#);
         assert_eq!(
@@ -588,6 +671,46 @@ mod tests {
     }
 
     #[test]
+    fn a_begin_line_without_its_end_does_not_count_as_installed() {
+        let home = tempfile::tempdir().unwrap();
+        let profile = home.path().join(".bash_profile");
+        fs::write(&profile, format!("export A=1\n{BEGIN}\n{NOTE}\n")).unwrap();
+        assert!(!status(Shell::Bash, home.path()).installed);
+
+        assert!(
+            set_integration(Shell::Bash, home.path(), true)
+                .unwrap()
+                .installed
+        );
+        assert!(
+            !set_integration(Shell::Bash, home.path(), false)
+                .unwrap()
+                .installed
+        );
+    }
+
+    #[test]
+    fn remove_takes_out_every_copy_of_the_block() {
+        let block = Shell::Bash.block();
+        let twice = format!("export A=1\n\n{block}export B=2\n\n{block}");
+        assert_eq!(remove_block(&twice), "export A=1\nexport B=2\n");
+    }
+
+    #[test]
+    fn set_integration_leaves_a_dangling_symlinked_rc_file_alone() {
+        let home = tempfile::tempdir().unwrap();
+        let link = home.path().join(".bash_profile");
+        std::os::unix::fs::symlink(home.path().join("unmounted/bash_profile"), &link).unwrap();
+
+        let err = set_integration(Shell::Bash, home.path(), true).unwrap_err();
+        assert!(matches!(err, Error::Invalid(_)), "{err}");
+        assert!(fs::symlink_metadata(&link).unwrap().is_symlink());
+        // Turning it off has nothing to remove, so it isn't an error.
+        set_integration(Shell::Bash, home.path(), false).unwrap();
+        assert!(fs::symlink_metadata(&link).unwrap().is_symlink());
+    }
+
+    #[test]
     fn set_integration_writes_through_a_symlinked_rc_file() {
         let home = tempfile::tempdir().unwrap();
         let dotfiles = home.path().join("dotfiles/zshrc");
@@ -615,7 +738,12 @@ mod tests {
         let home = fs::canonicalize(root.path()).unwrap();
         assert_eq!(Shell::Zsh.startup_files(&home), vec![home.join(".zshrc")]);
 
-        fs::write(home.join(".zshenv"), "ZDOTDIR=\"$HOME/.config/zsh\"\n").unwrap();
+        // Output of its own doesn't hide the answer.
+        fs::write(
+            home.join(".zshenv"),
+            "echo loading env\nZDOTDIR=\"$HOME/.config/zsh\"\n",
+        )
+        .unwrap();
         assert_eq!(
             Shell::Zsh.startup_files(&home),
             vec![home.join(".config/zsh/.zshrc")]
@@ -716,7 +844,8 @@ mod tests {
         assert_eq!(
             check(&home),
             FolderCheck::ShadowedOnPath {
-                path: home.join("bin/claude").display().to_string()
+                path: home.join("bin/claude").display().to_string(),
+                by_prompt_hook: false,
             }
         );
 
@@ -738,6 +867,110 @@ mod tests {
             FolderCheck::ShadowedByShell {
                 kind: "function".into(),
                 origin: Some(home.join(".zshrc").display().to_string()),
+            }
+        );
+    }
+
+    /// mise and direnv change PATH from a prompt hook, after every startup file has run. Like
+    /// direnv's, this one does nothing unless it runs at the shell's top level, and it prints
+    /// a terminal title with no newline, as oh-my-zsh does.
+    #[test]
+    fn check_folder_runs_zsh_prompt_hooks() {
+        if Shell::Zsh.binary().is_none() {
+            return;
+        }
+        let (_root, home) = zsh_home(concat!(
+            "fake_direnv() {\n",
+            "  setopt localoptions extendedglob\n",
+            "  [[ -n $ZSH_EVAL_CONTEXT && $ZSH_EVAL_CONTEXT != toplevel(:[a-z]#func|)# ]] && return\n",
+            "  PATH=\"$HOME/bin:$PATH\"\n",
+            "  print -n 'title'\n",
+            "}\n",
+            "precmd_functions+=(fake_direnv)\n",
+        ));
+        set_integration(Shell::Zsh, &home, true).unwrap();
+        assert_eq!(
+            check(&home),
+            FolderCheck::ShadowedOnPath {
+                path: home.join("bin/claude").display().to_string(),
+                by_prompt_hook: true,
+            }
+        );
+    }
+
+    /// The same through bash's PROMPT_COMMAND, which also runs bash's probe end to end.
+    #[test]
+    fn check_folder_runs_bash_prompt_command() {
+        if Shell::Bash.binary().is_none() {
+            return;
+        }
+        let (_root, home) = zsh_home("");
+        let profile = home.join(".bash_profile");
+        fs::write(&profile, "export PATH=\"$HOME/bin:$PATH\"\n").unwrap();
+        set_integration(Shell::Bash, &home, true).unwrap();
+        let check = || check_folder(Shell::Bash, &home, &home.join("work/app"), "claude").unwrap();
+        assert!(
+            matches!(check(), FolderCheck::Routed { ref profile, .. } if profile.as_deref() == Some("Work")),
+            "{:?}",
+            check()
+        );
+
+        let mut text = fs::read_to_string(&profile).unwrap();
+        text.push_str("PROMPT_COMMAND='PATH=\"$HOME/bin:$PATH\"'\n");
+        fs::write(&profile, text).unwrap();
+        assert_eq!(
+            check(),
+            FolderCheck::ShadowedOnPath {
+                path: home.join("bin/claude").display().to_string(),
+                by_prompt_hook: true,
+            }
+        );
+    }
+
+    /// fish end to end: its block, its probe, a prompt hook, and a function in its own file
+    /// that shadows the tool, the way fish users keep functions.
+    #[test]
+    fn check_folder_in_real_fish() {
+        if Shell::Fish.binary().is_none() {
+            return;
+        }
+        let (_root, home) = zsh_home("");
+        let config = home.join(".config/fish/config.fish");
+        fs::create_dir_all(config.parent().unwrap()).unwrap();
+        fs::write(&config, "set -gx PATH $HOME/bin $PATH\n").unwrap();
+        set_integration(Shell::Fish, &home, true).unwrap();
+        let check = || check_folder(Shell::Fish, &home, &home.join("work/app"), "claude").unwrap();
+        assert!(
+            matches!(check(), FolderCheck::Routed { ref profile, .. } if profile.as_deref() == Some("Work")),
+            "{:?}",
+            check()
+        );
+
+        let mut text = fs::read_to_string(&config).unwrap();
+        text.push_str(
+            "function fake_mise --on-event fish_prompt\n    set -gx PATH $HOME/bin $PATH\nend\n",
+        );
+        fs::write(&config, text).unwrap();
+        assert_eq!(
+            check(),
+            FolderCheck::ShadowedOnPath {
+                path: home.join("bin/claude").display().to_string(),
+                by_prompt_hook: true,
+            }
+        );
+
+        let functions = home.join(".config/fish/functions");
+        fs::create_dir_all(&functions).unwrap();
+        fs::write(
+            functions.join("claude.fish"),
+            "function claude\n    echo mine\nend\n",
+        )
+        .unwrap();
+        assert_eq!(
+            check(),
+            FolderCheck::ShadowedByShell {
+                kind: "function".into(),
+                origin: Some(functions.join("claude.fish").display().to_string()),
             }
         );
     }

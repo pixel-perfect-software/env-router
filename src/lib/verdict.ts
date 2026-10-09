@@ -81,7 +81,10 @@ export function verdictOf(
       return {
         tone: 'problem',
         headline: `Another ${tool} comes first on PATH`,
-        note: `Keep EnvRouter's block at the end of ${tildify(startupFile, home)}.`,
+        // Moving the block can't help when a hook reorders PATH before every prompt.
+        note: check.byPromptHook
+          ? `A prompt hook, such as mise or direnv, moves it ahead of EnvRouter's shims before every prompt.`
+          : `Keep EnvRouter's block at the end of ${tildify(startupFile, home)}.`,
         values: [
           { label: 'runs', value: tildify(check.path, home) },
           { label: 'instead of', value: tildify(`${shimsDir}/${tool}`, home) },
@@ -90,14 +93,23 @@ export function verdictOf(
         blocksShell: true,
       }
     case 'notFound':
-      return shell.installed
-        ? {
-            tone: 'problem',
-            headline: `${tool} isn't on PATH in new ${name} windows`,
-            note: `No profile sets ${tool}, and ${tool} itself isn't installed.`,
-            values: [],
-          }
-        : off()
+      if (!shell.installed) return off()
+      // A profile sets the tool, so its shim should be there: the shims folder is out of date.
+      if (toolRouted) {
+        return {
+          tone: 'problem',
+          headline: `${tool} isn't on PATH in new ${name} windows`,
+          note: `EnvRouter's link for ${tool} is missing, and ${tool} itself isn't installed.`,
+          values: [{ label: 'expected', value: tildify(`${shimsDir}/${tool}`, home) }],
+          action: { kind: 'reinstall' },
+        }
+      }
+      return {
+        tone: 'problem',
+        headline: `${tool} isn't on PATH in new ${name} windows`,
+        note: `No profile sets ${tool}, and ${tool} itself isn't installed.`,
+        values: [],
+      }
     case 'notInstalled':
       return {
         tone: 'problem',

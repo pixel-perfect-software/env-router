@@ -52,8 +52,11 @@ export type FolderCheck =
   | { status: 'routed'; profile: string | null; envVar: string | null; value: string | null; real: string }
   /** An alias or function with the tool's name runs before PATH is searched. `origin`: the file defining it, when the shell can say. */
   | { status: 'shadowedByShell'; kind: string; origin: string | null }
-  /** Another copy of the tool is found before the shim: it's earlier on PATH, or the shims directory isn't on PATH at all (shell setup is off). */
-  | { status: 'shadowedOnPath'; path: string }
+  /**
+   * Another copy of the tool is found before the shim: it's earlier on PATH, or the shims directory isn't on PATH at all (shell setup is off).
+   * `byPromptHook`: the startup files left the shim first, and a prompt hook (mise, direnv) moved this ahead of it.
+   */
+  | { status: 'shadowedOnPath'; path: string; byPromptHook: boolean }
   /** Nothing named after the tool is on PATH: no shim and no real tool. */
   | { status: 'notFound' }
   /** The shim is first on PATH, but there's no real tool after it to run. */
