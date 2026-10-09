@@ -5,7 +5,7 @@
 import { open } from '@tauri-apps/plugin-dialog'
 import { useEffect, useRef, useState } from 'react'
 import { errorMessage } from '../lib/api'
-import { confirmDelete } from '../lib/confirm'
+import { confirmDelete, confirmDiscard } from '../lib/confirm'
 import { splitLeaf, tildify } from '../lib/paths'
 import { KNOWN_TOOLS } from '../lib/tools'
 import type { Profile } from '../lib/types'
@@ -17,6 +17,7 @@ interface FolderRow {
 }
 
 export function ProfileInspector({
+  id,
   profile,
   color,
   home,
@@ -24,6 +25,8 @@ export function ProfileInspector({
   onSave,
   onDelete,
 }: {
+  /** The profile's id, or the one a new profile will be saved with. */
+  id: string
   profile?: Profile
   /** The profile's colour dot; a new profile shows the colour it will get. */
   color: string
@@ -40,17 +43,44 @@ export function ProfileInspector({
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const nameField = useRef<HTMLInputElement>(null)
+  const asking = useRef(false)
 
   useEffect(() => {
     nameField.current?.focus()
     if (profile) nameField.current?.select()
   }, [profile])
 
+  // Rows keep their order and removals stay struck through, so any change shows up as a
+  // struck row or a different count. Undoing an edit makes the form clean again.
+  const dirty =
+    name !== (profile?.name ?? '') ||
+    folders.some((f) => f.removed) ||
+    folders.length !== (profile?.triggerPaths.length ?? 0) ||
+    KNOWN_TOOLS.some((tool) => toolPaths[tool.command] !== (profile?.tools[tool.command]?.path ?? ''))
+
+  /** Escape, the close button and Cancel. Unsaved edits are only dropped once the user says so. */
+  const close = async () => {
+    // While saving, stay open: a save Rust rejects reports its reason here.
+    if (saving || asking.current) return
+    if (dirty) {
+      asking.current = true
+      const discard = await confirmDiscard(profile?.name).finally(() => {
+        asking.current = false
+      })
+      if (!discard) return
+    }
+    onCancel()
+  }
+
   const addFolders = async () => {
     const picked = await open({ directory: true, multiple: true, defaultPath: home, title: 'Add Trigger Folders' })
     if (!picked) return
     const paths = (Array.isArray(picked) ? picked : [picked]).map((p) => tildify(p, home))
-    setFolders((rows) => [...rows, ...paths.filter((p) => !rows.some((r) => r.path === p)).map((path) => ({ path, removed: false }))])
+    // Picking a folder that's struck through brings it back rather than adding it twice.
+    setFolders((rows) => [
+      ...rows.map((r) => (r.removed && paths.includes(r.path) ? { ...r, removed: false } : r)),
+      ...paths.filter((p) => !rows.some((r) => r.path === p)).map((path) => ({ path, removed: false })),
+    ])
   }
 
   const chooseToolPath = async (command: string) => {
@@ -76,7 +106,7 @@ export function ProfileInspector({
     setError(null)
     try {
       await onSave({
-        id: profile?.id ?? crypto.randomUUID(),
+        id,
         name: trimmed,
         triggerPaths: folders.filter((f) => !f.removed).map((f) => f.path),
         tools,
@@ -112,13 +142,13 @@ export function ProfileInspector({
           save()
         }}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') onCancel()
+          if (e.key === 'Escape') close()
         }}
       >
         <header className="flex items-center gap-2.5 px-5 pt-5 pb-3">
           <ProfileDot color={color} className="size-3" />
           <h2 className="min-w-0 flex-1 truncate text-title font-semibold">{profile ? profile.name : 'New Profile'}</h2>
-          <IconButton label="Close" onClick={onCancel}>
+          <IconButton label="Close" onClick={close} disabled={saving}>
             <CloseIcon />
           </IconButton>
         </header>
@@ -223,7 +253,7 @@ export function ProfileInspector({
           <p role="alert" className="min-w-0 flex-1 text-small text-problem">
             {error}
           </p>
-          <Button onClick={onCancel} disabled={saving}>
+          <Button onClick={close} disabled={saving}>
             Cancel
           </Button>
           <Button kind="primary" type="submit" disabled={saving}>

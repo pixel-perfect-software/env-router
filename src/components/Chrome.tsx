@@ -5,7 +5,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { errorMessage } from '../lib/api'
 import { tildify } from '../lib/paths'
 import type { SetupStatus, Shell, ShellStatus } from '../lib/types'
-import { Button, StatusTile, Switch, type Tone } from './ui'
+import { Button, CloseIcon, IconButton, StatusTile, Switch, type Tone } from './ui'
 
 export function TitleBand({
   setup,
@@ -72,7 +72,8 @@ export function TitleBand({
 
 export type Health =
   | { kind: 'loading' }
-  | { kind: 'error'; message: string }
+  /** `dismissible`: a one-off action failed. A failing status refresh isn't: it clears itself once one works. */
+  | { kind: 'error'; message: string; dismissible: boolean }
   /** config.json couldn't be read, so there are no profiles to show. Coming back to the window retries. */
   | { kind: 'unloaded'; message: string; canOpen: boolean }
   | { kind: 'setup'; step: 1 | 2 | 3; shell: ShellStatus | undefined }
@@ -104,6 +105,7 @@ export function HealthLine({
   onReinstall,
   onRecheck,
   onOpenConfig,
+  onDismissError,
 }: {
   health: Health
   onNewProfile: () => void
@@ -112,6 +114,7 @@ export function HealthLine({
   onReinstall: () => void
   onRecheck: (folder: string, shell: Shell, tool: string) => void
   onOpenConfig: () => void
+  onDismissError: () => void
 }) {
   if (health.kind === 'loading') {
     return <div className="mx-4 h-[58px] shrink-0 animate-pulse rounded-card bg-card-muted" />
@@ -172,7 +175,20 @@ export function HealthLine({
 
   switch (health.kind) {
     case 'error':
-      return <Banner tone="problem" title="Something went wrong" detail={health.message} />
+      return (
+        <Banner
+          tone="problem"
+          title="Something went wrong"
+          detail={health.message}
+          action={
+            health.dismissible ? (
+              <IconButton label="Dismiss" onClick={onDismissError}>
+                <CloseIcon />
+              </IconButton>
+            ) : undefined
+          }
+        />
+      )
     case 'unloaded':
       return (
         <Banner

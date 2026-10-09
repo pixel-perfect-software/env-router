@@ -42,13 +42,15 @@ function healthOf(
   config: ConfigState | null,
   setup: SetupStatus | null,
   loadError: string | null,
-  error: string | null,
+  setupError: string | null,
+  actionError: string | null,
   home: string,
   checkedOnce: boolean,
   blocked: Blocked | null,
 ): Health {
   if (loadError) return { kind: 'unloaded', message: loadError, canOpen: home !== '' }
-  if (error) return { kind: 'error', message: error }
+  if (setupError) return { kind: 'error', message: setupError, dismissible: false }
+  if (actionError) return { kind: 'error', message: actionError, dismissible: true }
   if (!config || !setup) return { kind: 'loading' }
   const available = setup.shells.filter((s) => s.available)
   const login = available.find((s) => s.isDefault) ?? available[0]
@@ -81,7 +83,14 @@ export default function App() {
   const [blocked, setBlocked] = useState<Blocked | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget>(null)
   const [checkedOnce, setCheckedOnce] = useState(readChecked)
+  // The id the next new profile is saved with, so the inspector can show the colour it will get.
+  const [newId, setNewId] = useState(() => crypto.randomUUID())
   const checkKey = useRef(0)
+  // Bumped by every save, so a read of config.json that started before it can't put the old file back.
+  const configSeq = useRef(0)
+  // A check reads the shell's status when its result arrives, not when it started: a switch may have flipped meanwhile.
+  const latestSetup = useRef(setup)
+  latestSetup.current = setup
 
   const refreshSetup = useCallback(async () => {
     try {
@@ -94,12 +103,18 @@ export default function App() {
 
   const load = useCallback(async () => {
     refreshSetup()
+    const seq = configSeq.current
     try {
       // Home first: if the config can't be read, the banner still needs it to open the file.
       setHome(await homeDir())
-      setConfig(await getConfig())
+      const loaded = await getConfig()
+      if (seq !== configSeq.current) return
+      setConfig(loaded)
       setLoadError(null)
     } catch (err) {
+      if (seq !== configSeq.current) return
+      // Nothing is editable until the file is fixed: a save would replace whatever is in it.
+      setConfig(null)
       setLoadError(errorMessage(err))
     }
   }, [refreshSetup])
@@ -108,14 +123,15 @@ export default function App() {
     load()
   }, [load])
 
-  // Startup files can change from a terminal while the window is open. Until the config has
-  // loaded, coming back retries that too: the user may have just fixed the file.
-  const unloaded = config === null
+  // config.json and the startup files can change from a terminal while the window is open, so
+  // coming back reads both again. Not the config while the inspector is open: it saves on top
+  // of the config it opened with.
+  const inspecting = editing !== null
   useEffect(() => {
-    const onFocus = unloaded ? load : refreshSetup
+    const onFocus = inspecting ? refreshSetup : load
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-  }, [unloaded, load, refreshSetup])
+  }, [inspecting, load, refreshSetup])
 
   const defaultShell = (): Shell => {
     const available = setup?.shells.filter((s) => s.available) ?? []
@@ -146,8 +162,9 @@ export default function App() {
       if (key !== checkKey.current) return
       setCheck((c) => (c && c.key === key ? { ...c, result } : c))
       setSlip((s) => (s && s.key === key ? { ...s, mark: result.status === 'routed' ? 'on' : 'problem' } : s))
-      const status = setup?.shells.find((s) => s.shell === shell)
-      const verdict = status && setup ? verdictOf(result, status, tool, routedTools.includes(tool), setup.shimsDir, home, trigger) : null
+      const latest = latestSetup.current
+      const status = latest?.shells.find((s) => s.shell === shell)
+      const verdict = status && latest ? verdictOf(result, status, tool, routedTools.includes(tool), latest.shimsDir, home, trigger) : null
       if (verdict?.blocksShell) setBlocked({ shell, tool, headline: verdict.headline, folder })
       else setBlocked((b) => (b && b.shell === shell && b.tool === tool ? null : b))
       if (result.status === 'routed') {
@@ -171,7 +188,9 @@ export default function App() {
     checkFolder: () => {
       if (editing === null) pickAndCheck()
     },
-    newProfile: () => setEditing((e) => e ?? 'new'),
+    newProfile: () => {
+      if (config) setEditing((e) => e ?? 'new')
+    },
   }
   const actions = useRef(shortcuts)
   actions.current = shortcuts
@@ -216,10 +235,13 @@ export default function App() {
 
   const commit = async (next: ConfigState) => {
     await saveConfig(next)
+    configSeq.current++
     setActionError(null)
     setConfig(next)
     refreshSetup()
     // A saved change can move a checked folder to another slot; the next check says where.
+    // A check still running was asked of the old config, so its answer is dropped too.
+    checkKey.current++
     setSlip(null)
     setCheck(null)
     setBlocked(null)
@@ -229,6 +251,7 @@ export default function App() {
     if (!config) return
     const exists = config.profiles.some((p) => p.id === profile.id)
     await commit({ ...config, profiles: exists ? config.profiles.map((p) => (p.id === profile.id ? profile : p)) : [...config.profiles, profile] })
+    if (!exists) setNewId(crypto.randomUUID())
     setEditing(null)
   }
 
@@ -239,11 +262,15 @@ export default function App() {
   }
 
   const setShell = async (shell: Shell, enabled: boolean) => {
+    const shown = check
     const status = await setShellIntegration(shell, enabled)
     setActionError(null)
     setBlocked((b) => (b && b.shell === shell ? null : b))
     setSetup((s) => (s ? { ...s, shells: s.shells.map((x) => (x.shell === shell ? status : x)) } : s))
     refreshSetup()
+    // The docket's result describes this shell before the switch; ask it again rather than
+    // read the old answer against the new setting.
+    if (shown?.shell === shell && shown.key === checkKey.current) runCheck(shown.folder, shell, null, shown.tool)
   }
 
   const enableShell = (shell: Shell) =>
@@ -255,14 +282,13 @@ export default function App() {
   const runAction = async (action: VerdictAction, shell: Shell) => {
     try {
       if (action.kind === 'enableShell') {
-        await setShell(shell, true)
+        await setShell(shell, true) // Checks the folder again itself.
       } else if (action.kind === 'reinstall') {
         if (config) await commit(config)
+        if (check) runCheck(check.folder, shell, null, check.tool)
       } else {
         await openInEditor(action.path)
-        return
       }
-      if (check) runCheck(check.folder, shell, null, check.tool)
     } catch (err) {
       setActionError(errorMessage(err))
     }
@@ -310,63 +336,71 @@ export default function App() {
       ? Boolean(verdictOf(check.result, status, check.tool, routedTools.includes(check.tool), setup.shimsDir, home).action)
       : false
   })()
-  const health = healthOf(config, setup, loadError, setupError ?? actionError, home, checkedOnce, blocked)
+  const health = healthOf(config, setup, loadError, setupError, actionError, home, checkedOnce, blocked)
+  const editingId = editing === 'new' ? newId : editing
 
   return (
     <div className={`relative flex h-full flex-col ${hovering ? 'shadow-[inset_0_0_0_2px_var(--er-accent)]' : ''}`}>
-      <TitleBand
-        setup={setup}
-        blockedShell={blocked?.shell ?? null}
-        primary={editing === null && !bannerHasPrimary(health) && !docketHasAction}
-        shellsOpen={shellsOpen}
-        onToggleShells={() => setShellsOpen((o) => !o)}
-        onCheckFolder={pickAndCheck}
-      />
-      <HealthLine
-        health={health}
-        onNewProfile={() => setEditing('new')}
-        onEnableShell={enableShell}
-        onCheckFolder={pickAndCheck}
-        onReinstall={() => config && commit(config).catch((err) => setActionError(errorMessage(err)))}
-        onRecheck={(folder, shell, tool) => runCheck(folder, shell, null, tool)}
-        onOpenConfig={() => openInEditor(`${home}/.envrouter/config.json`).catch((err) => setLoadError(errorMessage(err)))}
-      />
-      {shellsOpen && setup && <ShellsPopover setup={setup} home={home} onSet={setShell} onClose={closeShells} />}
-      {/* Soft edges where cards scroll under the banner and the floating check card. */}
-      <main className="min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_10px,black_calc(100%-18px),transparent)]">
-        {config && (
-          <Frame
-            profiles={config.profiles}
-            home={home}
-            editing={editing}
-            slip={slip}
-            dropTarget={dropTarget}
-            onEdit={setEditing}
-            onContextMenu={showSlotMenu}
-          />
-        )}
-      </main>
-      <Docket
-        check={check}
-        shells={setup?.shells ?? []}
-        home={home}
-        routedTools={routedTools}
-        shimsDir={setup?.shimsDir ?? `${home}/.envrouter/shims`}
-        hovering={hovering}
-        onRecheck={(shell, tool) => check && runCheck(check.folder, shell, null, tool)}
-        onAction={runAction}
-        primary={editing === null && !bannerHasPrimary(health)}
-        onDismiss={() => {
-          checkKey.current++
-          setCheck(null)
-          setSlip(null)
-        }}
-      />
-      {config && editing !== null && (
+      {/* While the inspector is open, everything behind it is out of reach: Tab, clicks and
+          screen readers stay in the editor, so a stray Enter on a card can't drop its edits.
+          `contents` keeps the window's layout as if this wrapper weren't there. */}
+      <div className="contents" inert={inspecting}>
+        <TitleBand
+          setup={setup}
+          blockedShell={blocked?.shell ?? null}
+          primary={editing === null && !bannerHasPrimary(health) && !docketHasAction}
+          shellsOpen={shellsOpen}
+          onToggleShells={() => setShellsOpen((o) => !o)}
+          onCheckFolder={pickAndCheck}
+        />
+        <HealthLine
+          health={health}
+          onNewProfile={() => setEditing('new')}
+          onEnableShell={enableShell}
+          onCheckFolder={pickAndCheck}
+          onReinstall={() => config && commit(config).catch((err) => setActionError(errorMessage(err)))}
+          onRecheck={(folder, shell, tool) => runCheck(folder, shell, null, tool)}
+          onOpenConfig={() => openInEditor(`${home}/.envrouter/config.json`).catch((err) => setLoadError(errorMessage(err)))}
+          onDismissError={() => setActionError(null)}
+        />
+        {shellsOpen && setup && <ShellsPopover setup={setup} home={home} onSet={setShell} onClose={closeShells} />}
+        {/* Soft edges where cards scroll under the banner and the floating check card. */}
+        <main className="min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_10px,black_calc(100%-18px),transparent)]">
+          {config && (
+            <Frame
+              profiles={config.profiles}
+              home={home}
+              editing={editing}
+              slip={slip}
+              dropTarget={dropTarget}
+              onEdit={setEditing}
+              onContextMenu={showSlotMenu}
+            />
+          )}
+        </main>
+        <Docket
+          check={check}
+          shells={setup?.shells ?? []}
+          home={home}
+          routedTools={routedTools}
+          shimsDir={setup?.shimsDir ?? `${home}/.envrouter/shims`}
+          hovering={hovering}
+          onRecheck={(shell, tool) => check && runCheck(check.folder, shell, null, tool)}
+          onAction={runAction}
+          primary={editing === null && !bannerHasPrimary(health)}
+          onDismiss={() => {
+            checkKey.current++
+            setCheck(null)
+            setSlip(null)
+          }}
+        />
+      </div>
+      {config && editingId !== null && (
         <ProfileInspector
-          key={editing}
+          key={editingId}
+          id={editingId}
           profile={config.profiles.find((p) => p.id === editing)}
-          color={profileColors([...config.profiles.map((p) => p.id), 'new']).get(editing) ?? ''}
+          color={profileColors([...config.profiles.map((p) => p.id), newId]).get(editingId) ?? ''}
           home={home}
           onCancel={() => setEditing(null)}
           onSave={saveProfile}
