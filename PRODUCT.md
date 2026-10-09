@@ -40,7 +40,7 @@ general env-var manager like direnv or mise.
 - Shell integration for zsh, bash and fish, by adding or removing a marked block in the shell's startup files. The app shows which files it edits.
 - Folder check (real shell, slow, up to ~15s) and instant preview (from the config alone).
 - No OAuth, logins or credential handling. A new agent config folder starts logged out; the user signs in from the terminal themselves.
-- macOS only for now (Apple Silicon build); signed and notarized for distribution.
+- macOS only (11 or later). Distributed as source that each user builds: no paid Apple Developer ID, so no notarized downloads.
 
 ## Brand Commitments
 Name: EnvRouter. No icon, logo or established voice yet; the Tauri template icons are

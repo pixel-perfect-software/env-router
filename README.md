@@ -39,19 +39,39 @@ prompt hook (mise, direnv) moves ahead of EnvRouter's shims.
 
 ## Status
 
-Pre-release. There are no signed builds yet, so for now you build it yourself. It runs on
-macOS on Apple Silicon, with zsh, bash and fish.
+Pre-release, and distributed as source: you build EnvRouter on your own Mac. There are no
+prebuilt downloads, because those need a paid Apple Developer account for signing and
+notarization. It runs on macOS 11 or later with zsh, bash and fish. It's developed on Apple
+Silicon; building on an Intel Mac should work the same way but hasn't been tried.
 
-## Build from source
+## Build and install
 
-You need Rust (stable), Node.js and pnpm (the version is pinned in `package.json`).
+You need, once:
+
+1. Xcode's command line tools: `xcode-select --install`
+2. Rust, from [rustup.rs](https://rustup.rs)
+3. Node.js 22 or later, from [nodejs.org](https://nodejs.org) or `brew install node`
+4. pnpm: `npm install -g pnpm` (the project pins its own version, and pnpm fetches it)
+
+Then build it and copy it into Applications:
 
 ```sh
 pnpm install
-pnpm tauri build --bundles app
+pnpm tauri build
+ditto target/release/bundle/macos/EnvRouter.app /Applications/EnvRouter.app
+open /Applications/EnvRouter.app
 ```
 
-The app is written to `target/release/bundle/macos/EnvRouter.app`.
+The first build takes a few minutes. In the app, create a profile and turn on your shell, then
+open a new terminal window.
+
+To update, pull the latest code, quit EnvRouter from its menu bar icon, and run the same
+commands. When the new version starts, it updates the shim in `~/.envrouter/bin` itself.
+
+A build is signed ad hoc, so macOS trusts it only on the Mac that built it. If you send
+someone your built copy rather than having them build it, macOS will refuse to open it as
+damaged or unverified. Once it's in their Applications folder, they can clear that with
+`xattr -dr com.apple.quarantine /Applications/EnvRouter.app`.
 
 ## Uninstall
 

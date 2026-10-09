@@ -20,7 +20,7 @@ env-router/
 │   ├── src/shell.rs           # startup-file blocks for zsh/bash/fish, check_folder, preview
 │   ├── src/tray.rs            # menu bar icon and menu; close-to-hide; Dock icon only while the window is open
 │   ├── capabilities/default.json  # core, plus the three dialog/opener calls the window makes; no fs
-│   ├── tauri.conf.json        # id com.tylerrobertson.envrouter, CSP, externalBin, app/dmg bundles
+│   ├── tauri.conf.json        # id com.tylerrobertson.envrouter, CSP, externalBin, an .app bundle signed ad hoc
 │   └── binaries/, gen/        # generated, gitignored
 ├── src/                       # React frontend (Vite)
 │   ├── App.tsx                # state, health derivation, check flow, shortcuts (⌘N, ⌘O)
@@ -65,13 +65,13 @@ adds a marked block to the end of `~/.zshrc` (or `$ZDOTDIR/.zshrc`), bash's logi
 | Lint / format | Biome 2.5 (TS/JSON/CSS); `cargo fmt` and clippy (Rust) |
 | Tests | `cargo test` (Rust, including the built shim and a real zsh); Vitest (`src/**/*.test.ts`) |
 | Package manager | pnpm 12.9.1 (pinned) |
-| Platform | macOS (arm64 bundle for now) |
+| Platform | macOS 11+; built from source on each user's Mac (no notarized downloads) |
 
 ## Commands
 | Task | Command |
 |---|---|
 | Run the desktop app | `pnpm tauri dev` |
-| Build the app bundle | `pnpm tauri build` (`--bundles app` skips the dmg) |
+| Build the app bundle | `pnpm tauri build` (writes `target/release/bundle/macos/EnvRouter.app`) |
 | All Rust tests | `cargo test --workspace` |
 | Frontend tests | `pnpm test` |
 | Rust lint | `cargo clippy --workspace --all-targets` |

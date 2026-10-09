@@ -5,8 +5,9 @@
 EnvRouter is a macOS desktop app (Tauri v2) that sets per-folder environment variables for
 coding agents (Claude Code, Codex, Copilot CLI, Gemini CLI), so `claude` run in `~/dev/work` uses a different `CLAUDE_CONFIG_DIR` than in
 `~/dev/personal`. The user defines **profiles**: each one maps trigger folders to a variable
-per tool. Profiles are stored in `~/.envrouter/config.json`. It's meant to be distributed to
-other macOS users, so plan for code signing and notarization.
+per tool. Profiles are stored in `~/.envrouter/config.json`. Other macOS users get it as
+source and build it themselves (README "Build and install"). There's deliberately no paid
+Apple Developer ID, so no Developer ID signing, notarization or prebuilt downloads.
 
 **How it works: shims, like mise or volta.** `~/.envrouter/shims/<tool>` is a symlink to
 `~/.envrouter/bin/envrouter-shim`, a small Rust binary, and a marked block in the user's shell
@@ -49,7 +50,8 @@ A missing config means the tool runs silently. A broken one prints a warning and
 - **Tests must never touch the real home directory.** Shell code resolves startup files from the `home` it's given, and finds zsh's `ZDOTDIR` by asking a fresh zsh, never from the process environment. Don't read `ZDOTDIR` or `HOME` from `std::env` in testable code. Claude Code's own environment sets `ZDOTDIR`.
 - **The shell block is POSIX sh** (`shell.rs`, `POSIX_BODY`), so it's safe when bash's login file is `.profile`. It moves the shims directory to the front of PATH rather than skipping it when it's already there, because nested shells re-prepend `~/.local/bin`.
 - **`check_folder` emulates a new Terminal window,** with a cleared environment and a login, interactive shell. `-c` never draws a prompt, so the probe runs the prompt hooks once itself (zsh `chpwd`/`precmd`, bash `PROMPT_COMMAND`, fish `fish_prompt` events): mise and direnv reorder PATH there. When the shim was first before the hooks and isn't after, the result says `byPromptHook`. Output goes to temp files, not pipes, because prompt themes leave background jobs holding pipes open, and markers are matched anywhere in a line, because hooks and startup files print without newlines. It never runs the real tool. The shim's `ENVROUTER_EXPLAIN=1` mode reports the route instead.
-- **`src-tauri/build.rs` builds the shim** into `target/shim/` and stages it as `src-tauri/binaries/envrouter-shim-<triple>` for `bundle.externalBin`. The bundle is arm64-only for now; Intel support needs a universal build plus `lipo` of the shim.
+- **`src-tauri/build.rs` builds the shim** into `target/shim/` and stages it as `src-tauri/binaries/envrouter-shim-<triple>` for `bundle.externalBin`. It's always a release build, whatever the profile: every profile stages to that one file, so per-profile builds let `tauri build` bundle a debug shim. The bundle is arm64-only for now; Intel support needs a universal build plus `lipo` of the shim.
+- **Signing is ad hoc** (`bundle.macOS.signingIdentity: "-"`), so the bundle has a valid signature for the Mac that built it, and the hardened runtime is off. Turning it on would make dyld strip every `DYLD_*` variable from the shim's environment before it execs the real tool (verified). If it's ever needed, sign with an entitlements file containing `com.apple.security.cs.allow-dyld-environment-variables`; Tauri applies one file to the app and the shim alike.
 - **Review the UI in a browser, never against the real home folder.** `pnpm dev` and then `http://localhost:1420/?scenario=first-run|populated|shadowed|broken` runs the frontend with every Tauri call answered by `src/dev/mockTauri.ts` (dev-only; `window.__mockDrop(path, x, y)` simulates a Finder drop). Keep the mock answering as the real backend does, with fresh objects each call: a check in a shell that's off returns `shadowedOnPath`, not `notFound`, whenever the tool is installed. Running the real app touches `~/.envrouter`, and its shell toggles edit the real startup files. To try the real app safely, launch the built binary with `HOME` set to a scratch folder.
 - **Wire types live in `src/lib/types.ts`.** A Rust test (`wire_format_matches_the_typescript_types` in `shell.rs`) pins the JSON, so change both sides together.
 - `.claude/settings.json` denies Claude read access to `.env` files. Ask the user for variable names instead.
