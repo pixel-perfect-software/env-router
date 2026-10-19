@@ -1,6 +1,6 @@
 [package]
 name = "envrouter-keychain"
-version = "0.1.0"
+version = "0.2.0"
 description = "EnvRouter's MCP secrets in the platform's secret store, and the helper binary the shim runs to read them"
 license = "MIT"
 edition = "2021"
