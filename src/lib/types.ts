@@ -104,8 +104,20 @@ export interface SetupStatus {
   shells: ShellStatus[]
 }
 
-/** `editors::Editor`: VS Code and the forks that share its settings and extensions. */
-export type Editor = 'code' | 'codeInsiders' | 'cursor' | 'windsurf' | 'codium'
+/**
+ * `editors::Editor`: VS Code and the forks that share its settings and extensions, and their remote servers (a WSL distro or an SSH
+ * host that an editor connects to runs the extension there, reading the server's machine settings).
+ */
+export type Editor =
+  | 'code'
+  | 'codeInsiders'
+  | 'cursor'
+  | 'windsurf'
+  | 'codium'
+  | 'remoteCode'
+  | 'remoteCodeInsiders'
+  | 'remoteCursor'
+  | 'remoteWindsurf'
 
 /** `editors::IdeHook`: how an agent's editor extension, which runs its own copy of the agent, can be told to run through the shim. */
 export interface IdeHook {
@@ -120,7 +132,7 @@ export interface EditorStatus {
   editor: Editor
   /** The agent the extension runs. */
   command: string
-  /** The editor has been run on this Mac. */
+  /** The editor has been run on this machine (for a server, connected to it). */
   available: boolean
   extensionInstalled: boolean
   settingsFile: string

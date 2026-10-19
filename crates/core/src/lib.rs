@@ -4,6 +4,7 @@ pub mod config;
 mod error;
 pub mod mcp;
 pub mod paths;
+pub mod platform;
 pub mod resolve;
 
 pub use error::{Error, Result};

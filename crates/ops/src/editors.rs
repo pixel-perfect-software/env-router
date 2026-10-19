@@ -10,12 +10,15 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
+use envrouter_core::platform::{self, Platform};
 use envrouter_core::{config, paths, Error, Result};
 use jsonc_parser::cst::{CstInputValue, CstRootNode};
 use jsonc_parser::ParseOptions;
 use serde::{Deserialize, Serialize};
 
-/// VS Code and the forks that share its settings format and extensions.
+/// VS Code and the forks that share its settings format and extensions, plus their remote
+/// servers: VS Code on Windows opening a WSL folder (or any editor connected over SSH) runs the
+/// extension inside the remote machine, where it reads that server's machine settings.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Editor {
@@ -24,15 +27,23 @@ pub enum Editor {
     Cursor,
     Windsurf,
     Codium,
+    RemoteCode,
+    RemoteCodeInsiders,
+    RemoteCursor,
+    RemoteWindsurf,
 }
 
 impl Editor {
-    pub const ALL: [Editor; 5] = [
+    pub const ALL: [Editor; 9] = [
         Editor::Code,
         Editor::CodeInsiders,
         Editor::Cursor,
         Editor::Windsurf,
         Editor::Codium,
+        Editor::RemoteCode,
+        Editor::RemoteCodeInsiders,
+        Editor::RemoteCursor,
+        Editor::RemoteWindsurf,
     ];
 
     pub fn label(self) -> &'static str {
@@ -42,32 +53,60 @@ impl Editor {
             Editor::Cursor => "Cursor",
             Editor::Windsurf => "Windsurf",
             Editor::Codium => "VSCodium",
+            Editor::RemoteCode => "VS Code Server",
+            Editor::RemoteCodeInsiders => "VS Code Insiders Server",
+            Editor::RemoteCursor => "Cursor Server",
+            Editor::RemoteWindsurf => "Windsurf Server",
         }
     }
 
-    /// `~/Library/Application Support/<name>`, which the editor creates on first launch.
-    fn support_dir(self, home: &Path) -> PathBuf {
+    /// A remote server's folder in the home folder, created when an editor first connects.
+    fn server_dir(self, home: &Path) -> Option<PathBuf> {
+        let dir = match self {
+            Editor::RemoteCode => ".vscode-server",
+            Editor::RemoteCodeInsiders => ".vscode-server-insiders",
+            Editor::RemoteCursor => ".cursor-server",
+            Editor::RemoteWindsurf => ".windsurf-server",
+            _ => return None,
+        };
+        Some(home.join(dir))
+    }
+
+    /// The folder that shows the editor has run here: the desktop editor's settings folder,
+    /// which it creates on first launch, or the remote server's folder.
+    fn root_dir(self, home: &Path) -> PathBuf {
+        if let Some(server) = self.server_dir(home) {
+            return server;
+        }
         let name = match self {
-            Editor::Code => "Code",
             Editor::CodeInsiders => "Code - Insiders",
             Editor::Cursor => "Cursor",
             Editor::Windsurf => "Windsurf",
             Editor::Codium => "VSCodium",
+            _ => "Code",
         };
-        home.join("Library/Application Support").join(name)
+        platform::app_config_dir(Platform::current(), home).join(name)
     }
 
+    /// User settings for a desktop editor; machine settings for a remote server, which is where
+    /// a machine-scoped setting like a process wrapper is read from there.
     pub fn settings_file(self, home: &Path) -> PathBuf {
-        self.support_dir(home).join("User/settings.json")
+        match self.server_dir(home) {
+            Some(server) => server.join("data/Machine/settings.json"),
+            None => self.root_dir(home).join("User/settings.json"),
+        }
     }
 
     fn extensions_dir(self, home: &Path) -> PathBuf {
+        if let Some(server) = self.server_dir(home) {
+            return server.join("extensions");
+        }
         let dir = match self {
-            Editor::Code => ".vscode",
             Editor::CodeInsiders => ".vscode-insiders",
             Editor::Cursor => ".cursor",
             Editor::Windsurf => ".windsurf",
             Editor::Codium => ".vscode-oss",
+            _ => ".vscode",
         };
         home.join(dir).join("extensions")
     }
@@ -90,7 +129,7 @@ pub struct EditorStatus {
     pub editor: Editor,
     /// The agent whose extension this is about.
     pub command: String,
-    /// The editor has been run on this Mac.
+    /// The editor has been run on this machine (for a server, connected to it).
     pub available: bool,
     pub extension_installed: bool,
     pub settings_file: String,
@@ -116,7 +155,7 @@ pub fn status(editor: Editor, home: &Path, command: &str, hook: &IdeHook) -> Edi
     EditorStatus {
         editor,
         command: command.to_owned(),
-        available: editor.support_dir(home).is_dir(),
+        available: editor.root_dir(home).is_dir(),
         extension_installed,
         settings_file: file.display().to_string(),
         installed: wrapper.as_deref() == Some(shim(home).as_str()),
@@ -266,7 +305,11 @@ mod tests {
                 r#""codeInsiders""#,
                 r#""cursor""#,
                 r#""windsurf""#,
-                r#""codium""#
+                r#""codium""#,
+                r#""remoteCode""#,
+                r#""remoteCodeInsiders""#,
+                r#""remoteCursor""#,
+                r#""remoteWindsurf""#
             ]
         );
         let hook: IdeHook = serde_json::from_str(r#"{"setting":"a.b","extension":"x.y"}"#).unwrap();
@@ -371,6 +414,29 @@ mod tests {
         let cursor = set_integration(Editor::Cursor, home, "claude", &hook(), false).unwrap();
         assert!(!cursor.available);
         assert!(!Editor::Cursor.settings_file(home).exists());
+    }
+
+    /// VS Code on Windows opening a WSL folder runs the extension in the distro's server, which
+    /// reads the wrapper from the server's machine settings.
+    #[test]
+    fn a_remote_server_uses_its_machine_settings() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let editor = Editor::RemoteCode;
+        assert!(!status(editor, home, "claude", &hook()).available);
+
+        fs::create_dir_all(
+            home.join(".vscode-server/extensions/anthropic.claude-code-2.1.301-linux-x64"),
+        )
+        .unwrap();
+        let on = set_integration(editor, home, "claude", &hook(), true).unwrap();
+        assert!(
+            on.available && on.installed && on.extension_installed,
+            "{on:?}"
+        );
+        let machine = home.join(".vscode-server/data/Machine/settings.json");
+        assert_eq!(on.settings_file, machine.display().to_string());
+        assert!(fs::read_to_string(machine).unwrap().contains(KEY));
     }
 
     #[test]

@@ -11,6 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use envrouter_core::config::{self, ConfigState};
+use envrouter_core::platform::{self, Platform};
 use envrouter_core::{mcp, paths, resolve, Error, Result, EXIT_TOOL_NOT_FOUND};
 use serde::{Deserialize, Serialize};
 
@@ -58,14 +59,14 @@ impl Shell {
         }
     }
 
-    /// The installed binary. The app is launched from Finder with a minimal PATH, so this
-    /// looks at the login shell, then in `/etc/shells`, where Homebrew users register shells
-    /// like fish, and then the usual install locations. The login shell comes first because
-    /// Homebrew lists its bash after `/bin/bash`, and a check should run the bash Terminal does.
+    /// The installed binary. The app may be launched with a minimal PATH (from Finder, or a
+    /// `.desktop` file), so this looks at the login shell, then in `/etc/shells`, where
+    /// Homebrew users register shells like fish, and then the usual install locations. The
+    /// login shell comes first because Homebrew lists its bash after `/bin/bash`, and a check
+    /// should run the bash a terminal does.
     pub fn binary(self) -> Option<PathBuf> {
         let listed = fs::read_to_string("/etc/shells").unwrap_or_default();
-        std::env::var_os("SHELL")
-            .map(PathBuf::from)
+        login_shell()
             .into_iter()
             .chain(
                 listed
@@ -75,9 +76,15 @@ impl Shell {
                     .map(PathBuf::from),
             )
             .chain(
-                ["/bin", "/opt/homebrew/bin", "/usr/local/bin"]
-                    .iter()
-                    .map(|dir| Path::new(dir).join(self.name())),
+                [
+                    "/bin",
+                    "/usr/bin",
+                    "/opt/homebrew/bin",
+                    "/usr/local/bin",
+                    "/home/linuxbrew/.linuxbrew/bin",
+                ]
+                .iter()
+                .map(|dir| Path::new(dir).join(self.name())),
             )
             .find(|path| path.file_name().is_some_and(|n| n == self.name()) && path.is_file())
     }
@@ -86,22 +93,8 @@ impl Shell {
     pub fn startup_files(self, home: &Path) -> Vec<PathBuf> {
         match self {
             Shell::Zsh => vec![zsh_dotdir(home).join(".zshrc")],
-            Shell::Bash => {
-                // Terminal on macOS starts login shells, which read only the first of these
-                // that exists. `.bashrc` covers non-login shells, like `bash` typed at a prompt.
-                let login = [".bash_profile", ".bash_login", ".profile"]
-                    .iter()
-                    .map(|name| home.join(name))
-                    .find(|path| path.exists())
-                    .unwrap_or_else(|| home.join(".bash_profile"));
-                let rc = home.join(".bashrc");
-                if rc.exists() {
-                    vec![login, rc]
-                } else {
-                    vec![login]
-                }
-            }
-            Shell::Fish => vec![home.join(".config/fish/config.fish")],
+            Shell::Bash => bash_startup_files(Platform::current(), home),
+            Shell::Fish => vec![platform::xdg_config_home(home).join("fish/config.fish")],
         }
     }
 
@@ -181,17 +174,78 @@ fn zsh_dotdir(home: &Path) -> PathBuf {
         .map_or_else(|| home.to_path_buf(), PathBuf::from)
 }
 
-/// The environment a new Terminal window starts from, before any startup file runs.
+/// The files a new terminal's bash reads, which depends on whether it's a login shell.
+///
+/// - A login shell (Terminal on macOS, WSL) reads only the first of `.bash_profile`,
+///   `.bash_login` and `.profile` that exists; `.bashrc` covers non-login shells, like `bash`
+///   typed at a prompt. With none of them, macOS gets `.bash_profile`; Linux gets `.profile`,
+///   because a new `.bash_profile` would hide the `.profile` a distro sources `.bashrc` from
+///   when one turns up later.
+/// - A Linux desktop terminal's bash isn't a login shell and reads only `.bashrc`. Distros'
+///   login files source it, so SSH logins get the block too.
+fn bash_startup_files(platform: Platform, home: &Path) -> Vec<PathBuf> {
+    let rc = home.join(".bashrc");
+    if !platform.terminal_starts_login_shell() {
+        return vec![rc];
+    }
+    let fallback = if platform == Platform::MacOs {
+        ".bash_profile"
+    } else {
+        ".profile"
+    };
+    let login = [".bash_profile", ".bash_login", ".profile"]
+        .iter()
+        .map(|name| home.join(name))
+        .find(|path| path.exists())
+        .unwrap_or_else(|| home.join(fallback));
+    if rc.exists() {
+        vec![login, rc]
+    } else {
+        vec![login]
+    }
+}
+
+/// The user's login shell: `$SHELL`, or on Linux the account database when an app started from
+/// a `.desktop` file has no `$SHELL`.
+fn login_shell() -> Option<PathBuf> {
+    std::env::var_os("SHELL")
+        .filter(|shell| !shell.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            let user = std::env::var("USER")
+                .or_else(|_| std::env::var("LOGNAME"))
+                .unwrap_or_default();
+            platform::login_shell_from_account(&user)
+        })
+}
+
+/// The flags that start a shell the way a new terminal window does: interactive, and a login
+/// shell where terminals start one.
+fn terminal_flags(platform: Platform) -> &'static [&'static str] {
+    if platform.terminal_starts_login_shell() {
+        &["-l", "-i"]
+    } else {
+        &["-i"]
+    }
+}
+
+/// The environment a new terminal window starts from, before any startup file runs: the basics,
+/// the session's variables where a desktop session passes them on, and the PATH the platform's
+/// terminals start with.
 fn fresh_env(command: &mut Command, home: &Path) {
+    let platform = Platform::current();
+    let session = platform::session_vars(platform);
+    let inherited = std::env::var("PATH").unwrap_or_default();
     command
         .env_clear()
         .envs(std::env::vars_os().filter(|(key, _)| {
-            ["USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL"]
-                .iter()
-                .any(|kept| key == kept)
+            let key = key.to_string_lossy();
+            ["USER", "LOGNAME", "SHELL", "TMPDIR", "LANG"].contains(&key.as_ref())
+                || key.starts_with("LC_")
+                || session.contains(&key.as_ref())
         }))
         .env("HOME", home)
-        .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+        .env("PATH", platform::new_terminal_path(platform, &inherited))
         .env("TERM", "xterm-256color");
 }
 
@@ -211,11 +265,8 @@ pub fn status(shell: Shell, home: &Path) -> ShellStatus {
     let installed = files
         .iter()
         .all(|file| fs::read_to_string(file).is_ok_and(|text| block_range(&text).is_some()));
-    let is_default = std::env::var_os("SHELL").is_some_and(|login| {
-        Path::new(&login)
-            .file_name()
-            .is_some_and(|n| n == shell.name())
-    });
+    let is_default =
+        login_shell().is_some_and(|login| login.file_name().is_some_and(|n| n == shell.name()));
     ShellStatus {
         shell,
         available: shell.binary().is_some(),
@@ -361,9 +412,9 @@ pub enum FolderCheck {
     ShimFailed { message: String },
 }
 
-/// The PATH a new terminal window gets from the user's login shell, after its startup files.
-/// An app opened from Finder has a bare PATH, so MCP server checks start `npx` and the like
-/// with this one. Asked once per app run; a failure is reported, not cached.
+/// The PATH a new terminal window gets from the user's shell, after its startup files. An app
+/// opened from Finder or a `.desktop` file may have a bare PATH, so MCP server checks start
+/// `npx` and the like with this one. Asked once per app run; a failure is reported, not cached.
 pub fn login_path(home: &Path) -> Result<String> {
     static CACHE: Mutex<Option<(PathBuf, String)>> = Mutex::new(None);
     let mut cache = CACHE
@@ -374,10 +425,16 @@ pub fn login_path(home: &Path) -> Result<String> {
             return Ok(path.clone());
         }
     }
+    let platform = Platform::current();
     let shell = Shell::ALL
         .into_iter()
         .find(|&s| status(s, home).is_default)
-        .unwrap_or(Shell::Zsh);
+        .or_else(|| {
+            Shell::ALL
+                .into_iter()
+                .find(|s| s.name() == platform.default_shell_name())
+        })
+        .unwrap_or(Shell::Bash);
     let binary = shell
         .binary()
         .ok_or_else(|| Error::Invalid(format!("{} isn't installed.", shell.name())))?;
@@ -386,7 +443,10 @@ pub fn login_path(home: &Path) -> Result<String> {
         Shell::Zsh | Shell::Bash => format!("printf '%s\\n' \"{PATH_MARK}$PATH\""),
     };
     let mut command = Command::new(binary);
-    command.args(["-l", "-i", "-c", &print]).current_dir(home);
+    command
+        .args(terminal_flags(platform))
+        .args(["-c", &print])
+        .current_dir(home);
     fresh_env(&mut command, home);
     let output = run(command, Duration::from_secs(15))?;
     let path = output
@@ -407,7 +467,8 @@ pub fn login_path(home: &Path) -> Result<String> {
     Ok(path)
 }
 
-/// Starts the shell the way Terminal does (login, interactive) in `folder`, runs its prompt
+/// Starts the shell the way a new terminal window does (interactive, and a login shell where
+/// terminals start one) in `folder`, runs its prompt
 /// hooks once, asks it how `tool` resolves, then asks the shim, run with that shell's PATH,
 /// how it would route. Nothing here runs the real tool.
 pub fn check_folder(shell: Shell, home: &Path, folder: &Path, tool: &str) -> Result<FolderCheck> {
@@ -427,7 +488,7 @@ pub fn check_folder(shell: Shell, home: &Path, folder: &Path, tool: &str) -> Res
         .ok_or_else(|| Error::Invalid(format!("{} isn't installed.", shell.name())))?;
     let probe = shell.probe(tool);
     let mut command = Command::new(binary);
-    command.args(["-l", "-i"]);
+    command.args(terminal_flags(Platform::current()));
     // zsh reads the probe from a file (see `probe`), which lives until the shell exits.
     let _script = match shell {
         Shell::Zsh => {
@@ -638,6 +699,35 @@ mod tests {
     use crate::shims;
     use envrouter_core::config::{Profile, ToolConfig};
 
+    /// The file a new terminal's bash reads first in an empty home on this platform:
+    /// `.bash_profile` on macOS, `.bashrc` on a Linux desktop, `.profile` in WSL.
+    fn first_bash_file(home: &Path) -> PathBuf {
+        bash_startup_files(Platform::current(), home).remove(0)
+    }
+
+    #[test]
+    fn bash_gets_the_files_each_platforms_terminal_reads() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let names = |platform| -> Vec<String> {
+            bash_startup_files(platform, home)
+                .iter()
+                .map(|f| f.file_name().unwrap().to_string_lossy().into_owned())
+                .collect()
+        };
+        // An empty home: Linux never gets a new .bash_profile, which would hide .profile.
+        assert_eq!(names(Platform::MacOs), [".bash_profile"]);
+        assert_eq!(names(Platform::Wsl), [".profile"]);
+        assert_eq!(names(Platform::Linux), [".bashrc"]);
+
+        // An existing login file is used as it is, with .bashrc beside it once that exists.
+        fs::write(home.join(".profile"), "").unwrap();
+        fs::write(home.join(".bashrc"), "").unwrap();
+        assert_eq!(names(Platform::MacOs), [".profile", ".bashrc"]);
+        assert_eq!(names(Platform::Wsl), [".profile", ".bashrc"]);
+        assert_eq!(names(Platform::Linux), [".bashrc"]);
+    }
+
     /// Whether to skip a test that needs `shell`. CI sets `ENVROUTER_REQUIRE_SHELLS` so a shell
     /// that didn't install fails the run rather than quietly testing less.
     fn missing(shell: Shell) -> bool {
@@ -755,7 +845,7 @@ mod tests {
     #[test]
     fn a_begin_line_without_its_end_does_not_count_as_installed() {
         let home = tempfile::tempdir().unwrap();
-        let profile = home.path().join(".bash_profile");
+        let profile = first_bash_file(home.path());
         fs::write(&profile, format!("export A=1\n{BEGIN}\n{NOTE}\n")).unwrap();
         assert!(!status(Shell::Bash, home.path()).installed);
 
@@ -781,7 +871,7 @@ mod tests {
     #[test]
     fn set_integration_leaves_a_dangling_symlinked_rc_file_alone() {
         let home = tempfile::tempdir().unwrap();
-        let link = home.path().join(".bash_profile");
+        let link = first_bash_file(home.path());
         std::os::unix::fs::symlink(home.path().join("unmounted/bash_profile"), &link).unwrap();
 
         let err = set_integration(Shell::Bash, home.path(), true).unwrap_err();
@@ -997,7 +1087,7 @@ mod tests {
             return;
         }
         let (_root, home) = zsh_home("");
-        let profile = home.join(".bash_profile");
+        let profile = first_bash_file(&home);
         fs::write(&profile, "export PATH=\"$HOME/bin:$PATH\"\n").unwrap();
         set_integration(Shell::Bash, &home, true).unwrap();
         let check = || check_folder(Shell::Bash, &home, &home.join("work/app"), "claude").unwrap();
