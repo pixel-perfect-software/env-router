@@ -6,7 +6,7 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{ActivationPolicy, AppHandle, Emitter, Manager, Wry};
 
-use crate::shell::{self, Shell};
+use envrouter_ops::shell::{self, Shell};
 
 const TRAY_ID: &str = "main";
 

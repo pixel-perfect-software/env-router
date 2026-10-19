@@ -1,8 +1,3 @@
-mod editors;
-mod mcp_import;
-mod mcp_probe;
-mod shell;
-mod shims;
 mod tray;
 
 use std::collections::HashMap;
@@ -13,8 +8,9 @@ use envrouter_core::{mcp, paths, Error, Result};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 
-use editors::{Editor, EditorStatus, IdeHook};
-use shell::{FolderCheck, Preview, Shell, ShellStatus};
+use envrouter_ops::editors::{self, Editor, EditorStatus, IdeHook};
+use envrouter_ops::shell::{self, FolderCheck, Preview, Shell, ShellStatus};
+use envrouter_ops::{mcp_import, mcp_probe, shims};
 
 fn home(app: &AppHandle) -> Result<PathBuf> {
     app.path().home_dir().map_err(|_| Error::NoHome)

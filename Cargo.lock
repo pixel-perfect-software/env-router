@@ -964,20 +964,21 @@ dependencies = [
 name = "envrouter"
 version = "0.1.0"
 dependencies = [
+ "envrouter-build-support",
  "envrouter-core",
  "envrouter-keychain",
- "http",
- "jsonc-parser",
- "rmcp",
+ "envrouter-ops",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
- "tempfile",
- "tokio",
 ]
+
+[[package]]
+name = "envrouter-build-support"
+version = "0.1.0"
 
 [[package]]
 name = "envrouter-core"
@@ -996,6 +997,22 @@ dependencies = [
  "envrouter-core",
  "security-framework",
  "serde_json",
+]
+
+[[package]]
+name = "envrouter-ops"
+version = "0.1.0"
+dependencies = [
+ "envrouter-build-support",
+ "envrouter-core",
+ "envrouter-keychain",
+ "http",
+ "jsonc-parser",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
