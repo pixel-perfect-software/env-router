@@ -151,7 +151,7 @@ pub fn render(config: &ConfigState, home: &Path) -> Vec<(PathBuf, String)> {
                 };
                 // In their own folder, so a server named `launch` can't collide.
                 let file = dir.join("servers").join(format!("{name}.json"));
-                let contents = server_file(injection.dialect, name, server);
+                let contents = server_file(injection.dialect, name, server, home);
                 files.push((file.clone(), pretty(&contents)));
                 let mut args = vec![format!("{}{}", injection.config_arg, file.display())];
                 if let Some(deny_arg) = &injection.deny_arg {
@@ -221,8 +221,29 @@ fn pretty(value: &impl Serialize) -> String {
     format!("{json}\n")
 }
 
+/// The arguments a stdio server runs with. `npx` gets `--prefix=<home>` first: agents start
+/// servers in the project folder, and npm refuses to run (`EBADDEVENGINES`) in a project whose
+/// `package.json` pins another package manager under `devEngines`. The prefix only moves where
+/// npm looks for a project; the server still runs in the project folder. A `--prefix` of the
+/// user's own, among npx's options before the package, stays. The cost: npx no longer sees the
+/// project's own `node_modules/.bin` or its `.npmrc`, so a server installed only in the project,
+/// or from a registry only the project's `.npmrc` configures, needs its own `--prefix`.
+fn launch_args(command: &str, mut args: Vec<String>, home: &Path) -> Vec<String> {
+    let npx = Path::new(command)
+        .file_name()
+        .is_some_and(|name| name == "npx");
+    let own_prefix = args
+        .iter()
+        .take_while(|arg| arg.starts_with('-'))
+        .any(|arg| arg.starts_with("--prefix"));
+    if npx && !own_prefix {
+        args.insert(0, format!("--prefix={}", home.display()));
+    }
+    args
+}
+
 /// One server as an agent's config file in `dialect`.
-fn server_file(dialect: McpDialect, name: &str, server: &McpServer) -> Value {
+fn server_file(dialect: McpDialect, name: &str, server: &McpServer, home: &Path) -> Value {
     let text = |value: &McpValue| match value {
         McpValue::Plain(text) => text.clone(),
         McpValue::Secret { secret } => format!("${{{}}}", secret_var(secret)),
@@ -240,7 +261,7 @@ fn server_file(dialect: McpDialect, name: &str, server: &McpServer) -> Value {
                 McpDialect::Copilot => "local",
             },
             "command": command,
-            "args": args.iter().map(text).collect::<Vec<_>>(),
+            "args": launch_args(command, args.iter().map(text).collect(), home),
             "env": map(env),
         }),
         McpServer::Http { url, headers } => {
@@ -393,7 +414,7 @@ mod tests {
             json!({ "mcpServers": { "github": {
                 "type": "stdio",
                 "command": "npx",
-                "args": ["-y", "gh"],
+                "args": ["--prefix=/home/me", "-y", "gh"],
                 "env": { "GITHUB_TOKEN": "${ENVROUTER_SECRET_7F3A}" },
             }}})
         );
@@ -403,6 +424,28 @@ mod tests {
             linear["mcpServers"]["linear"],
             json!({ "type": "http", "url": "https://mcp.linear.app/mcp", "headers": {} })
         );
+    }
+
+    #[test]
+    fn only_npx_gets_the_home_prefix_and_only_once() {
+        let home = home();
+        let args = |list: &[&str]| list.iter().map(|&a| a.to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            launch_args("/opt/homebrew/bin/npx", args(&["-y", "pkg"]), &home),
+            args(&["--prefix=/home/me", "-y", "pkg"])
+        );
+        assert_eq!(
+            launch_args("npx", args(&["--prefix=/srv", "pkg"]), &home),
+            args(&["--prefix=/srv", "pkg"])
+        );
+        // The server's own --prefix, after the package, isn't npx's.
+        assert_eq!(
+            launch_args("npx", args(&["pkg", "--prefix=/data"]), &home),
+            args(&["--prefix=/home/me", "pkg", "--prefix=/data"])
+        );
+        for command in ["uvx", "docker", "npx-wrapper"] {
+            assert_eq!(launch_args(command, args(&["pkg"]), &home), args(&["pkg"]));
+        }
     }
 
     #[test]
