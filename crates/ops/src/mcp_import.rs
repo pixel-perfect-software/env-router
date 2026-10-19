@@ -1,6 +1,7 @@
 //! Finds MCP servers the user's agents already define, so the library can import them. It reads
 //! each agent's own files where its descriptor says they are (its config folder, by default and
 //! as each profile sets it, and the project file in each trigger folder), and never writes them.
+//! It also reads servers from JSON pasted into the window, such as a README's snippet.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -76,6 +77,81 @@ pub fn candidates(config: &ConfigState, home: &Path) -> Vec<ImportCandidate> {
     found
 }
 
+/// What pasted text holds: each server it defines, and the names of entries EnvRouter can't use.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Pasted {
+    pub servers: Vec<PastedServer>,
+    pub skipped: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PastedServer {
+    /// None for a lone entry, which the text doesn't name.
+    pub name: Option<String>,
+    pub server: McpServer,
+}
+
+/// Reads servers from pasted text, as READMEs and agents write them: an `mcpServers` table,
+/// VS Code's `servers` (or `mcp.servers` in its settings), a bare table of named servers, or a
+/// lone server. Comments and trailing commas are fine, and so is a table entry copied without
+/// its outer braces (`"github": { ... }`). The error is worded to show as is.
+pub fn parse_pasted(text: &str) -> std::result::Result<Pasted, String> {
+    if text.trim().is_empty() {
+        return Err("Paste a server's JSON first.".into());
+    }
+    let parse = |text: &str| {
+        jsonc_parser::parse_to_serde_value::<Value>(text, &jsonc_parser::ParseOptions::default())
+    };
+    let json = match parse(text) {
+        Ok(json) => json,
+        // The brace goes on its own line, so a trailing `//` comment can't swallow it.
+        Err(err) => parse(&format!("{{{text}\n}}"))
+            .map_err(|_| format!("That isn't JSON EnvRouter can read: {err}."))?,
+    };
+    let is_entry = |value: &Value| value.get("command").is_some() || value.get("url").is_some();
+    if is_entry(&json) {
+        let server =
+            parse_entry(&json).ok_or("EnvRouter can't use this server's transport or values.")?;
+        return Ok(Pasted {
+            servers: vec![PastedServer { name: None, server }],
+            skipped: Vec::new(),
+        });
+    }
+    let table = [&json["mcpServers"], &json["servers"], &json["mcp"]["servers"]]
+        .into_iter()
+        .find_map(Value::as_object)
+        .or_else(|| {
+            json.as_object()
+                .filter(|map| !map.is_empty() && map.values().all(is_entry))
+        })
+        .ok_or("There are no MCP servers in it. Paste the part with mcpServers, or one server with its command or url.")?;
+    let mut pasted = Pasted {
+        servers: Vec::new(),
+        skipped: Vec::new(),
+    };
+    for (name, entry) in table {
+        match parse_entry(entry) {
+            Some(server) => pasted.servers.push(PastedServer {
+                name: Some(name.clone()),
+                server,
+            }),
+            None => pasted.skipped.push(name.clone()),
+        }
+    }
+    if pasted.servers.is_empty() && pasted.skipped.is_empty() {
+        return Err("There are no MCP servers in it.".into());
+    }
+    if pasted.servers.is_empty() {
+        return Err(format!(
+            "EnvRouter can't use {}: their transports or values aren't ones it supports.",
+            pasted.skipped.join(", ")
+        ));
+    }
+    Ok(pasted)
+}
+
 /// The servers in one file: its top-level `mcpServers`, plus, in Claude's `.claude.json`, each
 /// project's. A file that's missing or unreadable has none.
 fn read_servers(path: &Path, dialect: McpDialect) -> Vec<(String, McpServer)> {
@@ -102,12 +178,19 @@ fn read_servers(path: &Path, dialect: McpDialect) -> Vec<(String, McpServer)> {
 /// One `mcpServers` entry in the shape Claude and Copilot share. Anything EnvRouter can't
 /// represent is skipped rather than imported half right.
 fn parse_entry(entry: &Value) -> Option<McpServer> {
+    // READMEs write `"--port", 3000` and `"DEBUG": true`; agents pass them on as text.
+    let text = |value: &Value| match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Number(number) => Some(number.to_string()),
+        Value::Bool(flag) => Some(flag.to_string()),
+        _ => None,
+    };
     let strings = |value: &Value| -> Option<BTreeMap<String, McpValue>> {
         match value {
             Value::Null => Some(BTreeMap::new()),
             Value::Object(map) => map
                 .iter()
-                .map(|(k, v)| Some((k.clone(), McpValue::Plain(v.as_str()?.to_string()))))
+                .map(|(k, v)| Some((k.clone(), McpValue::Plain(text(v)?))))
                 .collect(),
             _ => None,
         }
@@ -121,7 +204,7 @@ fn parse_entry(entry: &Value) -> Option<McpServer> {
             Value::Null => Vec::new(),
             Value::Array(args) => args
                 .iter()
-                .map(|a| Some(McpValue::Plain(a.as_str()?.to_string())))
+                .map(|a| Some(McpValue::Plain(text(a)?)))
                 .collect::<Option<_>>()?,
             _ => return None,
         };
@@ -143,6 +226,72 @@ fn parse_entry(entry: &Value) -> Option<McpServer> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn named(pasted: &Pasted) -> Vec<Option<&str>> {
+        pasted.servers.iter().map(|s| s.name.as_deref()).collect()
+    }
+
+    #[test]
+    fn reads_pasted_tables_in_every_shape_readmes_use() {
+        let shapes = [
+            r#"{ "mcpServers": { "gh": { "command": "npx", "args": ["-y", "gh"] } } }"#,
+            // VS Code's mcp.json, with a comment and a trailing comma.
+            r#"{ "servers": { "gh": { "type": "stdio", "command": "npx", "args": ["-y", "gh"], }, } // vs code
+            }"#,
+            r#"{ "mcp": { "servers": { "gh": { "command": "npx", "args": ["-y", "gh"] } } } }"#,
+            r#"{ "gh": { "command": "npx", "args": ["-y", "gh"] } }"#,
+            // An entry copied without the table's braces.
+            r#""gh": { "command": "npx", "args": ["-y", "gh"] },"#,
+            r#""gh": { "command": "npx", "args": ["-y", "gh"] }, // from the README"#,
+        ];
+        for text in shapes {
+            let pasted = parse_pasted(text).unwrap_or_else(|err| panic!("{text}: {err}"));
+            assert_eq!(named(&pasted), [Some("gh")], "{text}");
+        }
+    }
+
+    #[test]
+    fn reads_a_lone_server_unnamed_and_names_what_it_skips() {
+        let lone =
+            parse_pasted(r#"{ "type": "http", "url": "https://mcp.linear.app/mcp" }"#).unwrap();
+        assert_eq!(named(&lone), [None]);
+        let mixed = parse_pasted(
+            r#"{ "mcpServers": { "lin": { "url": "https://l/mcp" }, "odd": { "type": "ws", "url": "ws://x" } } }"#,
+        )
+        .unwrap();
+        assert_eq!(named(&mixed), [Some("lin")]);
+        assert_eq!(mixed.skipped, ["odd"]);
+    }
+
+    #[test]
+    fn takes_numbers_and_flags_as_text() {
+        let pasted = parse_pasted(
+            r#"{ "command": "srv", "args": ["--port", 3000], "env": { "DEBUG": true } }"#,
+        )
+        .unwrap();
+        let McpServer::Stdio { args, env, .. } = &pasted.servers[0].server else {
+            panic!("{pasted:?}");
+        };
+        assert_eq!(args[1], McpValue::Plain("3000".into()));
+        assert_eq!(env["DEBUG"], McpValue::Plain("true".into()));
+    }
+
+    #[test]
+    fn explains_text_it_cant_use() {
+        for (text, says) in [
+            ("  ", "Paste"),
+            ("{ nope", "isn't JSON"),
+            (r#"{ "name": "x" }"#, "no MCP servers"),
+            (r#"{ "mcpServers": {} }"#, "no MCP servers"),
+            (
+                r#"{ "mcpServers": { "odd": { "type": "ws", "url": "ws://x" } } }"#,
+                "can't use odd",
+            ),
+        ] {
+            let err = parse_pasted(text).unwrap_err();
+            assert!(err.contains(says), "{text}: {err}");
+        }
+    }
     use envrouter_core::config::{AgentDef, McpFiles, McpInjection, Profile, ToolConfig};
 
     fn claude() -> AgentDef {
@@ -232,7 +381,8 @@ mod tests {
                 .unwrap();
         assert!(matches!(parse_entry(&entry), Some(McpServer::Stdio { .. })));
         let bad: Value =
-            serde_json::from_str(r#"{ "command": "npx", "env": { "N": 1 } }"#).unwrap();
+            serde_json::from_str(r#"{ "command": "npx", "env": { "N": { "nested": 1 } } }"#)
+                .unwrap();
         assert_eq!(parse_entry(&bad), None);
     }
 }

@@ -132,6 +132,11 @@ async fn import_candidates(
 }
 
 #[tauri::command]
+fn parse_mcp_json(text: &str) -> Result<mcp_import::Pasted> {
+    commands::parse_mcp_json(text)
+}
+
+#[tauri::command]
 async fn open_in_editor(app: AppHandle, path: String) -> Result<()> {
     let home = home(&app)?;
     blocking(move || commands::open_in_editor(&home, &path)).await
@@ -202,7 +207,8 @@ pub fn run() {
             open_in_editor,
             check_mcp_server,
             get_mcp_tools,
-            import_candidates
+            import_candidates,
+            parse_mcp_json
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

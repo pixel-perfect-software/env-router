@@ -164,6 +164,11 @@ pub fn import_candidates(home: &Path, payload: &ConfigState) -> Vec<mcp_import::
     mcp_import::candidates(payload, home)
 }
 
+/// MCP servers in text the user pasted, such as a README's snippet.
+pub fn parse_mcp_json(text: &str) -> Result<mcp_import::Pasted> {
+    mcp_import::parse_pasted(text).map_err(Error::Invalid)
+}
+
 /// Opens a file in the user's default text editor, e.g. the startup file that defines an alias
 /// shadowing the shim. Limited to existing files inside the home folder.
 pub fn open_in_editor(home: &Path, path: &str) -> Result<()> {
