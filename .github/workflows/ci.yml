@@ -54,7 +54,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y zsh fish gnome-keyring dbus
+      - run: sudo apt-get update && sudo apt-get install -y zsh fish gnome-keyring dbus mingw-w64
       - run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --locked -p envrouter-core -p envrouter-shim -p envrouter-keychain -p envrouter-ops -p envrouter-cli --all-targets -- -D warnings
@@ -63,3 +63,7 @@ jobs:
       - run: >-
           dbus-run-session -- sh -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null
           && cargo test --locked -p envrouter-keychain -- --ignored'
+      # The Windows secrets helper a WSL distro runs: cross-compiled with mingw and linted. Its
+      # Credential Manager round trip runs under Wine with dev/containers (windows-helper-wine).
+      - run: rustup target add x86_64-pc-windows-gnu
+      - run: cargo clippy --locked -p envrouter-keychain --target x86_64-pc-windows-gnu --all-targets -- -D warnings

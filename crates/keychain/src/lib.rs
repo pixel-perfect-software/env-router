@@ -10,9 +10,10 @@
 //! test, and the safe way to try the app) never reads or writes the real secrets.
 //!
 //! Each platform's store is a module in `store/` with the same three functions on one item:
-//! `get`, `set` and `delete`: the macOS Keychain, and the Secret Service (GNOME Keyring, KWallet)
-//! on Linux. Where there's no store, every call says so, and a server that needs a secret is
-//! left out.
+//! `get`, `set` and `delete`: the macOS Keychain, the Secret Service (GNOME Keyring, KWallet) on
+//! Linux, the Credential Manager on Windows, and inside WSL the Windows Credential Manager
+//! through the Windows build of the helper. Where there's no store, every call says so, and a
+//! server that needs a secret is left out.
 
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
@@ -21,11 +22,19 @@ use std::path::Path;
 use envrouter_core::{Error, Result};
 
 #[cfg_attr(target_os = "macos", path = "store/macos.rs")]
-#[cfg_attr(all(unix, not(target_os = "macos")), path = "store/secret_service.rs")]
-#[cfg_attr(not(unix), path = "store/unavailable.rs")]
+#[cfg_attr(all(unix, not(target_os = "macos")), path = "store/linux.rs")]
+#[cfg_attr(windows, path = "store/windows.rs")]
+#[cfg_attr(not(any(unix, windows)), path = "store/unavailable.rs")]
 mod store;
 
-const SERVICE: &str = "EnvRouter MCP secrets";
+/// The store's own item, for the helper's bridge commands: the Windows build answers them for
+/// the Linux side of a WSL distro.
+pub mod raw {
+    pub use super::store::{delete, get, set};
+    pub use super::SERVICE;
+}
+
+pub const SERVICE: &str = "EnvRouter MCP secrets";
 
 fn account(home: &Path) -> String {
     fs::canonicalize(home)

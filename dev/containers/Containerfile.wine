@@ -1,0 +1,6 @@
+# Just Wine, to run the Windows secrets helper built by windows-helper-build. x86_64 only.
+# trixie: Rust's std on Windows needs bcryptprimitives.dll, which Wine 8 (bookworm) lacks.
+FROM docker.io/library/debian:trixie-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends wine64 wine \
+ && rm -rf /var/lib/apt/lists/*

@@ -6,7 +6,9 @@
 //! an agent's file format. Secret values are nowhere on disk: a rendered file refers to
 //! `${ENVROUTER_SECRET_<ID>}`, which the shim sets on the agent's process from the Keychain.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+#[cfg(unix)]
+use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ffi::OsString;
 use std::fs;
 use std::io::ErrorKind;
@@ -192,7 +194,8 @@ pub fn sync(config: &ConfigState, home: &Path) -> Result<()> {
 }
 
 /// Removes everything in `dir` that isn't in `keep`, and folders left empty. Links are removed,
-/// never followed.
+/// never followed. Only [`sync`] uses it, which is Unix-only until Windows gets its own.
+#[cfg(unix)]
 fn remove_except(dir: &Path, keep: &HashSet<&Path>) -> Result<()> {
     let io_err = |path: &Path| {
         let path = path.to_path_buf();

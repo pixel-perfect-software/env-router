@@ -1,0 +1,73 @@
+# Linux and Windows checks for EnvRouter, runnable on a Mac with Podman or Docker:
+#
+#   podman compose -f dev/containers/compose.yaml run --rm linux-test
+#   podman compose -f dev/containers/compose.yaml run --rm linux-app
+#   podman compose -f dev/containers/compose.yaml run --rm windows-helper-build
+#   podman compose -f dev/containers/compose.yaml run --rm windows-helper-wine
+#
+# (`docker compose` works the same.) The source is mounted read-only and copied in, so nothing
+# is written to the checkout; builds and downloads persist in named volumes.
+
+# Everything here (containers, images, volumes) is grouped under this project name.
+name: envrouter-dev
+
+x-common: &common
+  volumes:
+    - ../..:/src:ro
+    - ./scripts:/scripts:ro
+    - target:/target
+    - registry:/usr/local/cargo/registry
+    - rustup:/usr/local/rustup
+  working_dir: /work
+
+services:
+  # Backend, shim, secrets and CLI: clippy and tests with every shell required, then the
+  # secrets round trip through a GNOME Keyring in a private D-Bus session.
+  linux-test:
+    <<: *common
+    image: envrouter-dev/linux:latest
+    build: { context: ., dockerfile: Containerfile }
+    labels: { envrouter.purpose: "Linux backend, shim, secrets and CLI tests" }
+    command: /scripts/linux-test.sh
+
+  # The desktop app crate: clippy with WebKitGTK.
+  linux-app:
+    <<: *common
+    image: envrouter-dev/linux:latest
+    labels: { envrouter.purpose: "Linux desktop app build" }
+    command: /scripts/linux-app.sh
+
+  # The Windows secrets helper (Credential Manager), cross-compiled with mingw and linted, natively.
+  # It lands in the windows-exe volume for windows-helper-wine.
+  windows-helper-build:
+    <<: *common
+    image: envrouter-dev/linux:latest
+    labels: { envrouter.purpose: "Windows secrets helper cross-build" }
+    volumes:
+      - ../..:/src:ro
+      - ./scripts:/scripts:ro
+      - target:/target
+      - registry:/usr/local/cargo/registry
+      - rustup:/usr/local/rustup
+      - windows-exe:/out
+    command: /scripts/windows-helper-build.sh
+
+  # Runs that helper under Wine: its own round trip, through the store-get/set/delete bridge a
+  # WSL distro uses. x86_64, since Wine runs x86_64 Windows binaries; emulated on Apple
+  # Silicon, which is why only Wine runs here and the build happens natively. Run
+  # windows-helper-build first.
+  windows-helper-wine:
+    platform: linux/amd64
+    image: envrouter-dev/wine:latest
+    build: { context: ., dockerfile: Containerfile.wine }
+    labels: { envrouter.purpose: "Windows secrets helper under Wine" }
+    volumes:
+      - ./scripts:/scripts:ro
+      - windows-exe:/out:ro
+    command: /scripts/windows-helper-wine.sh
+
+volumes:
+  target:
+  registry:
+  rustup:
+  windows-exe:
