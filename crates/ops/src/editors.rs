@@ -10,6 +10,7 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
+pub use envrouter_core::config::IdeHook;
 use envrouter_core::platform::{self, Platform};
 use envrouter_core::{config, paths, Error, Result};
 use jsonc_parser::cst::{CstInputValue, CstRootNode};
@@ -110,17 +111,6 @@ impl Editor {
         };
         home.join(dir).join("extensions")
     }
-}
-
-/// `IdeHook` in `tools.ts`: how an agent's editor extension can be told to run through the shim.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IdeHook {
-    /// The extension's process-wrapper setting, e.g. `claudeCode.claudeProcessWrapper`.
-    pub setting: String,
-    /// The extension's id, e.g. `anthropic.claude-code`. Installed copies are folders named
-    /// `<id>-<version>[-<platform>]`.
-    pub extension: String,
 }
 
 #[derive(Debug, Serialize)]

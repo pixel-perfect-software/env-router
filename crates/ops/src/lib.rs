@@ -2,8 +2,10 @@
 //! wraps these in Tauri commands; keeping them here lets them run headless and be tested
 //! without a window.
 
+pub mod commands;
 pub mod editors;
 pub mod mcp_import;
 pub mod mcp_probe;
+pub mod rpc;
 pub mod shell;
 pub mod shims;

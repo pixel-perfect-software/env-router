@@ -1,0 +1,22 @@
+[package]
+name = "envrouter-cli"
+version = "0.1.0"
+description = "The envrouter command: EnvRouter without the window, for servers, WSL distros and scripts, and the rpc bridge a window uses to manage another machine"
+license = "MIT"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "envrouter"
+path = "src/main.rs"
+
+[dependencies]
+envrouter-core.workspace = true
+envrouter-ops.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+clap = { version = "4.6", features = ["derive"] }
+tokio = { version = "1", features = ["rt"] }
+
+[lints]
+workspace = true

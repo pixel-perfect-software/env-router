@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 pub const SHIM_NAME: &str = "envrouter-shim";
 pub const KEYCHAIN_NAME: &str = "envrouter-keychain";
+pub const CLI_NAME: &str = "envrouter";
 
 pub fn root(home: &Path) -> PathBuf {
     home.join(".envrouter")
@@ -25,6 +26,12 @@ pub fn shim_binary(home: &Path) -> PathBuf {
 /// needs a secret, so the shim itself never links the Security framework.
 pub fn keychain_helper(home: &Path) -> PathBuf {
     root(home).join("bin").join(KEYCHAIN_NAME)
+}
+
+/// The installed CLI, at a fixed place so another machine's window can run it there, e.g.
+/// `wsl.exe -d <distro> -- ~/.envrouter/bin/envrouter rpc`.
+pub fn cli_binary(home: &Path) -> PathBuf {
+    root(home).join("bin").join(CLI_NAME)
 }
 
 /// Rendered MCP files: `<profile id>/<command>/`, holding one config file per server and the

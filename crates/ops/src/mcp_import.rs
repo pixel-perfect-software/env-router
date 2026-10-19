@@ -158,6 +158,7 @@ mod tests {
                 default_dir: "~".into(),
                 project_file: Some(".mcp.json".into()),
             }),
+            ide: None,
         }
     }
 

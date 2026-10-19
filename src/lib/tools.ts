@@ -61,6 +61,6 @@ export const toolLabel = (command: string) => toolByCommand(command)?.label ?? c
  */
 export const withAgents = (config: ConfigState): ConfigState => {
   const agents: Record<string, AgentDef> = { ...config.agents }
-  for (const tool of KNOWN_TOOLS) agents[tool.command] = { mcp: tool.mcp ?? null, mcpFiles: tool.mcpFiles ?? null }
+  for (const tool of KNOWN_TOOLS) agents[tool.command] = { mcp: tool.mcp ?? null, mcpFiles: tool.mcpFiles ?? null, ide: tool.ide ?? null }
   return { ...config, agents }
 }

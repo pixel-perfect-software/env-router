@@ -51,6 +51,11 @@ pub enum Shell {
 impl Shell {
     pub const ALL: [Shell; 3] = [Shell::Zsh, Shell::Bash, Shell::Fish];
 
+    /// The shell called `name` (`zsh`, `bash`, `fish`), if it's one EnvRouter handles.
+    pub fn from_name(name: &str) -> Option<Shell> {
+        Shell::ALL.into_iter().find(|shell| shell.name() == name)
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Shell::Zsh => "zsh",
@@ -429,11 +434,7 @@ pub fn login_path(home: &Path) -> Result<String> {
     let shell = Shell::ALL
         .into_iter()
         .find(|&s| status(s, home).is_default)
-        .or_else(|| {
-            Shell::ALL
-                .into_iter()
-                .find(|s| s.name() == platform.default_shell_name())
-        })
+        .or_else(|| Shell::from_name(platform.default_shell_name()))
         .unwrap_or(Shell::Bash);
     let binary = shell
         .binary()
