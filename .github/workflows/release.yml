@@ -20,6 +20,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -44,6 +45,7 @@ jobs:
     needs: check
     # Apple Silicon: the bundle is arm64-only for now.
     runs-on: macos-15
+    timeout-minutes: 45
     env:
       VERSION: ${{ needs.check.outputs.version }}
     steps:
@@ -86,13 +88,15 @@ jobs:
           - runner: ubuntu-22.04-arm
             triple: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     env:
       VERSION: ${{ needs.check.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev mingw-w64
+          # Only the x86_64 mingw compiler, to link the Windows helper; not the whole mingw-w64 suite.
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev gcc-mingw-w64-x86-64
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -127,6 +131,7 @@ jobs:
   publish:
     needs: [check, macos, linux]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       VERSION: ${{ needs.check.outputs.version }}
     steps:

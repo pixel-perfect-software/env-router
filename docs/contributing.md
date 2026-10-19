@@ -46,9 +46,12 @@ recommends its extension and turns on format-on-save.
 | Licences and RustSec advisories | `cargo deny check` |
 | Unused Rust dependencies | `cargo machete` |
 
-CI (`.github/workflows/ci.yml`) runs all of these on macOS for every pull request and every push
-to `main`, and a Linux job runs the backend, shim, secrets and CLI tests, the secrets round trip
-through a GNOME Keyring, and a lint of the Windows secrets helper. Run them before you push.
+CI (`.github/workflows/ci.yml`) runs these for every pull request and every push to `main`,
+except changes that only touch docs, design notes, `dev/containers` or `packaging`. Most of it
+runs on Linux: the frontend, formatting, licences, the backend, shim, secrets and CLI tests, the
+secrets round trip through a GNOME Keyring, and a lint of the Windows secrets helper. The macOS
+job runs only what needs a Mac: clippy and the tests for the whole workspace, including the app
+and the Keychain. Run them before you push.
 
 ### 🐳 Linux and Windows from a Mac
 
