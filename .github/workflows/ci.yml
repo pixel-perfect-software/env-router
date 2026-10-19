@@ -1,24 +1,47 @@
 name: CI
 
+# Docs, design notes, the local containers and the Homebrew templates don't change what CI tests.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.impeccable/**'
+      - '.claude/**'
+      - 'dev/containers/**'
+      - 'packaging/**'
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.impeccable/**'
+      - '.claude/**'
+      - 'dev/containers/**'
+      - 'packaging/**'
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# The shell tests skip a shell that isn't installed; here a missing one fails the run instead.
-env:
-  ENVROUTER_REQUIRE_SHELLS: 1
-
 jobs:
-  check:
-    # macOS: the app ships there, and the Rust tests drive a real zsh, bash and fish.
-    runs-on: macos-latest
+  linux:
+    # Everything that doesn't need a Mac runs here, where runners start sooner and cost a tenth
+    # as much: the frontend, formatting, licences, and the backend, shim, secrets and CLI tests
+    # with real zsh, bash and fish.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # The shell tests skip a shell that isn't installed; here a missing one fails the run.
+      ENVROUTER_REQUIRE_SHELLS: 1
     steps:
       - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zsh fish gnome-keyring dbus
 
       # Reads the pnpm version from `packageManager` in package.json.
       - uses: pnpm/action-setup@v4
@@ -28,42 +51,50 @@ jobs:
           cache: pnpm
       # The runner's rustup installs the version and components rust-toolchain.toml pins.
       - run: rustup show active-toolchain || rustup toolchain install
+      - run: rustup target add x86_64-pc-windows-gnu
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Pull requests restore main's cache but don't save their own, so the cache store keeps
+          # one useful copy instead of filling with per-branch ones.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny,cargo-machete
-      # The runner has zsh and bash; fish's folder check is only tested where fish is installed.
-      - run: brew install fish
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm format-and-lint
       - run: pnpm test
-      # Type-checks, and produces dist/, which the app crate embeds at compile time.
       - run: pnpm build
 
       - run: cargo fmt --all -- --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
       # Licences (no copyleft in an MIT app), RustSec advisories, sources.
       - run: cargo deny check
       - run: cargo machete
 
-  linux:
-    # The backend, shim and secrets crates on Linux, with real zsh, bash and fish. The app crate
-    # joins once the Linux window exists (it needs the WebKitGTK development packages).
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y zsh fish gnome-keyring dbus mingw-w64
-      - run: rustup show active-toolchain || rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --locked -p envrouter-core -p envrouter-shim -p envrouter-keychain -p envrouter-ops -p envrouter-cli --all-targets -- -D warnings
       - run: cargo test --locked -p envrouter-core -p envrouter-shim -p envrouter-keychain -p envrouter-ops -p envrouter-cli
       # The secret store's round trip, through a GNOME Keyring started in a private D-Bus session.
       - run: >-
           dbus-run-session -- sh -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null
           && cargo test --locked -p envrouter-keychain -- --ignored'
-      # The Windows secrets helper a WSL distro runs: cross-compiled with mingw and linted. Its
-      # Credential Manager round trip runs under Wine with dev/containers (windows-helper-wine).
-      - run: rustup target add x86_64-pc-windows-gnu
+      # The Windows secrets helper a WSL distro runs. Clippy only type-checks, so no mingw is
+      # needed; its Credential Manager round trip runs under Wine with dev/containers.
       - run: cargo clippy --locked -p envrouter-keychain --target x86_64-pc-windows-gnu --all-targets -- -D warnings
+
+  macos:
+    # Only what needs a Mac: the Keychain backend, the desktop app crate, and the shell tests'
+    # macOS behaviour (login shells, path_helper). fish behaves the same everywhere, so the Linux
+    # job covers it and this one skips installing it.
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The app crate embeds the built frontend at compile time; an empty one compiles, and the
+      # Linux job builds the real one.
+      - run: mkdir -p dist
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - run: cargo test --locked --workspace
