@@ -16,10 +16,7 @@
     ]
   },
   "bundle": {
-    "targets": [
-      "deb",
-      "appimage"
-    ],
+    "targets": ["deb", "appimage"],
     "linux": {
       "deb": {
         "section": "devel"
