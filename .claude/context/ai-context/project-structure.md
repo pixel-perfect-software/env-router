@@ -20,6 +20,7 @@ env-router/
 │   ├── src/lib.rs             # Tauri commands (below) and app setup
 │   ├── src/shims.rs           # installs the shim binary; syncs one symlink per tool
 │   ├── src/shell.rs           # startup-file blocks for zsh/bash/fish, check_folder, preview
+│   ├── src/editors.rs         # editor integration: points an agent extension's process-wrapper setting at the shim
 │   ├── src/mcp_import.rs      # reads the agents' own MCP files (by their mcpFiles descriptor) for import
 │   ├── src/mcp_probe.rs       # MCP server check (rmcp): tools, needs-login, stderr tail; tool-list cache
 │   ├── src/tray.rs            # menu bar icon and menu; close-to-hide; Dock icon only while the window is open
@@ -61,6 +62,8 @@ adds a marked block to the end of `~/.zshrc` (or `$ZDOTDIR/.zshrc`), bash's logi
 | `save_config(payload, secrets)` | Validates, stores new MCP secrets in the Keychain (pruning unused ones), saves, installs the shim, renders the MCP files, syncs the symlinks |
 | `get_setup_status` | Whether the shim is installed, plus per-shell availability, default shell and block status |
 | `set_shell_integration(shell, enabled)` | Adds or removes the startup-file block |
+| `get_editor_status(hooks)` | Each VS Code-family editor's state for each agent's extension hook (from `tools.ts`) |
+| `set_editor_integration(editor, command, hook, enabled)` | Sets or clears the extension's process-wrapper setting in the editor's user `settings.json`, keeping comments; never replaces someone else's wrapper |
 | `check_folder(shell, folder, tool)` | Real-shell check, after running the prompt hooks once: routed (with the MCP servers it adds), shadowed by an alias/function, shadowed on PATH (which includes a shell that's off, and says whether a prompt hook did it), not found, tool not installed, or shim failed |
 | `preview_folder(payload, folder, tool)` | Instant profile preview from an unsaved config |
 | `check_mcp_server(name, server, secrets)` | Starts or connects to one MCP server with the login shell's PATH and lists its tools: ok, needs sign-in (401), failed with its stderr tail, timed out, or unsupported (SSE); caches a good list |

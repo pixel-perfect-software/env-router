@@ -104,6 +104,32 @@ export interface SetupStatus {
   shells: ShellStatus[]
 }
 
+/** `editors::Editor`: VS Code and the forks that share its settings and extensions. */
+export type Editor = 'code' | 'codeInsiders' | 'cursor' | 'windsurf' | 'codium'
+
+/** `editors::IdeHook`: how an agent's editor extension, which runs its own copy of the agent, can be told to run through the shim. */
+export interface IdeHook {
+  /** The extension's process-wrapper setting: the editor runs `<wrapper> <its binary> <args>`. */
+  setting: string
+  /** The extension's id, e.g. `anthropic.claude-code`. */
+  extension: string
+}
+
+/** `editors::EditorStatus`: one editor's state for one agent's extension. */
+export interface EditorStatus {
+  editor: Editor
+  /** The agent the extension runs. */
+  command: string
+  /** The editor has been run on this Mac. */
+  available: boolean
+  extensionInstalled: boolean
+  settingsFile: string
+  /** The wrapper the setting names now, if any. */
+  wrapper: string | null
+  /** That wrapper is EnvRouter's shim. */
+  installed: boolean
+}
+
 /** `shell::FolderCheck`: what running a tool in a folder does in a new terminal window. */
 export type FolderCheck =
   /** The shim runs. `profile` is null when no profile owns the folder. `mcp`: the servers it adds, if every secret they need is readable. */

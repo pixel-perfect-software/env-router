@@ -359,7 +359,7 @@ The app icon's own fixed palette, used only in `src-tauri/icons/`. It never ente
 - **Window Ground** (`window-ground`): the window background and titlebar band; translucent over vibrancy in the app.
 - **Card Surface** (`card-surface`): profile cards, the health banner, setup card, the server list and server detail, the inspector's folder and MCP lists, the catalog and import lists.
 - **Muted Card** (`card-muted`): Everywhere else, the inspector and server editor footers, the loading banner placeholder.
-- **Raised Surface** (`raised-surface`): the shells popover, the profile inspector, the docket's check result. In light it equals the card colour and is separated by shadow alone; in dark it is a step lighter (`raised-surface-dark`).
+- **Raised Surface** (`raised-surface`): the Shells and Editors popovers, the profile inspector, the docket's check result. In light it equals the card colour and is separated by shadow alone; in dark it is a step lighter (`raised-surface-dark`).
 - **Field and Button Surfaces** (`field-surface`, `button-surface`): text fields, unchecked checkboxes, push buttons and the selected segment. In dark, buttons lift to a lighter grey and fields sink below the card.
 - **Field Edge** (`field-edge`): the 1px inset stroke of every text field, chosen to hold 3:1 against both the field and the panel around it.
 - **Track** (`track`): the segmented control's track and a server monogram's tile. In dark it darkens (black 32%) rather than lightening.
@@ -405,7 +405,7 @@ The app icon's own fixed palette, used only in `src-tauri/icons/`. It never ente
 
 ## Layout
 
-A single native window with an overlay titlebar. The 52px titlebar band is draggable; the traffic lights are centred on it at `trafficLightPosition` x 18, y 28, and its content starts at an 86px inset. Left to right: the app icon (18px) and name, then 12px on the Profiles | Servers segmented switch, then, pushed right, shell status, Shells… and Check Folder… (⌘O). ⌘1 and ⌘2 switch views; both stand down while the profile inspector is open. Switching view closes the shells popover.
+A single native window with an overlay titlebar. The 52px titlebar band is draggable; the traffic lights are centred on it at `trafficLightPosition` x 18, y 28, and its content starts at an 86px inset. Left to right: the app icon (18px) and name, then 12px on the Profiles | MCP Servers segmented switch, then, pushed right, shell status, Shells…, Editors… and Check Folder… (⌘O). Editors… appears only when an editor on the Mac has an agent extension EnvRouter can route. ⌘1 and ⌘2 switch views; both stand down while the profile inspector is open. Switching view closes either popover, and opening one closes the other.
 
 **Profiles view**, top to bottom under the titlebar: the health banner card or the three-step setup card, a scrolling profile grid, and the docket along the bottom. The window body does not scroll; only the grid does, with a soft fade mask at its top (10px) and bottom (18px) edges.
 
@@ -416,9 +416,9 @@ A single native window with an overlay titlebar. The 52px titlebar band is dragg
 - **Card interior:** header 10px vertical, 14px left; folder rows 4px by 6px; footer 8px by 14px under a hairline.
 - **Server list:** header 8px vertical, 14px left, hairline under; rows inside 6px padding with 1px between them.
 - **Server detail:** header 16px top, 12px bottom, 20px sides, hairline under; footer 12px by 20px on muted card under a hairline.
-- **Overlays:** the profile inspector slides in from the right edge at `min(440px, 100% − 40px)`, full window height, with its body scrolling and Save pinned in a footer. The view stays in place behind a scrim (black 15%, 35% in dark). The shells popover anchors under the titlebar at the right, `min(440px, 100vw − 32px)`.
+- **Overlays:** the profile inspector slides in from the right edge at `min(440px, 100% − 40px)`, full window height, with its body scrolling and Save pinned in a footer. The view stays in place behind a scrim (black 15%, 35% in dark). The Shells and Editors popovers anchor under the titlebar at the right, `min(440px, 100vw − 32px)`.
 - **Docket:** at least 60px tall. The verdict keeps a 300px minimum and the actions wrap underneath it in a narrow window rather than squeezing it.
-- **Narrow window** (under 760px): the app name and Shells… collapse to their icon (the name kept for screen readers and as a tooltip); Check Folder… and the view switch keep their text.
+- **Narrow window:** under 900px the app name hides (kept for screen readers); under 820px Shells… and Editors… collapse to their icon (the name kept for screen readers and as a tooltip). Check Folder… and the view switch always keep their text. The window's 680px minimum fits it all.
 
 **Viewports that matter** (instead of 390 / 768 / 1440):
 - **900 × 620**, the default window: a three-column grid; a 264px server list.
@@ -436,7 +436,7 @@ Layered. Depth is structural and tells the surfaces apart: the window ground is 
 
 ### Shadow Vocabulary
 - **Card** (`0 1px 2px rgb(16 24 48 / 0.06), 0 0 0 0.5px hairline`; dark `0 1px 2px rgb(0 0 0 / 0.35), …`): profile cards, the health banner, setup card, the server list and detail cards, the inspector's lists, the New Profile plus disc.
-- **Raised** (`0 10px 30px -6px rgb(16 24 48 / 0.2), 0 2px 6px rgb(16 24 48 / 0.06), 0 0 0 0.5px hairline`; dark `0 12px 32px -6px rgb(0 0 0 / 0.6), …`): the shells popover, the profile inspector, the docket's check result.
+- **Raised** (`0 10px 30px -6px rgb(16 24 48 / 0.2), 0 2px 6px rgb(16 24 48 / 0.06), 0 0 0 0.5px hairline`; dark `0 12px 32px -6px rgb(0 0 0 / 0.6), …`): the Shells and Editors popovers, the profile inspector, the docket's check result.
 - **Push control** (`0 0 0 0.5px rgb(0 0 0 / 0.14), 0 1px 2px rgb(0 0 0 / 0.08)`): push buttons. Primary buttons carry `0 1px 2px rgb(0 0 0 / 0.18)`; the switch knob, selected segment and a checked checkbox carry a small 0.5px-offset contact shadow.
 
 ### Named Rules
@@ -457,7 +457,7 @@ Carve-outs and slips indent 13px under their parent folder with a hairline left 
 ### Buttons
 Native push buttons, small and tactile.
 - **Shape:** gently rounded (6px), 26px tall, 12px horizontal padding, 6px icon gap.
-- **Push:** button surface with the push-control shadow; hover darkens slightly (brightness 0.97), active to 0.9. A push button held open (Shells… while its popover is open) stays at 0.9.
+- **Push:** button surface with the push-control shadow; hover darkens slightly (brightness 0.97), active to 0.9. A push button held open (Shells… or Editors… while its popover is open) stays at 0.9.
 - **Primary:** system accent with on-accent text at 500 weight; hover brightens (1.05). Only one per window state (see The One Accent Rule).
 - **Plain:** accent text with no fill, 8px padding pulled back into the margin; hover shows the accent tint. Used for in-row actions such as Undo, Replace, All On and All Off (the last three at 22px).
 - **Icon button:** 26px square, borderless, secondary ink; hover adds an 8% ink wash and primary ink. Always carries an accessible label and tooltip.
@@ -486,16 +486,16 @@ Native push buttons, small and tactile.
 
 ### Navigation
 - **View switch:** the titlebar's toolbar-size segmented control, Profiles (folder icon) and Servers (plug icon), right of the app name. ⌘1 and ⌘2.
-- **Titlebar:** the app icon (the small cut at 18px, 8px before the name) and the app name; the view switch; then shell status (a green dot when on, an empty tertiary ring when off, a red cross when blocked, each with a hidden text state), Shells… and Check Folder… (⌘O), each with a leading icon. Check Folder… takes the accent only on Profiles and only when nothing outranks it.
+- **Titlebar:** the app icon (the small cut at 18px, 8px before the name) and the app name; the view switch; then shell status (a green dot when on, an empty tertiary ring when off, a red cross when blocked, each with a hidden text state), Shells…, Editors… and Check Folder… (⌘O), each with a leading icon. Check Folder… takes the accent only on Profiles and only when nothing outranks it.
 - **Server links:** a server name in a profile card's footer opens that server's editor in Servers.
 
 ### Iconography
 One vocabulary, so a glance says what a row is:
 - **Agents** wear their own marks (Simple Icons, CC0): Claude's starburst and the Copilot face, monochrome in ink colour, at 14px in card footers and the inspector and 12px in the docket's Agent segments. An agent without a mark gets Lucide's bot.
-- **MCP** is the plug: the Servers segment and a card footer's server line.
+- **MCP** is the plug: the MCP Servers segment and a card footer's server line.
 - **Servers** wear a ServerMark (below), never the plug, wherever one server is listed.
 - **Transports**: a terminal for Command, a globe for HTTP, a radio tower for SSE, on server rows and catalog entries (11px) and the Connects with segments (12px).
-- **Actions**: a terminal for Shells…, a folder with a lens for Check Folder…, a plus for Add Server, a package for the catalog, an import arrow for Import, a pulse for Check Server, a lock for the Keychain.
+- **Actions**: a terminal for Shells…, code brackets for Editors…, a folder with a lens for Check Folder…, a plus for Add Server, a package for the catalog, an import arrow for Import, a pulse for Check Server, a lock for the Keychain.
 - **Card footers** are a two-column list: the mark, then the value in mono. Each agent line shows its config folder; the plug line lists the profile's servers, each name a link with a resting underline (28% ink, 3px offset) that turns accent on hover. More than three servers show the first two and "+N", which expands the list in place and moves focus to the first name it revealed. The label lives in the tooltip and for screen readers.
 
 ### ServerMark

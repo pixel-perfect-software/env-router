@@ -4,7 +4,7 @@ import { homeDir } from '@tauri-apps/api/path'
 import { open } from '@tauri-apps/plugin-dialog'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { type MouseEvent, useCallback, useEffect, useRef, useState } from 'react'
-import { type Health, HealthLine, ShellsPopover, TitleBand } from './components/Chrome'
+import { EditorsPopover, editorsToShow, type Health, HealthLine, ShellsPopover, TitleBand } from './components/Chrome'
 import { type CheckState, Docket } from './components/Docket'
 import { type DropTarget, Frame, type Slip } from './components/Frame'
 import { ProfileInspector } from './components/ProfileInspector'
@@ -14,18 +14,20 @@ import {
   checkFolder,
   errorMessage,
   getConfig,
+  getEditorStatus,
   getMcpTools,
   getSetupStatus,
   openInEditor,
   previewFolder,
   saveConfig,
+  setEditorIntegration,
   setShellIntegration,
 } from './lib/api'
 import { confirmDelete } from './lib/confirm'
 import { withoutServer, withServer, withUsedBy } from './lib/mcp'
 import { owningTrigger } from './lib/paths'
-import { KNOWN_TOOLS, withAgents } from './lib/tools'
-import type { ConfigState, Profile, SetupStatus, Shell, ToolInfo } from './lib/types'
+import { ideHooks, KNOWN_TOOLS, toolByCommand, withAgents } from './lib/tools'
+import type { ConfigState, Editor, EditorStatus, Profile, SetupStatus, Shell, ToolInfo } from './lib/types'
 import { useFolderDrop } from './lib/useFolderDrop'
 import { type VerdictAction, verdictOf } from './lib/verdict'
 
@@ -97,6 +99,9 @@ export default function App() {
   // Each server's checked tools, read again whenever the profile editor opens.
   const [mcpTools, setMcpTools] = useState<Record<string, ToolInfo[]>>({})
   const [shellsOpen, setShellsOpen] = useState(false)
+  const [editorsOpen, setEditorsOpen] = useState(false)
+  // Read at launch, to know whether to offer Editors…, and each time it opens: the editors' own settings may have changed meanwhile.
+  const [editors, setEditors] = useState<EditorStatus[] | null>(null)
   const [check, setCheck] = useState<CheckState | null>(null)
   const [slip, setSlip] = useState<Slip | null>(null)
   const [blocked, setBlocked] = useState<Blocked | null>(null)
@@ -120,8 +125,17 @@ export default function App() {
     }
   }, [])
 
+  const refreshEditors = useCallback(async () => {
+    try {
+      setEditors(await getEditorStatus(ideHooks()))
+    } catch {
+      // Without a readable status Editors… stays hidden; routing in shells doesn't depend on it.
+    }
+  }, [])
+
   const load = useCallback(async () => {
     refreshSetup()
+    refreshEditors()
     const seq = configSeq.current
     try {
       // Home first: if the config can't be read, the banner still needs it to open the file.
@@ -136,7 +150,7 @@ export default function App() {
       setConfig(null)
       setLoadError(errorMessage(err))
     }
-  }, [refreshSetup])
+  }, [refreshSetup, refreshEditors])
 
   useEffect(() => {
     load()
@@ -235,6 +249,7 @@ export default function App() {
 
   const setView = (next: 'profiles' | 'servers') => {
     setShellsOpen(false)
+    setEditorsOpen(false)
     setViewState(next)
   }
   /** Opens a server in the Servers view, from a card's footer. */
@@ -352,6 +367,17 @@ export default function App() {
     if (shown?.shell === shell && shown.key === checkKey.current) runCheck(shown.folder, shell, null, shown.tool)
   }
 
+  useEffect(() => {
+    if (editorsOpen) refreshEditors()
+  }, [editorsOpen, refreshEditors])
+
+  const setEditor = async (editor: Editor, command: string, enabled: boolean) => {
+    const hook = toolByCommand(command)?.ide
+    if (!hook) return
+    const status = await setEditorIntegration(editor, command, hook, enabled)
+    setEditors((list) => list?.map((e) => (e.editor === editor && e.command === command ? status : e)) ?? null)
+  }
+
   const enableShell = (shell: Shell) =>
     setShell(shell, true).catch((err) => {
       setShellsOpen(true)
@@ -406,6 +432,7 @@ export default function App() {
   }
 
   const closeShells = useCallback(() => setShellsOpen(false), [])
+  const closeEditors = useCallback(() => setEditorsOpen(false), [])
   // A Mac window has one default button. The banner's action outranks the check result's,
   // which outranks Check Folder… in the titlebar.
   const bannerHasPrimary = (h: Health) => h.kind === 'setup' || h.kind === 'shim' || h.kind === 'off' || (h.kind === 'unloaded' && h.canOpen)
@@ -429,7 +456,16 @@ export default function App() {
           blockedShell={blocked?.shell ?? null}
           primary={view === 'profiles' && !inspecting && !bannerHasPrimary(health) && !docketHasAction}
           shellsOpen={shellsOpen}
-          onToggleShells={() => setShellsOpen((o) => !o)}
+          onToggleShells={() => {
+            setEditorsOpen(false)
+            setShellsOpen((o) => !o)
+          }}
+          editorsShown={editorsToShow(editors).length > 0}
+          editorsOpen={editorsOpen}
+          onToggleEditors={() => {
+            setShellsOpen(false)
+            setEditorsOpen((o) => !o)
+          }}
           view={view}
           onView={setView}
           onCheckFolder={pickAndCheck}
@@ -449,6 +485,7 @@ export default function App() {
           />
         )}
         {shellsOpen && setup && <ShellsPopover setup={setup} home={home} onSet={setShell} onClose={closeShells} />}
+        {editorsOpen && editors && <EditorsPopover editors={editors} home={home} onSet={setEditor} onClose={closeEditors} />}
         {/* Soft edges where cards scroll under the banner and the floating check card. */}
         {view === 'servers' && config && (
           <ServersView

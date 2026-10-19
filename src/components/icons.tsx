@@ -7,6 +7,7 @@ import {
   Bot,
   ChevronLeft,
   ChevronRight,
+  CodeXml,
   CornerDownRight,
   Folder,
   FolderDown,
@@ -44,6 +45,7 @@ export const BranchIcon = sized(CornerDownRight, 12)
 export const FolderIcon = sized(Folder, 14)
 export const FolderCheckIcon = sized(FolderSearch, 16)
 export const ShellIcon = sized(SquareTerminal, 16)
+export const EditorIcon = sized(CodeXml, 16)
 /** MCP as a whole: the library, a card's server line, a profile's server list. */
 export const PlugIcon = sized(Plug, 14)
 export const LockIcon = sized(Lock, 12)

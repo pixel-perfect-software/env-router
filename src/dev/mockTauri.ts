@@ -8,7 +8,18 @@
 import { emit } from '@tauri-apps/api/event'
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
 import { withAgents } from '../lib/tools'
-import type { ConfigState, FolderCheck, ImportCandidate, McpServer, Profile, ServerCheck, SetupStatus, ShellStatus, ToolInfo } from '../lib/types'
+import type {
+  ConfigState,
+  EditorStatus,
+  FolderCheck,
+  ImportCandidate,
+  McpServer,
+  Profile,
+  ServerCheck,
+  SetupStatus,
+  ShellStatus,
+  ToolInfo,
+} from '../lib/types'
 
 const HOME = '/Users/sam'
 
@@ -107,6 +118,25 @@ const setup: SetupStatus = {
     shell('fish', ['.config/fish/config.fish'], false, false),
   ],
 }
+
+/** VS Code with Claude Code installed, Insiders already running it through the user's own wrapper, and Cursor without the extension. */
+const editors: EditorStatus[] = (
+  [
+    ['code', 'Code', true, true],
+    ['codeInsiders', 'Code - Insiders', true, true],
+    ['cursor', 'Cursor', true, false],
+    ['windsurf', 'Windsurf', false, false],
+    ['codium', 'VSCodium', false, false],
+  ] as const
+).map(([editor, dir, available, extensionInstalled]) => ({
+  editor,
+  command: 'claude',
+  available,
+  extensionInstalled,
+  settingsFile: `${HOME}/Library/Application Support/${dir}/User/settings.json`,
+  wrapper: editor === 'codeInsiders' ? `${HOME}/bin/claude-wrap` : null,
+  installed: false,
+}))
 
 try {
   if (populated) localStorage.setItem('envrouter.checkedOnce', '1')
@@ -263,6 +293,22 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       if (!s) throw 'unknown shell'
       s.installed = Boolean(a.enabled)
       return s
+    }
+    case 'get_editor_status':
+      return editors.map((e) => ({ ...e }))
+    case 'set_editor_integration': {
+      await delay(300)
+      const e = editors.find((x) => x.editor === a.editor && x.command === a.command)
+      if (!e) throw 'unknown editor'
+      // As `editors::set_integration`: someone else's wrapper is never replaced or cleared.
+      if (e.wrapper && !e.installed) {
+        if (a.enabled)
+          throw `VS Code Insiders already runs the extension through ${e.wrapper}. Clear claudeCode.claudeProcessWrapper in the VS Code Insiders settings to use EnvRouter.`
+        return { ...e }
+      }
+      e.installed = Boolean(a.enabled)
+      e.wrapper = e.installed ? `${HOME}/.envrouter/bin/envrouter-shim` : null
+      return { ...e }
     }
     case 'preview_folder': {
       const payload = a.payload as ConfigState

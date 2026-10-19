@@ -2,7 +2,21 @@
 // plain string that's written to be shown to the user as is.
 
 import { invoke } from '@tauri-apps/api/core'
-import type { ConfigState, FolderCheck, ImportCandidate, McpServer, Preview, ServerCheck, SetupStatus, Shell, ShellStatus, ToolInfo } from './types'
+import type {
+  ConfigState,
+  Editor,
+  EditorStatus,
+  FolderCheck,
+  IdeHook,
+  ImportCandidate,
+  McpServer,
+  Preview,
+  ServerCheck,
+  SetupStatus,
+  Shell,
+  ShellStatus,
+  ToolInfo,
+} from './types'
 
 /** Reads `~/.envrouter/config.json`, creating an empty one on first run. */
 export const getConfig = () => invoke<ConfigState>('get_config')
@@ -18,6 +32,13 @@ export const getSetupStatus = () => invoke<SetupStatus>('get_setup_status')
 
 /** Adds or removes EnvRouter's block in the shell's startup files. */
 export const setShellIntegration = (shell: Shell, enabled: boolean) => invoke<ShellStatus>('set_shell_integration', { shell, enabled })
+
+/** Each editor's state for each agent's extension. `hooks` is keyed by command, from `tools.ts`. */
+export const getEditorStatus = (hooks: Record<string, IdeHook>) => invoke<EditorStatus[]>('get_editor_status', { hooks })
+
+/** Points an agent's editor extension at the shim, or stops it, in the editor's user settings. Never replaces someone else's wrapper. */
+export const setEditorIntegration = (editor: Editor, command: string, hook: IdeHook, enabled: boolean) =>
+  invoke<EditorStatus>('set_editor_integration', { editor, command, hook, enabled })
 
 /** Starts `shell` as a new terminal window would, in `folder`. Takes up to ~15s with slow startup files. */
 export const checkFolder = (shell: Shell, folder: string, tool: string) => invoke<FolderCheck>('check_folder', { shell, folder, tool })

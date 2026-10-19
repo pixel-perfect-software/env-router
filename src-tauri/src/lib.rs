@@ -1,3 +1,4 @@
+mod editors;
 mod mcp_import;
 mod mcp_probe;
 mod shell;
@@ -12,6 +13,7 @@ use envrouter_core::{mcp, paths, Error, Result};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 
+use editors::{Editor, EditorStatus, IdeHook};
 use shell::{FolderCheck, Preview, Shell, ShellStatus};
 
 fn home(app: &AppHandle) -> Result<PathBuf> {
@@ -118,6 +120,47 @@ async fn set_shell_integration(app: AppHandle, shell: Shell, enabled: bool) -> R
         let status = shell::set_integration(shell, &home, enabled)?;
         tray::refresh(&app);
         Ok(status)
+    })
+    .await
+}
+
+/// Each editor's state for each agent hook, keyed by the agent's command. The hooks come from
+/// `tools.ts`, so nothing here knows an agent's settings.
+#[tauri::command]
+async fn get_editor_status(
+    app: AppHandle,
+    hooks: std::collections::BTreeMap<String, IdeHook>,
+) -> Result<Vec<EditorStatus>> {
+    let home = home(&app)?;
+    blocking(move || {
+        Ok(Editor::ALL
+            .iter()
+            .flat_map(|&editor| {
+                hooks
+                    .iter()
+                    .map(move |(command, hook)| (editor, command, hook))
+            })
+            .map(|(editor, command, hook)| editors::status(editor, &home, command, hook))
+            .collect())
+    })
+    .await
+}
+
+/// Points an agent's editor extension at the shim, or stops it, in the editor's user settings.
+#[tauri::command]
+async fn set_editor_integration(
+    app: AppHandle,
+    editor: Editor,
+    command: String,
+    hook: IdeHook,
+    enabled: bool,
+) -> Result<EditorStatus> {
+    let home = home(&app)?;
+    blocking(move || {
+        if enabled {
+            shims::install_bundled(&home)?;
+        }
+        editors::set_integration(editor, &home, &command, &hook, enabled)
     })
     .await
 }
@@ -264,6 +307,8 @@ pub fn run() {
             save_config,
             get_setup_status,
             set_shell_integration,
+            get_editor_status,
+            set_editor_integration,
             check_folder,
             preview_folder,
             open_in_editor,

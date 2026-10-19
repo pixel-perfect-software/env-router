@@ -3,6 +3,10 @@
 //! directory, sets that profile's variable for the tool, and execs the real tool found
 //! further along PATH.
 //!
+//! Editors that start an agent from their own copy of it, like the Claude Code extension for
+//! VS Code, run `~/.envrouter/bin/envrouter-shim <their binary> <args>` instead, through a
+//! process-wrapper setting. The shim then routes that binary rather than searching PATH.
+//!
 //! It must never stop someone from running their tool. A missing or broken config only
 //! produces a warning, and the tool runs unrouted.
 
@@ -32,11 +36,11 @@ const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(20);
 fn main() -> ExitCode {
     let mut args = env::args_os();
     let argv0 = args.next().unwrap_or_default();
-    let user_args: Vec<OsString> = args.collect();
+    let mut user_args: Vec<OsString> = args.collect();
     let home = env::var_os("HOME")
         .filter(|home| !home.is_empty())
         .map(PathBuf::from);
-    let Some(tool) = Path::new(&argv0)
+    let Some(mut tool) = Path::new(&argv0)
         .file_name()
         .and_then(|name| name.to_str())
         .map(str::to_owned)
@@ -44,16 +48,23 @@ fn main() -> ExitCode {
         eprintln!("envrouter: can't tell which tool to run from {argv0:?}");
         return ExitCode::from(2);
     };
-    if tool == paths::SHIM_NAME {
-        eprintln!("envrouter: run this through a link named after a tool, such as ~/.envrouter/shims/claude");
-        return ExitCode::from(2);
-    }
 
-    let Some(real) = find_real(&tool, home.as_deref()) else {
-        eprintln!(
-            "envrouter: can't find `{tool}` on PATH outside ~/.envrouter/shims. Is it installed?"
-        );
-        return ExitCode::from(EXIT_TOOL_NOT_FOUND);
+    let real = if tool == paths::SHIM_NAME {
+        let Some((wrapped_tool, real)) = user_args.first().and_then(wrapped) else {
+            eprintln!("envrouter: run this through a link named after a tool, such as ~/.envrouter/shims/claude, or as an editor's process wrapper, followed by the tool's full path");
+            return ExitCode::from(2);
+        };
+        user_args.remove(0);
+        tool = wrapped_tool;
+        real
+    } else {
+        let Some(real) = find_real(&tool, home.as_deref()) else {
+            eprintln!(
+                "envrouter: can't find `{tool}` on PATH outside ~/.envrouter/shims. Is it installed?"
+            );
+            return ExitCode::from(EXIT_TOOL_NOT_FOUND);
+        };
+        real
     };
     let route = route(&tool, home.as_deref());
     let launch = route
@@ -204,6 +215,20 @@ fn warn(err: &impl std::fmt::Display, then: &str) {
     let err = err.to_string();
     eprintln!("envrouter: {}. {then}.", err.trim_end_matches('.'));
 }
+/// The tool an editor asks the shim to wrap, named by its first argument: an absolute path to an
+/// executable that isn't a shim, whose file name is the tool's command, like the
+/// `.../native-binary/claude` the Claude Code extension passes.
+fn wrapped(first: &OsString) -> Option<(String, PathBuf)> {
+    let path = Path::new(first);
+    let tool = path.file_name()?.to_str()?;
+    let me = env::current_exe().and_then(fs::canonicalize).ok();
+    (path.is_absolute()
+        && config::is_command_name(tool)
+        && is_executable(path)
+        && !is_shim(path, me.as_deref()))
+    .then(|| (tool.to_owned(), path.to_path_buf()))
+}
+
 /// The first `tool` on PATH that isn't a shim. It skips the shims directory and anything
 /// that resolves to this binary or another copy of it, so a duplicated PATH entry, a stray
 /// link or a second install can't make shims exec themselves or each other in a loop.

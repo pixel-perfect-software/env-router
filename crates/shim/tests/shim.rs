@@ -2,6 +2,7 @@
 //! directory at the front of PATH, with a fake `claude` further along that reports what it
 //! received.
 
+use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -290,6 +291,82 @@ fn refuses_to_run_under_its_own_name() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
+}
+
+impl Fixture {
+    /// Runs the shim the way an editor's process-wrapper setting does: by its own path, with
+    /// the binary the editor would have run first. PATH has no `claude` at all.
+    fn run_wrapped(&self, cwd: &str, args: &[&OsStr]) -> Output {
+        Command::new(SHIM)
+            .args(args)
+            .current_dir(self.home.join(cwd))
+            .env("HOME", &self.home)
+            .env("PATH", format!("{}:/usr/bin:/bin", self.shims.display()))
+            .env_remove("CLAUDE_CONFIG_DIR")
+            .env_remove("ENVROUTER_EXPLAIN")
+            .env_remove("ENVROUTER_MCP")
+            .output()
+            .unwrap()
+    }
+}
+
+#[test]
+fn routes_the_binary_an_editor_wraps() {
+    let f = Fixture::new(Some(CONFIG));
+    f.write_launch("2", &fs_server());
+    // Named like the extension's own copy, in a folder that isn't on PATH.
+    let bundled = f.home.join("extension/native-binary");
+    fs::create_dir_all(&bundled).unwrap();
+    fs::copy(f.real_bin.join("claude"), bundled.join("claude")).unwrap();
+    let real = bundled.join("claude");
+
+    let output = f.run_wrapped("dev/work/app", &[real.as_os_str(), OsStr::new("x")]);
+    assert_eq!(
+        stdout(&output),
+        format!(
+            "{}/.claude-work 3 --mcp-config=/m/fs.json --disallowedTools=mcp__fs__rm x\n",
+            f.home.display()
+        ),
+        "{}",
+        stderr(&output)
+    );
+    assert_eq!(output.status.code(), Some(3), "exit code passes through");
+
+    let output = f.run_wrapped("elsewhere", &[real.as_os_str()]);
+    assert_eq!(stdout(&output), "unset 0 \n", "{}", stderr(&output));
+}
+
+#[test]
+fn refuses_to_wrap_anything_but_a_tools_full_path() {
+    let f = Fixture::new(Some(CONFIG));
+    let not_executable = f.home.join("elsewhere/claude");
+    fs::write(&not_executable, "#!/bin/sh\necho ran\n").unwrap();
+    let bad_name = f.home.join("elsewhere/claude.sh");
+    write_executable(&bad_name, "#!/bin/sh\necho ran\n");
+    let refused = [
+        "claude".into(),          // a bare name
+        "real-bin/claude".into(), // relative, though it exists from the home folder
+        not_executable.into_os_string(),
+        bad_name.into_os_string(),               // not a command name
+        f.shims.join("claude").into_os_string(), // a shim, which would wrap itself
+        "--version".into(),                      // the editor passed no binary
+    ];
+    for first in &refused {
+        // From the home folder, where the relative path resolves.
+        let output = f.run_wrapped("", &[first.as_os_str()]);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{first:?}: {}",
+            stdout(&output)
+        );
+        assert_eq!(stdout(&output), "", "{first:?}");
+    }
+    let real = f.real_bin.join("claude");
+    assert_eq!(
+        f.run_wrapped("", &[real.as_os_str()]).status.code(),
+        Some(3)
+    );
 }
 
 impl Fixture {
