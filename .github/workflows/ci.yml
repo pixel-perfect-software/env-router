@@ -1,26 +1,9 @@
 name: CI
 
-# Docs, design notes, the local containers and the Homebrew templates don't change what CI tests.
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'LICENSE'
-      - '.impeccable/**'
-      - '.claude/**'
-      - 'dev/containers/**'
-      - 'packaging/**'
   pull_request:
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'LICENSE'
-      - '.impeccable/**'
-      - '.claude/**'
-      - 'dev/containers/**'
-      - 'packaging/**'
 
 permissions:
   contents: read
@@ -30,7 +13,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Docs, design notes, the local containers and the Homebrew templates don't change what CI
+  # tests, so a change to only those skips the other jobs. The workflow itself still runs:
+  # branch protection requires the linux and macos checks, and a skipped job counts as passing,
+  # where a workflow that never started would block the merge.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!**.md'
+              - '!docs/**'
+              - '!LICENSE'
+              - '!.impeccable/**'
+              - '!.claude/**'
+              - '!dev/containers/**'
+              - '!packaging/**'
+
   linux:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     # Everything that doesn't need a Mac runs here, where runners start sooner and cost a tenth
     # as much: the frontend, formatting, licences, and the backend, shim, secrets and CLI tests
     # with real zsh, bash and fish.
@@ -82,6 +96,8 @@ jobs:
       - run: cargo clippy --locked -p envrouter-keychain --target x86_64-pc-windows-gnu --all-targets -- -D warnings
 
   macos:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     # Only what needs a Mac: the Keychain backend, the desktop app crate, and the shell tests'
     # macOS behaviour (login shells, path_helper). fish behaves the same everywhere, so the Linux
     # job covers it and this one skips installing it.
