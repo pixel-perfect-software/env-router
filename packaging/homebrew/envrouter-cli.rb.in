@@ -36,7 +36,8 @@ class EnvrouterCli < Formula
       Install the shim and helpers into ~/.envrouter, then turn routing on in your shell:
         envrouter install
         envrouter shell on zsh    # or bash, fish
-      After upgrading, run `envrouter install` again.
+      After upgrading, run `envrouter install` again. On a Mac with the EnvRouter app,
+      skip `envrouter install`: the app keeps ~/.envrouter/bin current itself.
     EOS
   end
 

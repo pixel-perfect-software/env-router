@@ -272,8 +272,15 @@ fn status(cli: &Cli, home: &Path) -> Result<ExitCode> {
         "Shim    {}",
         if setup.shim_installed {
             tilde(&paths::shim_binary(home), home)
+        } else if paths::shim_binary(home).is_file() {
+            // A different build than this command's, usually the desktop app's, which installs
+            // its own on every launch. Where the app is in use, leave it to the app.
+            format!(
+                "{} (another build of EnvRouter's, such as the app's; `envrouter install` replaces it with this one)",
+                tilde(&paths::shim_binary(home), home)
+            )
         } else {
-            "not installed or out of date: run `envrouter install`".into()
+            "not installed: run `envrouter install`".into()
         }
     );
     println!("Shells");

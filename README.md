@@ -10,11 +10,10 @@
 
 <p align="center">
   <a href="https://github.com/pixel-perfect-software/env-router/actions/workflows/ci.yml"><img src="https://github.com/pixel-perfect-software/env-router/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
+  <a href="https://github.com/pixel-perfect-software/env-router/releases/latest"><img src="https://img.shields.io/github/v/release/pixel-perfect-software/env-router?sort=semver&label=release" alt="Latest release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow.svg" alt="License: MIT" /></a>
-  <img src="https://img.shields.io/badge/macOS-11%2B-000000?logo=apple&logoColor=white" alt="macOS 11 or later" />
-  <img src="https://img.shields.io/badge/Linux-WSL%202%20too-FCC624?logo=linux&logoColor=black" alt="Linux, WSL 2 included" />
-  <img src="https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white" alt="Tauri 2" />
-  <img src="https://img.shields.io/badge/Rust-1.99-CE422B?logo=rust&logoColor=white" alt="Rust 1.99" />
+  <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20WSL%202-4C6EF5" alt="Platforms: macOS, Linux and WSL 2" />
+  <a href="https://github.com/pixel-perfect-software/homebrew-tap"><img src="https://img.shields.io/badge/homebrew-pixel--perfect--software%2Ftap-FBB040?logo=homebrew&logoColor=white" alt="Homebrew tap: pixel-perfect-software/tap" /></a>
   <img src="https://img.shields.io/badge/agents-Claude%20Code%20%7C%20Copilot%20CLI-6E56CF" alt="Agents: Claude Code and Copilot CLI" />
 </p>
 
@@ -25,11 +24,13 @@
   </picture>
 </p>
 
-EnvRouter is a desktop app for macOS and Linux (WSL 2 included), with a command-line twin, for
-people who use more than one account with their coding agents.
-Run `claude` in `~/dev/work` and it uses your work config with your work MCP servers; run it in
-`~/dev/personal` and it uses your personal ones. There are no aliases to remember, no wrapper
-commands and nothing to reload.
+EnvRouter is for people who use more than one account with their coding agents. Run `claude` in
+`~/dev/work` and it uses your work config with your work MCP servers; run it in `~/dev/personal`
+and it uses your personal ones. There are no aliases to remember, no wrapper commands and
+nothing to reload.
+
+It's a desktop app for macOS and Linux, including WSL 2, and an `envrouter` command for machines
+without a desktop.
 
 You define **profiles**. Each profile has trigger folders, a config folder per agent, and a
 selection of MCP servers from a library you keep in the app:
@@ -50,14 +51,15 @@ selection of MCP servers from a library you keep in the app:
 - 🔑 **Secrets in your system's store.** API keys and tokens you enter go to the macOS Keychain,
   the Linux keyring, or, inside WSL, the Windows Credential Manager. Never `config.json`, a
   rendered file or a command line.
-- 🧩 **Editor extensions too.** Claude Code for VS Code (and Cursor, Windsurf, VSCodium) runs its
-  own copy of `claude`; **Editors…** routes it through EnvRouter as well, including VS Code
-  connected to WSL or SSH.
-- 💻 **A CLI for headless machines.** `envrouter` sets up and checks routing on a server or in a WSL
-  distro without the window.
-- 🔍 **Folder check.** Drop a folder on the window (or press ⌘O, Ctrl+O on Linux) and EnvRouter starts your shell the
-  way a new terminal window would, then reports what running the agent there would really do,
-  including an alias, a shell function, or a prompt hook (mise, direnv) getting in the way.
+- 🧩 **Editor extensions too.** Claude Code for VS Code (and in Cursor, Windsurf, VSCodium) runs
+  its own copy of `claude`; **Editors…** routes it through EnvRouter as well, including VS Code
+  connected to WSL or over SSH.
+- 💻 **A CLI for headless machines.** `envrouter` sets up and checks routing on a server or in a
+  WSL distro, without the window.
+- 🔍 **Folder check.** Drop a folder on the window (or press ⌘O; Ctrl+O on Linux) and EnvRouter
+  starts your shell the way a new terminal window would, then reports what running the agent
+  there would really do, including an alias, a shell function, or a prompt hook (mise, direnv)
+  getting in the way.
 - 🪶 **No background process.** A small shim does the routing when you run a command. Config
   changes apply on the next run in every open terminal, with the app closed or open.
 - 🛟 **Never in the way.** If the config is missing or broken, the agent still runs, without a
@@ -74,9 +76,9 @@ selection of MCP servers from a library you keep in the app:
 
 - **macOS** 11 or later, on Apple Silicon. Intel Macs should work the same way but haven't been
   tried, and the bundle is arm64-only for now.
-- **Linux** on x86_64 or aarch64, with a glibc at least as new as Ubuntu 22.04's, WSL 2 included.
-  The app needs WebKitGTK 4.1 (the `.deb` pulls it in); secrets need a Secret Service (GNOME
-  Keyring or KWallet), or inside WSL the Windows helper that ships with EnvRouter.
+- **Linux** on x86_64 or aarch64: Ubuntu 22.04 or newer, or a distro of the same age, and WSL 2.
+  The app needs WebKitGTK 4.1, which the `.deb` installs. Secrets need a keyring (GNOME Keyring
+  or KWallet); in WSL they go to Windows instead, through a helper that comes with EnvRouter.
 - zsh, bash or fish.
 - Claude Code and/or Copilot CLI, installed the usual way.
 
@@ -97,19 +99,19 @@ open /Applications/EnvRouter.app
 
 ### 🐧 Linux
 
-Download the `.deb` or the AppImage for your architecture from the
-[latest release](https://github.com/pixel-perfect-software/env-router/releases/latest):
+From the [latest release](https://github.com/pixel-perfect-software/env-router/releases/latest),
+take the `.deb` (Debian, Ubuntu and their relatives) or the AppImage (any distro) for your
+architecture: `amd64`/`x86_64` or `arm64`/`aarch64`.
 
 ```sh
-sudo apt install ./EnvRouter_<version>_amd64.deb   # then open EnvRouter from your apps
+sudo apt install ./EnvRouter_<version>_amd64.deb     # then open EnvRouter from your apps
 # or
 chmod +x EnvRouter_<version>_amd64.AppImage && ./EnvRouter_<version>_amd64.AppImage
 ```
 
-### 💻 The command line, anywhere
+### 💻 The CLI
 
-The `envrouter` CLI does the same setup without the window, for servers, WSL distros and
-scripts. On macOS or Linux:
+`envrouter` does the same setup without the window, for servers, WSL distros and scripts:
 
 ```sh
 brew install pixel-perfect-software/tap/envrouter-cli
@@ -117,8 +119,12 @@ envrouter install          # the shim and helpers, into ~/.envrouter/bin
 envrouter shell on zsh     # or bash, fish
 ```
 
-Without Homebrew, unpack `envrouter-cli-<version>-<arch>.tar.gz` from the release and run
-`./envrouter install` from that folder. Releases come with `SHA256SUMS`.
+On a Mac with the app installed, skip `envrouter install`: the app keeps `~/.envrouter/bin`
+current itself. Without Homebrew, unpack `envrouter-cli-<version>-<arch>.tar.gz` from the release
+and run `./envrouter install` from that folder.
+
+Every release comes with `SHA256SUMS`; `sha256sum -c SHA256SUMS --ignore-missing` checks the
+files you downloaded.
 
 The cask and formula come from [pixel-perfect-software/homebrew-tap](https://github.com/pixel-perfect-software/homebrew-tap).
 Every build in a release comes from its tagged source, built by this repository's
@@ -157,22 +163,24 @@ and then `target/release/envrouter install`. The first build takes a few minutes
 
 ## 🧭 Getting started
 
-1. **Create a profile** (⌘N, or Ctrl+N on Linux). Give it a name, add its trigger folders with **Add Folder…**, and set a config folder for each agent you want to route, such as
+1. **Create a profile** (⌘N; Ctrl+N on Linux). Give it a name, add its trigger folders with
+   **Add Folder…**, and set a config folder for each agent you want to route, such as
    `~/.claude-work`. EnvRouter creates missing config folders inside your home folder when you
    save.
 2. **Turn on your shell.** Open **Shells…** and switch on the shells you use. This adds a marked
    block to the end of each startup file that puts EnvRouter's shims first on `PATH`.
 3. **Open a new terminal window,** `cd` into a trigger folder and run `claude` or `copilot`.
    A new config folder starts logged out, so sign in once there as usual.
-4. **Check it.** Drop a folder on the window, or press ⌘O (Ctrl+O), to see which profile a new terminal
-   window would use there and what it would set. From a terminal,
-   `ENVROUTER_EXPLAIN=1 claude` prints the route as JSON instead of running Claude.
+4. **Check it.** Drop a folder on the window, or press ⌘O (Ctrl+O), to see which profile a new
+   terminal window would use there and what it would set. From a terminal, `envrouter check`
+   does the same, and `ENVROUTER_EXPLAIN=1 claude` prints the route as JSON instead of running
+   Claude.
 
-To give a profile MCP servers, switch to **MCP Servers** (⌘2, Ctrl+2), add servers from the catalog, by
-import or by hand, and choose the profiles that use each one, either with the server's **Used
-by** toggles or from the profile's own checklist. **Check Server** starts a server and lists its
-tools, so a profile can turn individual tools off. Remote servers that need a login sign in
-through the agent (`/mcp` in Claude Code), not through EnvRouter.
+To give a profile MCP servers, switch to **MCP Servers** (⌘2; Ctrl+2), add servers from the
+catalog, by import or by hand, and choose the profiles that use each one, either with the
+server's **Used by** toggles or from the profile's own checklist. **Check Server** starts a
+server and lists its tools, so a profile can turn individual tools off. Remote servers that need
+a login sign in through the agent (`/mcp` in Claude Code), not through EnvRouter.
 
 To route an editor extension, open **Editors…** and switch on the editor. It points the
 extension's process-wrapper setting (`claudeCode.claudeProcessWrapper` for Claude Code) at
@@ -182,7 +190,7 @@ wrapper you set yourself.
 On macOS, EnvRouter lives in the menu bar: closing the window only hides it; quit from the menu
 bar icon. On Linux, closing the window quits; routing keeps working without it.
 
-## ⌨️ The command line
+## ⌨️ CLI commands
 
 `envrouter` runs the same operations as the window:
 
@@ -205,8 +213,8 @@ Add `--json` for machine-readable output. Profiles are edited in the window, or 
 A WSL 2 distro is a Linux machine: install EnvRouter inside it, not on the Windows side.
 
 1. **Install inside the distro:** the CLI (`brew install pixel-perfect-software/tap/envrouter-cli`,
-   or the release tarball), then `envrouter install` and `envrouter shell on bash` (or your
-   shell). The `.deb` works too, and its window opens on your Windows desktop through WSLg.
+   or the release archive), then `envrouter install` and `envrouter shell on bash` (or your
+   shell). The `.deb` works too; its window opens on your Windows desktop through WSLg.
 2. **Secrets go to the Windows Credential Manager.** A distro usually has no keyring of its own,
    so EnvRouter's Windows helper (`~/.envrouter/bin/envrouter-keychain.exe`, installed with the
    rest) keeps them on the Windows side, per distro. It needs WSL's Windows interop, which is on
@@ -270,13 +278,14 @@ rendered file or on a command line, and the window never reads them back once th
 | An MCP server doesn't show in `claude mcp list` or `copilot mcp list` | Expected: those commands don't list servers passed on the command line. Use `/mcp` inside the agent. |
 | Saving a secret fails on Linux with "there's no Secret Service" | Install and start GNOME Keyring or KWallet, then save again. Servers that need a secret are left out until then; the rest still load. |
 | Saving a secret fails in WSL with "couldn't reach the Windows Credential Manager" | Run `envrouter install` so `~/.envrouter/bin/envrouter-keychain.exe` is there, and check that WSL interop is on (`[interop] enabled` isn't `false` in `/etc/wsl.conf`). |
-| A copy of the app built on another Mac won't open | Builds are signed ad hoc, so macOS trusts one only on the Mac that built it. Build it yourself, or run `xattr -dr com.apple.quarantine /Applications/EnvRouter.app`. |
+| macOS says EnvRouter can't be opened | The app is signed ad hoc, not notarized. Homebrew's cask clears the quarantine flag that triggers this; for a copy you downloaded or built elsewhere, run `xattr -dr com.apple.quarantine /Applications/EnvRouter.app`. |
 
 ## 🔄 Updating
 
 With Homebrew, `brew upgrade --cask envrouter` for the macOS app (it quits EnvRouter first; open
-it again afterwards), and `brew upgrade envrouter-cli` then `envrouter install` for the CLI. On
-Linux, install the new `.deb` or AppImage over the old one. From source, pull the latest code,
+it again afterwards), and `brew upgrade envrouter-cli` for the CLI, followed by `envrouter
+install` where the CLI is what installed the shim. On Linux, install the new `.deb` or AppImage
+over the old one. From source, pull the latest code,
 quit EnvRouter, and run the build and install commands again. When a new version of the app
 starts, it updates the shim and helpers in `~/.envrouter/bin` itself.
 
@@ -302,8 +311,9 @@ Your agents' config folders are left alone.
 
 ## 🤝 Contributing
 
-Contributions are welcome. See the [contributing guide](docs/contributing.md) for setup,
-the development commands, how to review the UI safely in a browser, and the project layout.
+Contributions are welcome. EnvRouter is built with Tauri 2, Rust and React; see the
+[contributing guide](docs/contributing.md) for setup, the development commands, how to review the
+UI safely in a browser, and the project layout.
 
 ## 💸 Support this project
 

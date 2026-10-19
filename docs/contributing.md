@@ -53,6 +53,10 @@ secrets round trip through a GNOME Keyring, and a lint of the Windows secrets he
 job runs only what needs a Mac: clippy and the tests for the whole workspace, including the app
 and the Keychain. Run them before you push.
 
+Every action in the workflows is pinned to the full commit SHA of a release, with its version in
+a comment, and Dependabot (`.github/dependabot.yml`) opens a monthly pull request to update them.
+Keep new ones pinned the same way.
+
 ### 🐳 Linux and Windows from a Mac
 
 `dev/containers/compose.yaml` runs the Linux and Windows checks in containers, with Podman or
