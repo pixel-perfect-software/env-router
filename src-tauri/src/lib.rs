@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use envrouter_core::config::{self, ConfigState, McpServer};
-use envrouter_core::{mcp, paths, secrets, Error, Result};
+use envrouter_core::{mcp, paths, Error, Result};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 
@@ -51,7 +51,7 @@ async fn save_config(
                 "A new secret isn't used by any server. Save the server again.".into(),
             ));
         }
-        let fresh_shim = shims::install_binary(&home, &shims::bundled()?)?;
+        let fresh_shim = shims::install_bundled(&home)?;
         // Only inside home: a typo'd absolute path shouldn't create folders elsewhere.
         for dir in config::tool_dirs(&payload, &home) {
             if dir.starts_with(&home) && !dir.exists() {
@@ -66,7 +66,7 @@ async fn save_config(
                 .any(|id| !referenced.contains(id))
         });
         if !secrets.is_empty() || dropped {
-            secrets::update(&home, &secrets, &referenced)?;
+            envrouter_keychain::update(&home, &secrets, &referenced)?;
         }
         config::save(&root, &payload)?;
         mcp::sync(&payload, &home)?;
@@ -93,7 +93,11 @@ async fn get_setup_status(app: AppHandle) -> Result<SetupStatus> {
     let home = home(&app)?;
     blocking(move || {
         Ok(SetupStatus {
-            shim_installed: shims::is_installed(&home, &shims::bundled()?),
+            shim_installed: shims::is_installed(
+                &home,
+                &shims::bundled()?,
+                &shims::bundled_keychain()?,
+            ),
             shims_dir: paths::shims(&home).display().to_string(),
             shells: Shell::ALL
                 .iter()
@@ -109,7 +113,7 @@ async fn set_shell_integration(app: AppHandle, shell: Shell, enabled: bool) -> R
     let home = home(&app)?;
     blocking(move || {
         if enabled {
-            shims::install_binary(&home, &shims::bundled()?)?;
+            shims::install_bundled(&home)?;
         }
         let status = shell::set_integration(shell, &home, enabled)?;
         tray::refresh(&app);
@@ -230,10 +234,19 @@ pub fn run() {
             // Refresh the installed shim after an app update. A failure here isn't fatal:
             // get_setup_status reports it and saving retries it.
             if let Ok(home) = home(app.handle()) {
-                if let Err(err) =
-                    shims::bundled().and_then(|bundled| shims::install_binary(&home, &bundled))
-                {
-                    eprintln!("envrouter: couldn't install the shim: {err}");
+                match shims::install_bundled(&home) {
+                    // A new helper needs macOS's go-ahead before it can read the secrets.
+                    Ok(true) => {
+                        let uses_secrets = config::load(&paths::root(&home))
+                            .ok()
+                            .flatten()
+                            .is_some_and(|config| !config::secret_ids(&config).is_empty());
+                        if uses_secrets {
+                            shims::ask_keychain_access(&home);
+                        }
+                    }
+                    Ok(false) => {}
+                    Err(err) => eprintln!("envrouter: couldn't install the shim: {err}"),
                 }
             }
             tray::create(app.handle())?;

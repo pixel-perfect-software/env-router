@@ -13,7 +13,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use envrouter_core::config::{self, ConfigState, McpServer, McpValue};
-use envrouter_core::{paths, secrets, Error, Result};
+use envrouter_core::{paths, Error, Result};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use rmcp::transport::{StreamableHttpClientTransport, TokioChildProcess};
 use rmcp::ServiceExt;
@@ -102,8 +102,8 @@ fn resolve_values(
     if ids.iter().all(|id| typed.contains_key(*id)) {
         return Ok(typed.clone());
     }
-    let mut stored =
-        secrets::read(home).map_err(|err| format!("Couldn't read the secrets: {err}."))?;
+    let mut stored = envrouter_keychain::read(home)
+        .map_err(|err| format!("Couldn't read the secrets: {err}."))?;
     stored.extend(typed.iter().map(|(k, v)| (k.clone(), v.clone())));
     match ids.iter().find(|id| !stored.contains_key(**id)) {
         Some(_) => Err("A secret this server needs isn't in the Keychain. Enter it again.".into()),

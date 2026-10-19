@@ -7,8 +7,9 @@ fn main() {
     tauri_build::build()
 }
 
-/// Builds `envrouter-shim` and stages it where `bundle.externalBin` expects it, so
-/// `tauri dev`, `tauri build` and `cargo test` all get a current shim with no separate step.
+/// Builds `envrouter-shim` and the `envrouter-keychain` helper and stages them where
+/// `bundle.externalBin` expects them, so `tauri dev`, `tauri build` and `cargo test` all get
+/// current ones with no separate step.
 ///
 /// The shim is a release build whatever this build's profile. Every profile stages to the same
 /// file, and the copy keeps the built file's timestamp, so with one build per profile a debug
@@ -28,6 +29,8 @@ fn stage_shim() {
             "--release",
             "--package",
             "envrouter-shim",
+            "--package",
+            "envrouter-keychain",
             "--target",
             &target,
         ])
@@ -37,21 +40,29 @@ fn stage_shim() {
         .expect("failed to run cargo for envrouter-shim");
     assert!(status.success(), "building envrouter-shim failed");
 
-    let built = target_dir
-        .join(&target)
-        .join("release")
-        .join("envrouter-shim");
-    let staged = manifest_dir
-        .join("binaries")
-        .join(format!("envrouter-shim-{target}"));
-    fs::create_dir_all(staged.parent().unwrap()).unwrap();
-    fs::copy(&built, &staged).unwrap();
+    let stage = |name: &str| {
+        let built = target_dir.join(&target).join("release").join(name);
+        let staged = manifest_dir
+            .join("binaries")
+            .join(format!("{name}-{target}"));
+        fs::create_dir_all(staged.parent().unwrap()).unwrap();
+        fs::copy(&built, &staged).unwrap();
+        staged
+    };
+    let staged = stage("envrouter-shim");
+    let staged_keychain = stage("envrouter-keychain");
 
     // Tests install this copy into a temp home.
     println!("cargo:rustc-env=ENVROUTER_STAGED_SHIM={}", staged.display());
+    println!(
+        "cargo:rustc-env=ENVROUTER_STAGED_KEYCHAIN={}",
+        staged_keychain.display()
+    );
     for path in [
         workspace.join("crates/shim"),
         workspace.join("crates/core"),
+        workspace.join("crates/keychain"),
+        staged_keychain.clone(),
         // Dependency versions and the release profile change the shim too.
         workspace.join("Cargo.lock"),
         workspace.join("Cargo.toml"),

@@ -9,9 +9,9 @@ env-router/
 │   │   ├── src/config.rs      # ConfigState model (mirrors TS types), config.json I/O, CONFIG_VERSION, validate
 │   │   ├── src/resolve.rs     # folder → active profile → env var (canonical-path matching)
 │   │   ├── src/mcp.rs         # renders per-profile MCP files + launch manifests; what the shim injects
-│   │   ├── src/secrets.rs     # MCP secret values: one login-Keychain item keyed by home (macOS only)
 │   │   ├── src/paths.rs       # ~/.envrouter layout: shims/, bin/envrouter-shim, config.json
 │   │   └── src/error.rs       # Error enum, serialized to the frontend as a message string
+│   ├── keychain/              # MCP secrets in one login-Keychain item; envrouter-keychain helper bin (the shim runs it, never links it)
 │   └── shim/
 │       ├── src/main.rs        # the shim: route, find the real binary, exec; ENVROUTER_EXPLAIN mode
 │       └── tests/shim.rs      # end-to-end tests of the built binary through a symlink
@@ -46,7 +46,7 @@ env-router/
 ```
 
 Created on the user's machine at runtime: `~/.envrouter/config.json`,
-`~/.envrouter/bin/envrouter-shim`, `~/.envrouter/shims/<tool>` (symlinks), and
+`~/.envrouter/bin/envrouter-shim` and `envrouter-keychain`, `~/.envrouter/shims/<tool>` (symlinks), and
 `~/.envrouter/mcp/<profile id>/<command>/` (rendered MCP server files and `launch.json`), plus a
 login-Keychain item "EnvRouter MCP secrets" once a secret is saved. The app also
 adds a marked block to the end of `~/.zshrc` (or `$ZDOTDIR/.zshrc`), bash's login file plus

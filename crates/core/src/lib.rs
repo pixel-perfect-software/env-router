@@ -5,8 +5,6 @@ mod error;
 pub mod mcp;
 pub mod paths;
 pub mod resolve;
-#[cfg(target_os = "macos")]
-pub mod secrets;
 
 pub use error::{Error, Result};
 

@@ -435,3 +435,34 @@ fn explain_lists_the_mcp_servers_without_asking_the_keychain() {
     assert_eq!(explanation["mcp"], serde_json::json!(["github"]));
     assert_eq!(stderr(&output), "");
 }
+
+/// A fake Keychain helper hands back the secret, and only servers whose secrets all arrived
+/// load. Values reach the agent's environment, never its arguments.
+#[test]
+fn passes_secrets_from_the_keychain_helper_as_environment_variables() {
+    let f = Fixture::new(Some(CONFIG));
+    let bin = f.home.join(".envrouter/bin");
+    fs::create_dir_all(&bin).unwrap();
+    write_executable(
+        &bin.join("envrouter-keychain"),
+        "#!/bin/sh\n[ \"$1\" = read ] && [ \"$2\" = 7F3A ] && echo '{\"7F3A\":\"ghp_x\"}'\n",
+    );
+    write_executable(
+        &f.real_bin.join("claude"),
+        "#!/bin/sh\necho \"${ENVROUTER_SECRET_7F3A-unset} $*\"\n",
+    );
+    f.write_launch(
+        "2",
+        serde_json::json!({
+            "servers": [{ "name": "github", "args": ["--mcp-config=/m/github.json"], "secrets": ["7F3A"] }],
+        }),
+    );
+    let output = f.run_with("dev/work/app", &["x"], &[]);
+    assert_eq!(
+        stdout(&output),
+        "ghp_x --mcp-config=/m/github.json x\n",
+        "{}",
+        stderr(&output)
+    );
+    assert_eq!(stderr(&output), "");
+}

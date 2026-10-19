@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 pub const SHIM_NAME: &str = "envrouter-shim";
+pub const KEYCHAIN_NAME: &str = "envrouter-keychain";
 
 pub fn root(home: &Path) -> PathBuf {
     home.join(".envrouter")
@@ -18,6 +19,12 @@ pub fn shims(home: &Path) -> PathBuf {
 /// moving, renaming or updating the app can't break routing in open terminals.
 pub fn shim_binary(home: &Path) -> PathBuf {
     root(home).join("bin").join(SHIM_NAME)
+}
+
+/// The Keychain helper, installed next to the shim. The shim starts it only when an MCP server
+/// needs a secret, so the shim itself never links the Security framework.
+pub fn keychain_helper(home: &Path) -> PathBuf {
+    root(home).join("bin").join(KEYCHAIN_NAME)
 }
 
 /// Rendered MCP files: `<profile id>/<command>/`, holding one config file per server and the

@@ -18,11 +18,31 @@ pub fn bundled() -> Result<PathBuf> {
     Ok(exe.with_file_name(paths::SHIM_NAME))
 }
 
-/// Copies `source` to the installed location if it's missing or different, e.g. after an
-/// app update, and says whether it did. The rename is atomic, so a shim that's running keeps
-/// its old inode.
+/// The Keychain helper shipped with the app, beside the shim.
+pub fn bundled_keychain() -> Result<PathBuf> {
+    Ok(bundled()?.with_file_name(paths::KEYCHAIN_NAME))
+}
+
+/// Installs the shim and the Keychain helper the app ships with, if either is missing or
+/// different, e.g. after an app update. Says whether either changed.
+pub fn install_bundled(home: &Path) -> Result<bool> {
+    install_binaries(home, &bundled()?, &bundled_keychain()?)
+}
+
+pub fn install_binaries(home: &Path, shim: &Path, keychain: &Path) -> Result<bool> {
+    let shim = install_binary(home, shim)?;
+    let helper = install_file(&paths::keychain_helper(home), keychain)?;
+    Ok(shim || helper)
+}
+
+/// Copies `source` to the installed location if it's missing or different, and says whether
+/// it did. The rename is atomic, so a shim that's running keeps its old inode.
 pub fn install_binary(home: &Path, source: &Path) -> Result<bool> {
-    let dest = paths::shim_binary(home);
+    install_file(&paths::shim_binary(home), source)
+}
+
+fn install_file(dest: &Path, source: &Path) -> Result<bool> {
+    let dest = dest.to_path_buf();
     let bytes = fs::read(source).map_err(|source_err| Error::Io {
         path: source.to_path_buf(),
         source: source_err,
@@ -38,16 +58,16 @@ pub fn install_binary(home: &Path, source: &Path) -> Result<bool> {
     Ok(true)
 }
 
-/// Runs the installed shim once to read the Keychain, in the background. A new build has a new
-/// ad hoc signature, so macOS asks again before letting it read the secrets: better now, with
-/// the app in front, than in the middle of someone's `claude`.
+/// Runs the installed Keychain helper once, in the background. A new build has a new ad hoc
+/// signature, so macOS asks again before letting it read the secrets: better now, with the app
+/// in front, than in the middle of someone's `claude`.
 pub fn ask_keychain_access(home: &Path) {
-    let shim = paths::shim_binary(home);
+    let helper = paths::keychain_helper(home);
     let home = home.to_path_buf();
     std::thread::spawn(move || {
-        let _ = std::process::Command::new(shim)
+        let _ = std::process::Command::new(helper)
+            .arg("read")
             .env("HOME", home)
-            .env("ENVROUTER_KEYCHAIN_PROBE", "1")
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -55,11 +75,13 @@ pub fn ask_keychain_access(home: &Path) {
     });
 }
 
-pub fn is_installed(home: &Path, source: &Path) -> bool {
-    match (fs::read(paths::shim_binary(home)), fs::read(source)) {
+/// Whether the installed shim and Keychain helper match these copies.
+pub fn is_installed(home: &Path, shim: &Path, keychain: &Path) -> bool {
+    let same = |installed: PathBuf, bundled: &Path| match (fs::read(installed), fs::read(bundled)) {
         (Ok(installed), Ok(bundled)) => installed == bundled,
         _ => false,
-    }
+    };
+    same(paths::shim_binary(home), shim) && same(paths::keychain_helper(home), keychain)
 }
 
 /// Makes the shims directory hold exactly one link per tool the config routes. Links to the
@@ -136,16 +158,23 @@ mod tests {
     }
 
     #[test]
-    fn install_binary_copies_once_and_makes_it_executable() {
+    fn install_binaries_copies_once_and_makes_them_executable() {
         let home = tempfile::tempdir().unwrap();
-        let source = Path::new(env!("ENVROUTER_STAGED_SHIM"));
-        install_binary(home.path(), source).unwrap();
-        let dest = paths::shim_binary(home.path());
-        assert!(is_installed(home.path(), source));
-        assert_eq!(
-            fs::metadata(&dest).unwrap().permissions().mode() & 0o111,
-            0o111
-        );
+        let shim = Path::new(env!("ENVROUTER_STAGED_SHIM"));
+        let keychain = Path::new(env!("ENVROUTER_STAGED_KEYCHAIN"));
+        assert!(!is_installed(home.path(), shim, keychain));
+        assert!(install_binaries(home.path(), shim, keychain).unwrap());
+        assert!(is_installed(home.path(), shim, keychain));
+        assert!(!install_binaries(home.path(), shim, keychain).unwrap());
+        for dest in [
+            paths::shim_binary(home.path()),
+            paths::keychain_helper(home.path()),
+        ] {
+            assert_eq!(
+                fs::metadata(&dest).unwrap().permissions().mode() & 0o111,
+                0o111
+            );
+        }
     }
 
     #[test]

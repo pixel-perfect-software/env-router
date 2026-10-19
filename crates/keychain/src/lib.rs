@@ -1,6 +1,10 @@
 //! MCP secret values, kept in one generic-password item in the login Keychain as a JSON map
-//! from id to value. One item means one access prompt for the shim, not one per secret, after
+//! from id to value. One item means one access prompt for the helper, not one per secret, after
 //! each rebuild changes its ad hoc signature.
+//!
+//! The app links this crate to write secrets. The shim doesn't: it runs the
+//! `envrouter-keychain` binary only when a server needs a secret, so launches that don't pay
+//! nothing to load the Security framework.
 //!
 //! The item's account is the canonical home folder, so a run under a scratch `HOME` (every
 //! test, and the safe way to try the app) never reads or writes the real secrets.
@@ -11,7 +15,7 @@ use std::path::Path;
 
 use security_framework::passwords;
 
-use crate::error::{Error, Result};
+use envrouter_core::{Error, Result};
 
 const SERVICE: &str = "EnvRouter MCP secrets";
 /// `errSecItemNotFound`.

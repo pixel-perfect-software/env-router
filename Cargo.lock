@@ -965,6 +965,7 @@ name = "envrouter"
 version = "0.1.0"
 dependencies = [
  "envrouter-core",
+ "envrouter-keychain",
  "http",
  "rmcp",
  "serde",
@@ -981,11 +982,19 @@ dependencies = [
 name = "envrouter-core"
 version = "0.1.0"
 dependencies = [
- "security-framework",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "envrouter-keychain"
+version = "0.1.0"
+dependencies = [
+ "envrouter-core",
+ "security-framework",
+ "serde_json",
 ]
 
 [[package]]

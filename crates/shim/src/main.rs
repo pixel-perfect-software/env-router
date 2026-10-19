@@ -13,13 +13,12 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
-use std::sync::mpsc;
+use std::process::{Command, ExitCode, Stdio};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use envrouter_core::mcp::{self, Launch};
-use envrouter_core::{config, paths, resolve, secrets, EXIT_TOOL_NOT_FOUND};
+use envrouter_core::{config, paths, resolve, EXIT_TOOL_NOT_FOUND};
 
 /// When set to `1`, print how this invocation would be routed, as one line of JSON, and exit
 /// without running the tool. The app uses it to check a folder. Any other value is ignored, so
@@ -27,10 +26,6 @@ use envrouter_core::{config, paths, resolve, secrets, EXIT_TOOL_NOT_FOUND};
 const EXPLAIN_VAR: &str = "ENVROUTER_EXPLAIN";
 /// `0` turns MCP injection off for a run: the tool gets only the servers it configures itself.
 const MCP_VAR: &str = "ENVROUTER_MCP";
-/// When set to `1`, read the Keychain secrets once and exit. The app runs this after installing
-/// a new shim, so macOS asks to let the shim in while the app is in front, not in the middle of
-/// someone's `claude`.
-const KEYCHAIN_PROBE_VAR: &str = "ENVROUTER_KEYCHAIN_PROBE";
 /// An unanswered Keychain prompt mustn't hold the tool forever.
 const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -41,9 +36,6 @@ fn main() -> ExitCode {
     let home = env::var_os("HOME")
         .filter(|home| !home.is_empty())
         .map(PathBuf::from);
-    if env::var_os(KEYCHAIN_PROBE_VAR).is_some_and(|value| value == "1") {
-        return probe_keychain(home.as_deref());
-    }
     let Some(tool) = Path::new(&argv0)
         .file_name()
         .and_then(|name| name.to_str())
@@ -155,7 +147,8 @@ fn inject(launch: &Launch, home: &Path, tool: &str) -> mcp::Injection {
     if launch.secret_ids().is_empty() {
         return launch.inject(&HashMap::new());
     }
-    match read_secrets(home) {
+    let ids: Vec<&str> = launch.secret_ids().into_iter().collect();
+    match read_secrets(home, &ids) {
         Ok(secrets) => {
             let injection = launch.inject(&secrets);
             for name in &injection.dropped {
@@ -174,30 +167,35 @@ fn inject(launch: &Launch, home: &Path, tool: &str) -> mcp::Injection {
     }
 }
 
-/// The Keychain's answer, on a thread so an unanswered prompt times out.
-fn read_secrets(home: &Path) -> Result<HashMap<String, String>, String> {
-    let (sender, receiver) = mpsc::channel();
-    let home = home.to_path_buf();
-    thread::spawn(move || {
-        let _ = sender.send(secrets::read(&home).map_err(|err| err.to_string()));
-    });
-    receiver
-        .recv_timeout(KEYCHAIN_TIMEOUT)
-        .unwrap_or_else(|_| Err("the Keychain didn't answer within 20 seconds".into()))
-}
-
-fn probe_keychain(home: Option<&Path>) -> ExitCode {
-    let Some(home) = home else {
-        eprintln!("envrouter: HOME isn't set");
-        return ExitCode::from(2);
-    };
-    match read_secrets(home) {
-        Ok(_) => ExitCode::SUCCESS,
-        Err(err) => {
-            eprintln!("envrouter: {err}");
-            ExitCode::FAILURE
+/// The named secrets, from the Keychain helper installed next to the shim. It's a separate
+/// binary so that only runs needing a secret load the Security framework. Ids go on its
+/// command line; values come back through the pipe. An unanswered Keychain prompt times out.
+fn read_secrets(home: &Path, ids: &[&str]) -> Result<HashMap<String, String>, String> {
+    let helper = paths::keychain_helper(home);
+    let mut child = Command::new(&helper)
+        .arg("read")
+        .args(ids)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| format!("couldn't start {}: {err}", helper.display()))?;
+    let deadline = Instant::now() + KEYCHAIN_TIMEOUT;
+    while child.try_wait().map_err(|err| err.to_string())?.is_none() {
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("the Keychain didn't answer within 20 seconds".into());
         }
+        thread::sleep(Duration::from_millis(5));
     }
+    // The answer is one short line, well inside a pipe's buffer, so waiting first can't stall.
+    let output = child.wait_with_output().map_err(|err| err.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    serde_json::from_slice(&output.stdout)
+        .map_err(|err| format!("the Keychain helper's answer was unreadable: {err}"))
 }
 
 /// One line on stderr: what went wrong, then what the shim does about it.
