@@ -30,8 +30,6 @@ export const KNOWN_TOOLS: KnownTool[] = [
     // User and local scopes live in .claude.json in the config folder; project scope in .mcp.json.
     mcpFiles: { userFile: '.claude.json', defaultDir: '~', projectFile: '.mcp.json' },
   },
-  // Codex refuses a CODEX_HOME that doesn't exist; saving creates it.
-  { command: 'codex', label: 'Codex', envVar: 'CODEX_HOME', defaultPath: '~/.codex' },
   {
     command: 'copilot',
     label: 'Copilot CLI',
@@ -41,13 +39,6 @@ export const KNOWN_TOOLS: KnownTool[] = [
     // turned off with `--deny-tool=server(tool)`, one per argument.
     mcp: { dialect: 'copilot', configArg: '--additional-mcp-config=@', denyArg: '--deny-tool=', skipAnyArgs: [] },
     mcpFiles: { userFile: 'mcp-config.json', defaultDir: '~/.copilot', projectFile: '.mcp.json' },
-  },
-  {
-    command: 'gemini',
-    label: 'Gemini CLI',
-    envVar: 'GEMINI_CLI_HOME',
-    defaultPath: '~/.gemini',
-    note: 'Gemini keeps its .gemini folder inside this one.',
   },
 ]
 

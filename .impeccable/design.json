@@ -732,7 +732,7 @@
       "kind": "chip",
       "refersTo": "segmented-selected",
       "description": "Agent and shell switchers in the docket.",
-      "html": "<fieldset class=\"ds-seg\"><button aria-pressed=\"true\">Claude Code</button><button aria-pressed=\"false\">Codex</button></fieldset>",
+      "html": "<fieldset class=\"ds-seg\"><button aria-pressed=\"true\">Claude Code</button><button aria-pressed=\"false\">Copilot CLI</button></fieldset>",
       "css": ".ds-seg{display:inline-flex;margin:0;padding:2px;border:0;border-radius:7px;background:color-mix(in srgb,var(--er-ink) 7%,transparent)}.ds-seg button{height:22px;padding:0 10px;border:0;border-radius:5px;background:transparent;color:var(--er-ink-2);font:400 12px/16px -apple-system,BlinkMacSystemFont,sans-serif}.ds-seg button:hover{color:var(--er-ink)}.ds-seg button[aria-pressed=\"true\"]{background:var(--er-button);color:var(--er-ink);box-shadow:0 0.5px 1.5px rgb(0 0 0/0.18)}.ds-seg button:focus-visible{outline:3px solid color-mix(in srgb,var(--er-accent) 50%,transparent);outline-offset:1px}"
     },
     {

@@ -1,20 +1,21 @@
 # EnvRouter
 
-EnvRouter is a macOS app that picks the right coding-agent account from the folder you're in.
-Run `claude` in `~/dev/work` and it uses your work config; run it in `~/dev/personal` and it
-uses your personal one. There are no aliases to remember and nothing to reload.
+EnvRouter is a macOS app that picks the right coding-agent account, and the right MCP servers,
+from the folder you're in. Run `claude` in `~/dev/work` and it uses your work config with your
+work servers; run it in `~/dev/personal` and it uses your personal ones. There are no aliases
+to remember and nothing to reload.
 
-You define **profiles**. Each profile has trigger folders and a config folder per agent:
+You define **profiles**. Each profile has trigger folders, a config folder per agent, and a
+selection of MCP servers from a library you keep in the app:
 
-| Agent | Command | Variable EnvRouter sets |
-|---|---|---|
-| Claude Code | `claude` | `CLAUDE_CONFIG_DIR` |
-| Codex | `codex` | `CODEX_HOME` |
-| Copilot CLI | `copilot` | `COPILOT_HOME` |
-| Gemini CLI | `gemini` | `GEMINI_CLI_HOME` |
+| Agent | Command | Variable EnvRouter sets | How it gets MCP servers |
+|---|---|---|---|
+| Claude Code | `claude` | `CLAUDE_CONFIG_DIR` | `--mcp-config=<file>` |
+| Copilot CLI | `copilot` | `COPILOT_HOME` | `--additional-mcp-config=@<file>` |
 
-EnvRouter only sets these variables. It never signs you in to anything: a new config folder
-starts logged out, and you sign in from the terminal as usual.
+EnvRouter never signs you in to anything: a new config folder starts logged out, and remote MCP
+servers sign in through the agent (`/mcp`), from the terminal as usual. MCP secrets you enter
+(API keys, tokens) are kept in your macOS Keychain, never in a file.
 
 ## How it works
 
@@ -23,7 +24,11 @@ EnvRouter uses shims, like mise or volta.
 - `~/.envrouter/shims/<tool>` is a symlink to `~/.envrouter/bin/envrouter-shim`, a small Rust binary.
 - A marked block at the end of your shell startup file puts `~/.envrouter/shims` first on `PATH`.
 - Each time you run a tool, the shim reads `~/.envrouter/config.json`, finds the profile for the
-  current folder, sets that tool's variable, and `exec`s the real tool found later on `PATH`.
+  current folder, sets that tool's variable, adds that profile's MCP servers to the command
+  line, and `exec`s the real tool found later on `PATH`.
+- There's no background process: the app writes each profile's MCP server files when you save,
+  so servers keep working with the app closed. `ENVROUTER_MCP=0`, or passing
+  `--strict-mcp-config` to `claude`, skips them for one run.
 
 Edits apply on the next run in every terminal. If the config is missing or broken, the tool
 still runs, without a profile.
@@ -36,6 +41,10 @@ The app can also check a folder: it starts your shell the way a new terminal win
 its prompt hooks once, and reports what running the tool there would really do, including an
 alias, a shell function or another copy on `PATH` getting in the way. That includes a copy a
 prompt hook (mise, direnv) moves ahead of EnvRouter's shims.
+
+**MCP servers.** Add servers by hand, from a short catalog, or by importing the ones your agents
+already define (EnvRouter only reads their files). Check Server starts a server and lists its
+tools, so a profile can turn individual tools off.
 
 ## Status
 

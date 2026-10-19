@@ -84,7 +84,7 @@ let config: ConfigState = withAgents({
         { ...profile('p1', 'Personal', ['~/dev', '~/notes'], '~/.claude-personal'), mcpServers: using('playwright') },
         {
           ...profile('p2', 'Work', ['~/dev/work/*', '~/Documents/Acme'], '~/.claude-work', {
-            codex: { envVar: 'CODEX_HOME', path: '~/.codex-work' },
+            copilot: { envVar: 'COPILOT_HOME', path: '~/.copilot-work' },
           }),
           mcpServers: withLibrary
             ? { ...using('linear', 'sentry', 'postgres'), github: { disabledTools: ['delete_repository', 'fork_repository'] } }

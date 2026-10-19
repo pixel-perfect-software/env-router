@@ -3,7 +3,7 @@
 @.claude/context/ai-context/docs-overview.md
 
 EnvRouter is a macOS desktop app (Tauri v2) that does two things per folder for coding agents
-(Claude Code, Codex, Copilot CLI, Gemini CLI): it sets the agent's config variable, so `claude`
+(Claude Code and Copilot CLI): it sets the agent's config variable, so `claude`
 run in `~/dev/work` uses a different `CLAUDE_CONFIG_DIR` than in `~/dev/personal`, and it hands
 the agent a set of **MCP servers**. The user defines **profiles**: each one maps trigger folders to
 a variable per tool and a selection from the MCP **server library**. Profiles are stored in `~/.envrouter/config.json`. Other macOS users get it as
@@ -47,7 +47,7 @@ A missing config means the tool runs silently. A broken one prints a warning and
 - **Tauri v2 APIs only.** v1 examples (`tauri.conf.json > allowlist`, `@tauri-apps/api/fs`) are wrong here. Use plugins and `capabilities/*.json`.
 - **All file access happens in Rust commands.** There's deliberately no fs plugin, and `capabilities/default.json` grants only the three plugin calls the window makes (dialog open, dialog message, opener reveal), one by one. Don't go back to a plugin's `:default` set, and don't add `@tauri-apps/plugin-fs` back.
 - **The window has a CSP** (`app.security.csp` in `tauri.conf.json`): scripts and styles from the bundle only, and IPC. Loading anything remote or adding an inline script means changing the policy on purpose.
-- **Keep the data model tool-agnostic.** `Profile.tools` is a `Record<toolName, { envVar, path }>`. Nothing in Rust branches on an agent's name: agent behaviour is data in `src/lib/tools.ts` (its variable, and an MCP descriptor naming a config *dialect*, a file format), which the window writes into `config.agents` on every save. Rust renders dialects, not agents. Add an agent with one entry in `src/lib/tools.ts`, and only after checking its docs: the variable must relocate logins too, not just settings. Note quirks such as Gemini's parent-folder semantics in the entry's `note`. `save_config` creates missing agent folders inside home, because Codex refuses a `CODEX_HOME` that doesn't exist.
+- **Keep the data model tool-agnostic.** `Profile.tools` is a `Record<toolName, { envVar, path }>`. Nothing in Rust branches on an agent's name: agent behaviour is data in `src/lib/tools.ts` (its variable, and an MCP descriptor naming a config *dialect*, a file format), which the window writes into `config.agents` on every save. Rust renders dialects, not agents. Add an agent with one entry in `src/lib/tools.ts`, and only after checking its docs: the variable must relocate logins too, not just settings; note quirks in the entry's `note`. A config that still names an agent the window no longer offers keeps loading, saving and routing. `save_config` creates missing agent folders inside home. Codex and Gemini CLI were dropped to keep the app focused; they're future add-ons (Codex: `-c mcp_servers.*` overrides with secrets through `env_vars`, and its MCP OAuth tokens are shared across `CODEX_HOME`s; Gemini: settings in a file named by `GEMINI_CLI_SYSTEM_DEFAULTS_PATH`, which shallow-merges `mcpServers`, and `GEMINI_CLI_HOME` holds a `.gemini` folder).
 - **Bump `CONFIG_VERSION` in `config.rs`** for any change to the shape of `config.json`, and migrate older versions in `config::load`. The shim refuses configs from a newer version.
 
 ## Conventions

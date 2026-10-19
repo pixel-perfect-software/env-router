@@ -20,7 +20,7 @@ The Sorting Frame (roll, seed 9c112fdb), code-led. On 2026-10-05 the user overro
 A server library in a second right-side inspector (MCP Servers… in the titlebar), a checklist per profile in the profile inspector, an `MCP` line in the card footer, and an `mcp` value in the check result. Per-server tool filtering, Keychain secret entry, a server health check, import and a catalog land in later phases of the same plan.
 
 ## Unresolved
-App icon and tray glyph are decided (see the src-tauri-icons brief); the titlebar shows the icon's small cut before the app name. Agents offered: Claude Code, Codex, Copilot CLI, Gemini CLI (src/lib/tools.ts); saving creates missing agent folders inside home. opencode and Aider are excluded because their variables don't separate logins.
+App icon and tray glyph are decided (see the src-tauri-icons brief); the titlebar shows the icon's small cut before the app name. Agents offered: Claude Code and Copilot CLI (src/lib/tools.ts); Codex and Gemini CLI are future add-ons. Saving creates missing agent folders inside home. opencode and Aider are excluded because their variables don't separate logins.
 
 ## Direction contract
 THESIS: Each profile is a card that holds the folders it owns, so "the most specific folder wins" is visible structure: a nested folder sits as a carve-out inside its parent's card, tagged with the owning profile's colour. It refuses both the System Settings sidebar-and-switches default and the flat ruled sheet the user rejected.

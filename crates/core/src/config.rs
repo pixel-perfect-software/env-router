@@ -319,8 +319,9 @@ pub fn tool_names(config: &ConfigState) -> BTreeSet<&str> {
     by_var.chain(by_mcp).map(String::as_str).collect()
 }
 
-/// The folders configured tools are pointed at, with `~` expanded. Some tools (Codex) refuse
-/// a config folder that doesn't exist, so the app creates any that are missing.
+/// The folders configured tools are pointed at, with `~` expanded. The app creates any that
+/// are missing, so a new profile's folder is there to sign in to, reveal and import from, and
+/// an agent that refuses a missing config folder still starts.
 pub fn tool_dirs(config: &ConfigState, home: &Path) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = config
         .profiles
@@ -967,13 +968,13 @@ mod tests {
     #[test]
     fn tool_dirs_expands_and_skips_unconfigured_tools() {
         let config = config(vec![
-            profile("a", &[], Some(("codex", "CODEX_HOME", "~/.codex-a"))),
+            profile("a", &[], Some(("copilot", "COPILOT_HOME", "~/.copilot-a"))),
             profile("b", &[], Some(("claude", "CLAUDE_CONFIG_DIR", " "))),
-            profile("c", &[], Some(("codex", "CODEX_HOME", "~/.codex-a"))),
+            profile("c", &[], Some(("copilot", "COPILOT_HOME", "~/.copilot-a"))),
         ]);
         assert_eq!(
             tool_dirs(&config, &home()),
-            vec![PathBuf::from("/home/me/.codex-a")]
+            vec![PathBuf::from("/home/me/.copilot-a")]
         );
     }
 
