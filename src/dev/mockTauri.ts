@@ -8,7 +8,7 @@
 import { emit } from '@tauri-apps/api/event'
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
 import { withAgents } from '../lib/tools'
-import type { ConfigState, FolderCheck, McpServer, Profile, ServerCheck, SetupStatus, ShellStatus, ToolInfo } from '../lib/types'
+import type { ConfigState, FolderCheck, ImportCandidate, McpServer, Profile, ServerCheck, SetupStatus, ShellStatus, ToolInfo } from '../lib/types'
 
 const HOME = '/Users/sam'
 const scenario = new URLSearchParams(location.search).get('scenario') ?? 'first-run'
@@ -183,6 +183,40 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       config = next
       return null
     }
+    case 'import_candidates':
+      await delay(500)
+      return [
+        {
+          name: 'github',
+          server: library.github ?? { transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'], env: {} },
+          sources: [`${HOME}/.claude-work/.claude.json`],
+        },
+        {
+          name: 'github',
+          server: {
+            transport: 'stdio',
+            command: 'docker',
+            args: ['run', '-i', '--rm', 'ghcr.io/github/github-mcp-server'],
+            env: { GITHUB_TOKEN: 'ghp_example' },
+          },
+          sources: [`${HOME}/.claude.json`],
+        },
+        {
+          name: 'mcpmux',
+          server: { transport: 'http', url: 'http://localhost:45818/mcp', headers: {} },
+          sources: [`${HOME}/.claude.json`, `${HOME}/.claude-work/.claude.json`],
+        },
+        {
+          name: 'supabase',
+          server: {
+            transport: 'stdio',
+            command: 'npx',
+            args: ['-y', '@supabase/mcp-server-supabase'],
+            env: { SUPABASE_ACCESS_TOKEN: 'sbp_example' },
+          },
+          sources: [`${HOME}/dev/work/billing-api/.mcp.json`],
+        },
+      ] satisfies ImportCandidate[]
     case 'get_mcp_tools':
       return Object.fromEntries([...checked].filter((name) => config.mcpServers[name]).map((name) => [name, serverTools[name] ?? []]))
     case 'check_mcp_server': {

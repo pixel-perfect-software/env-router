@@ -49,9 +49,26 @@ export interface McpInjection {
   skipAnyArgs: string[]
 }
 
+/** `envrouter_core::config::McpFiles`: where an agent keeps MCP servers of its own, for importing them. */
+export interface McpFiles {
+  /** In its config folder: the one a profile sets, or `defaultDir`. */
+  userFile: string
+  defaultDir: string
+  /** In a project folder. */
+  projectFile: string | null
+}
+
 /** `envrouter_core::config::AgentDef`. The window writes these from `tools.ts` on every save. */
 export interface AgentDef {
   mcp: McpInjection | null
+  mcpFiles: McpFiles | null
+}
+
+/** `mcp_import::ImportCandidate`: a server the agents already define, the same in every file listed. */
+export interface ImportCandidate {
+  name: string
+  server: McpServer
+  sources: string[]
 }
 
 /** `envrouter_core::config::ConfigState`. Rust writes the current `version` on every save. */

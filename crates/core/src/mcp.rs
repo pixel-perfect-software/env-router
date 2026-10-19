@@ -291,6 +291,7 @@ mod tests {
                 deny_arg: Some("--disallowedTools=".into()),
                 skip_any_args: vec!["--strict-mcp-config".into()],
             }),
+            ..Default::default()
         }
     }
 
@@ -302,6 +303,7 @@ mod tests {
                 deny_arg: None,
                 skip_any_args: Vec::new(),
             }),
+            ..Default::default()
         }
     }
 

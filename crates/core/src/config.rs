@@ -118,6 +118,22 @@ pub struct AgentDef {
     /// How to hand the agent MCP servers at launch. `None`: it gets none.
     #[serde(default)]
     pub mcp: Option<McpInjection>,
+    /// Where the agent keeps MCP servers of its own, so the window can offer to import them.
+    #[serde(default)]
+    pub mcp_files: Option<McpFiles>,
+}
+
+/// Where an agent keeps its own MCP config, in its `mcp` dialect.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpFiles {
+    /// In the agent's config folder: the one a profile points it at, or `default_dir`.
+    pub user_file: String,
+    /// Where the agent looks without its variable, e.g. `~` for Claude's `~/.claude.json`.
+    pub default_dir: String,
+    /// In a project folder, e.g. `.mcp.json`.
+    #[serde(default)]
+    pub project_file: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -504,6 +520,19 @@ fn validate_agent(name: &str, agent: &AgentDef) -> Result<()> {
             "\"{name}\" in the agent list isn't a valid command name."
         )));
     }
+    if let Some(files) = &agent.mcp_files {
+        // Plain file names, joined onto folders; never a path that climbs out of one.
+        let plain =
+            |name: &str| !name.is_empty() && !name.contains('/') && name != "." && name != "..";
+        if !plain(&files.user_file)
+            || files.project_file.as_deref().is_some_and(|f| !plain(f))
+            || tool_dir(&files.default_dir, Path::new("/")).is_none()
+        {
+            return Err(Error::Invalid(format!(
+                "The MCP file locations for {name} aren't plain file names in an absolute or ~ folder."
+            )));
+        }
+    }
     let Some(mcp) = &agent.mcp else {
         return Ok(());
     };
@@ -613,6 +642,7 @@ mod tests {
                 deny_arg: Some("--disallowedTools=".into()),
                 skip_any_args: vec!["--strict-mcp-config".into()],
             }),
+            ..Default::default()
         }
     }
 

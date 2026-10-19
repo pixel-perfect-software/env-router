@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { draftOf, newSecretId, serverOf, withoutServer, withServer } from './mcp'
+import { draftFromCatalog, draftOf, freeName, isPending, newSecretId, serverOf, withoutServer, withSecretsLocked, withServer } from './mcp'
 import type { ConfigState, McpServer } from './types'
 
 const github: McpServer = { transport: 'stdio', command: 'npx', args: ['-y', 'gh'], env: { GITHUB_TOKEN: { secret: 'AA11' } } }
@@ -69,5 +69,40 @@ describe('library edits', () => {
 
   it('makes ids the backend accepts', () => {
     expect(newSecretId()).toMatch(/^[0-9A-F]{16}$/)
+  })
+})
+
+describe('imports and the catalog', () => {
+  it('moves credential-looking values to the Keychain, but not references or ordinary values', () => {
+    const server: McpServer = {
+      transport: 'stdio',
+      command: 'npx',
+      args: [],
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: an agent-side ${VAR} reference, kept as typed
+      env: { GITHUB_TOKEN: 'ghp_x', API_KEY: '${API_KEY}', LOG_LEVEL: 'debug' },
+    }
+    const locked = withSecretsLocked(draftOf('gh', server))
+    expect(locked.env.map((row) => [row.key, isPending(row.value)])).toEqual([
+      ['GITHUB_TOKEN', true],
+      ['API_KEY', false],
+      ['LOG_LEVEL', false],
+    ])
+    const built = serverOf(locked)
+    expect('secrets' in built && Object.values(built.secrets)).toEqual(['ghp_x'])
+  })
+
+  it('leaves catalog secrets empty with a hint, so saving asks for them', () => {
+    const draft = draftFromCatalog(
+      'github',
+      { transport: 'http', url: 'https://x/mcp', headers: { Authorization: '' } },
+      { Authorization: 'Bearer …' },
+    )
+    expect(draft.headers[0]).toMatchObject({ key: 'Authorization', hint: 'Bearer …' })
+    expect(serverOf(draft)).toEqual({ error: 'Enter a value for Authorization, or remove it.' })
+  })
+
+  it('finds a free name', () => {
+    expect(freeName('gh', new Set(['x']))).toBe('gh')
+    expect(freeName('gh', new Set(['gh', 'gh-2']))).toBe('gh-3')
   })
 })

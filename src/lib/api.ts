@@ -2,7 +2,7 @@
 // plain string that's written to be shown to the user as is.
 
 import { invoke } from '@tauri-apps/api/core'
-import type { ConfigState, FolderCheck, McpServer, Preview, ServerCheck, SetupStatus, Shell, ShellStatus, ToolInfo } from './types'
+import type { ConfigState, FolderCheck, ImportCandidate, McpServer, Preview, ServerCheck, SetupStatus, Shell, ShellStatus, ToolInfo } from './types'
 
 /** Reads `~/.envrouter/config.json`, creating an empty one on first run. */
 export const getConfig = () => invoke<ConfigState>('get_config')
@@ -34,6 +34,9 @@ export const checkMcpServer = (name: string, server: McpServer, secrets: Record<
 
 /** Each library server's tools, from its last check that worked, if its definition hasn't changed since. */
 export const getMcpTools = () => invoke<Record<string, ToolInfo[]>>('get_mcp_tools')
+
+/** MCP servers the agents already define in their own files (as `payload` describes the agents and profiles). Read only. */
+export const importCandidates = (payload: ConfigState) => invoke<ImportCandidate[]>('import_candidates', { payload })
 
 /** Opens a file inside the home folder in the default text editor. */
 export const openInEditor = (path: string) => invoke<void>('open_in_editor', { path })

@@ -452,8 +452,15 @@ export default function App() {
       {config && library && (
         <ServerLibrary
           config={config}
+          home={home}
           colors={profileColors(config.profiles.map((p) => p.id))}
           onSave={(previous, name, server, secrets) => commit(withServer(config, previous, name, server), secrets)}
+          onImport={(servers, secrets) =>
+            commit(
+              servers.reduce((next, [name, server]) => withServer(next, null, name, server), config),
+              secrets,
+            )
+          }
           onDelete={(name) => commit(withoutServer(config, name))}
           onClose={() => setLibrary(false)}
         />

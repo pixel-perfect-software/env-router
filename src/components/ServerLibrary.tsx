@@ -21,6 +21,7 @@ import {
   type Transport,
 } from '../lib/mcp'
 import type { ConfigState, McpServer, ServerCheck } from '../lib/types'
+import { CatalogView, ImportView } from './ServerSources'
 import {
   BackIcon,
   Button,
@@ -37,48 +38,91 @@ import {
   type Tone,
 } from './ui'
 
+type View =
+  | { kind: 'list' }
+  /** `name` null: a new server, blank or from `template`. */
+  | { kind: 'edit'; name: string | null; template?: ServerDraft }
+  | { kind: 'catalog' }
+  | { kind: 'import' }
+
 export function ServerLibrary({
   config,
+  home,
   colors,
   onSave,
+  onImport,
   onDelete,
   onClose,
 }: {
   config: ConfigState
+  home: string
   /** Profile colours, so the list shows who uses each server. */
   colors: Map<string, string>
   onSave: (previous: string | null, name: string, server: McpServer, secrets: Record<string, string>) => Promise<void>
+  onImport: (servers: [string, McpServer][], secrets: Record<string, string>) => Promise<void>
   onDelete: (name: string) => Promise<void>
   onClose: () => void
 }) {
-  // null: the list. '' : a new server. Otherwise the name of the server being edited.
-  const [selected, setSelected] = useState<string | null>(null)
+  const [view, setView] = useState<View>({ kind: 'list' })
   const names = Object.keys(config.mcpServers).sort((a, b) => a.localeCompare(b))
+  const toList = () => setView({ kind: 'list' })
 
   return (
     <>
       <div aria-hidden="true" className="absolute inset-0 z-30 animate-[er-fade_160ms_ease-out] bg-black/15 dark:bg-black/35" />
       <div className="absolute inset-y-0 right-0 z-40 flex w-[min(440px,calc(100%-40px))] animate-[er-slide_220ms_var(--ease-settle)] flex-col bg-raised shadow-raised">
-        {selected === null ? (
-          <ServerList config={config} names={names} colors={colors} onOpen={setSelected} onClose={onClose} />
-        ) : (
+        {view.kind === 'list' && (
+          <ServerList
+            config={config}
+            names={names}
+            colors={colors}
+            onOpen={(name) => setView({ kind: 'edit', name })}
+            onAdd={() => setView({ kind: 'edit', name: null })}
+            onCatalog={() => setView({ kind: 'catalog' })}
+            onImport={() => setView({ kind: 'import' })}
+            onClose={onClose}
+          />
+        )}
+        {view.kind === 'catalog' && (
+          <CatalogView
+            home={home}
+            taken={names}
+            onBack={toList}
+            onClose={onClose}
+            onPick={(template) => setView({ kind: 'edit', name: null, template })}
+          />
+        )}
+        {view.kind === 'import' && (
+          <ImportView
+            config={config}
+            home={home}
+            onBack={toList}
+            onClose={onClose}
+            onImport={async (servers, secrets) => {
+              await onImport(servers, secrets)
+              toList()
+            }}
+          />
+        )}
+        {view.kind === 'edit' && (
           <ServerEditor
-            key={selected}
-            name={selected || null}
-            server={selected ? config.mcpServers[selected] : undefined}
-            taken={names.filter((n) => n !== selected)}
-            usedBy={selected ? profilesUsing(config, selected).map((p) => ({ name: p.name, color: colors.get(p.id) ?? '' })) : []}
-            onBack={() => setSelected(null)}
+            key={view.name ?? `new-${view.template?.name ?? ''}`}
+            name={view.name}
+            server={view.name ? config.mcpServers[view.name] : undefined}
+            template={view.template}
+            taken={names.filter((n) => n !== view.name)}
+            usedBy={view.name ? profilesUsing(config, view.name).map((p) => ({ name: p.name, color: colors.get(p.id) ?? '' })) : []}
+            onBack={view.template ? () => setView({ kind: 'catalog' }) : toList}
             onClose={onClose}
             onSave={async (name, server, secrets) => {
-              await onSave(selected || null, name, server, secrets)
-              setSelected(null)
+              await onSave(view.name, name, server, secrets)
+              toList()
             }}
             onDelete={
-              selected
+              view.name
                 ? async () => {
-                    await onDelete(selected)
-                    setSelected(null)
+                    if (view.name) await onDelete(view.name)
+                    toList()
                   }
                 : undefined
             }
@@ -94,12 +138,18 @@ function ServerList({
   names,
   colors,
   onOpen,
+  onAdd,
+  onCatalog,
+  onImport,
   onClose,
 }: {
   config: ConfigState
   names: string[]
   colors: Map<string, string>
   onOpen: (name: string) => void
+  onAdd: () => void
+  onCatalog: () => void
+  onImport: () => void
   onClose: () => void
 }) {
   const first = useRef<HTMLButtonElement>(null)
@@ -165,10 +215,14 @@ function ServerList({
             </ul>
           )}
         </div>
-        <Button className="mt-2" onClick={() => onOpen('')}>
-          <PlusIcon />
-          Add Server…
-        </Button>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <Button onClick={onAdd}>
+            <PlusIcon />
+            Add Server…
+          </Button>
+          <Button onClick={onCatalog}>From Catalog…</Button>
+          <Button onClick={onImport}>Import…</Button>
+        </div>
       </div>
       <footer className="flex items-center justify-end gap-2 bg-card-muted px-5 py-3 hair-t">
         <Button onClick={onClose}>Done</Button>
@@ -180,6 +234,7 @@ function ServerList({
 function ServerEditor({
   name,
   server,
+  template,
   taken,
   usedBy,
   onBack,
@@ -190,6 +245,8 @@ function ServerEditor({
   /** null for a new server. */
   name: string | null
   server: McpServer | undefined
+  /** A new server's starting point, from the catalog. */
+  template?: ServerDraft
   /** Other servers' names, which this one can't take. */
   taken: string[]
   usedBy: { name: string; color: string }[]
@@ -198,7 +255,7 @@ function ServerEditor({
   onSave: (name: string, server: McpServer, secrets: Record<string, string>) => Promise<void>
   onDelete?: () => Promise<void>
 }) {
-  const initial = useRef(draftOf(name ?? '', server))
+  const initial = useRef(template ?? draftOf(name ?? '', server))
   const [draft, setDraft] = useState<ServerDraft>(initial.current)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -416,11 +473,14 @@ function ValueField({
   onChange,
   label,
   placeholder,
+  hint,
 }: {
   value: DraftValue
   onChange: (value: DraftValue) => void
   label: string
   placeholder: string
+  /** What to type, where it's known; shown in place of the placeholder. */
+  hint?: string
 }) {
   if (!isPending(value) && typeof value !== 'string') {
     return (
@@ -447,7 +507,7 @@ function ValueField({
         aria-label={label}
         value={pending ? value.value : value}
         onChange={(e) => onChange(pending ? { ...value, value: e.target.value } : e.target.value)}
-        placeholder={pending ? 'Saved to the Keychain' : placeholder}
+        placeholder={hint ?? (pending ? 'Saved to the Keychain' : placeholder)}
         className="w-full pr-8"
       />
       <IconButton
@@ -548,6 +608,7 @@ function PairList({
                 value={row.value}
                 onChange={(value) => update(i, { ...row, value })}
                 placeholder="value"
+                hint={row.hint}
               />
               <IconButton label={`Remove ${row.key || `${label.toLowerCase()} ${i + 1}`}`} onClick={() => onChange(rows.filter((_, j) => j !== i))}>
                 <CloseIcon />

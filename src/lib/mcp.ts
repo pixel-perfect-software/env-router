@@ -48,6 +48,8 @@ export const newSecretId = () =>
 export interface Pair {
   key: string
   value: DraftValue
+  /** What to type, where the catalog knows: `Bearer github_pat_…`. */
+  hint?: string
 }
 
 /** The form's state. Both transports' fields are kept, so switching back and forth loses nothing. */
@@ -111,6 +113,32 @@ export function serverOf(draft: ServerDraft): { server: McpServer; secrets: Reco
   const headers = named(draft.headers, 'header')
   if (typeof headers === 'string') return { error: headers }
   return { server: { transport: draft.transport, url: draft.url.trim(), headers }, secrets }
+}
+
+/**
+ * A draft whose credential-looking values (by name, as `SECRET_NAME` decides) are headed for
+ * the Keychain. Imports use it: a token found in a plain file shouldn't stay plain. A value
+ * that's only a `${VAR}` reference stays as it is.
+ */
+export function withSecretsLocked(draft: ServerDraft): ServerDraft {
+  const lock = (row: Pair): Pair =>
+    typeof row.value === 'string' && row.value && SECRET_NAME.test(row.key) && !/^\$\{[^}]+\}$/.test(row.value.trim())
+      ? { ...row, value: { secret: newSecretId(), value: row.value } }
+      : row
+  return { ...draft, env: draft.env.map(lock), headers: draft.headers.map(lock) }
+}
+
+/** A new server's draft from a catalog entry: its secret fields empty, headed for the Keychain, with a hint. */
+export function draftFromCatalog(name: string, server: McpServer, secrets: Record<string, string>): ServerDraft {
+  const draft = draftOf(name, server)
+  const seal = (row: Pair): Pair => (row.key in secrets ? { key: row.key, value: { secret: newSecretId(), value: '' }, hint: secrets[row.key] } : row)
+  return { ...draft, env: draft.env.map(seal), headers: draft.headers.map(seal) }
+}
+
+/** A name not yet `taken`: the name itself, else `name-2`, `name-3`… */
+export function freeName(name: string, taken: Set<string>): string {
+  if (!taken.has(name)) return name
+  for (let n = 2; ; n++) if (!taken.has(`${name}-${n}`)) return `${name}-${n}`
 }
 
 /** `config` with the server stored under `name`, renamed from `previous` in the library and every profile. */

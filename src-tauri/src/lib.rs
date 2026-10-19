@@ -1,3 +1,4 @@
+mod mcp_import;
 mod mcp_probe;
 mod shell;
 mod shims;
@@ -168,6 +169,17 @@ async fn get_mcp_tools(
     .await
 }
 
+/// MCP servers the agents already define in their own files, for the library to import. Only
+/// reads them.
+#[tauri::command]
+async fn import_candidates(
+    app: AppHandle,
+    payload: ConfigState,
+) -> Result<Vec<mcp_import::ImportCandidate>> {
+    let home = home(&app)?;
+    blocking(move || Ok(mcp_import::candidates(&payload, &home))).await
+}
+
 /// Opens a file in the user's default text editor, e.g. the startup file that defines an alias
 /// shadowing the shim. Limited to existing files inside the home folder.
 #[tauri::command]
@@ -243,7 +255,8 @@ pub fn run() {
             preview_folder,
             open_in_editor,
             check_mcp_server,
-            get_mcp_tools
+            get_mcp_tools,
+            import_candidates
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

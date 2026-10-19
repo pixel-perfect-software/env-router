@@ -20,6 +20,7 @@ env-router/
 │   ├── src/lib.rs             # Tauri commands (below) and app setup
 │   ├── src/shims.rs           # installs the shim binary; syncs one symlink per tool
 │   ├── src/shell.rs           # startup-file blocks for zsh/bash/fish, check_folder, preview
+│   ├── src/mcp_import.rs      # reads the agents' own MCP files (by their mcpFiles descriptor) for import
 │   ├── src/mcp_probe.rs       # MCP server check (rmcp): tools, needs-login, stderr tail; tool-list cache
 │   ├── src/tray.rs            # menu bar icon and menu; close-to-hide; Dock icon only while the window is open
 │   ├── capabilities/default.json  # core, plus the three dialog/opener calls the window makes; no fs
@@ -30,9 +31,9 @@ env-router/
 │   ├── App.tsx                # state, health derivation, check flow, shortcuts (⌘N, ⌘O)
 │   ├── index.css              # design tokens (light/dark, system accent), hairline utilities
 │   ├── components/            # Chrome (titlebar, health line, shells panel), Frame (slots),
-│   │                          # ProfileInspector (slide-in editor), ServerLibrary (MCP server inspector),
+│   │                          # ProfileInspector (slide-in editor), ServerLibrary (MCP server inspector) and ServerSources (its catalog and import views),
 │   │                          # Docket (check result), ui (controls, status, icons)
-│   ├── lib/                   # api.ts (typed commands), types.ts (wire types), tools.ts (tool registry, MCP descriptors), mcp.ts (server drafts, rename/remove),
+│   ├── lib/                   # api.ts (typed commands), types.ts (wire types), tools.ts (tool registry, MCP descriptors), mcp.ts (server drafts, rename/remove, secret locking), mcpCatalog.ts (well-known servers),
 │   │                          # verdict.ts (check wording, tested in verdict.test.ts), paths.ts, useFolderDrop.ts, confirm.ts
 │   └── dev/mockTauri.ts       # dev-only browser mock; never bundled
 ├── README.md, LICENSE         # what it is, how it works, build, uninstall; MIT
@@ -61,6 +62,7 @@ adds a marked block to the end of `~/.zshrc` (or `$ZDOTDIR/.zshrc`), bash's logi
 | `check_folder(shell, folder, tool)` | Real-shell check, after running the prompt hooks once: routed (with the MCP servers it adds), shadowed by an alias/function, shadowed on PATH (which includes a shell that's off, and says whether a prompt hook did it), not found, tool not installed, or shim failed |
 | `preview_folder(payload, folder, tool)` | Instant profile preview from an unsaved config |
 | `check_mcp_server(name, server, secrets)` | Starts or connects to one MCP server with the login shell's PATH and lists its tools: ok, needs sign-in (401), failed with its stderr tail, timed out, or unsupported (SSE); caches a good list |
+| `import_candidates(payload)` | MCP servers the agents already define in their own files, merged when identical; read only |
 | `get_mcp_tools` | Each library server's cached tool list, while its definition is unchanged |
 | `open_in_editor(path)` | Opens an existing file inside the home folder in the default text editor |
 
