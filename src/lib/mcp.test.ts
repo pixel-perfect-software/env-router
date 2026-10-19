@@ -46,6 +46,19 @@ describe('serverOf', () => {
     expect(serverOf(blank)).toEqual({ server: { ...github, args: ['-y'], env: {} }, secrets: {} })
   })
 
+  it('refuses an empty value under a credential-looking name, even unlocked', () => {
+    const unlocked = { ...draftOf('github', github), env: [{ key: 'GITHUB_PERSONAL_ACCESS_TOKEN', value: '' }] }
+    expect(serverOf(unlocked)).toEqual({ error: 'Enter a value for GITHUB_PERSONAL_ACCESS_TOKEN, or remove it.' })
+    const header = {
+      ...draftOf('relic', { transport: 'http', url: 'https://mcp.example.com/mcp', headers: {} }),
+      headers: [{ key: 'Api-Key', value: ' ' }],
+    }
+    expect(serverOf(header)).toEqual({ error: 'Enter a value for Api-Key, or remove it.' })
+    // Other names may be empty on purpose.
+    const plain = { ...draftOf('github', github), env: [{ key: 'GITHUB_HOST', value: '' }] }
+    expect(serverOf(plain)).toEqual({ server: { ...github, env: { GITHUB_HOST: '' } }, secrets: {} })
+  })
+
   it('names what to fix', () => {
     expect(serverOf({ ...draftOf('x', undefined), command: ' ' })).toEqual({ error: 'Enter the command that starts the server.' })
     expect(serverOf({ ...draftOf('x', undefined), transport: 'http', url: 'mcp.example.com' })).toEqual({

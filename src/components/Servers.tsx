@@ -168,7 +168,9 @@ export function ServersView({
         )}
         {detail.kind === 'edit' && (
           <ServerEditor
-            key={detail.name ?? `new-${detail.template?.name ?? ''}`}
+            // Keyed by the saved definition too, so saving a change reopens the editor from what
+            // was saved (a typed secret sealed again) instead of leaving the draft in place.
+            key={detail.name ? `${detail.name}:${JSON.stringify(config.mcpServers[detail.name] ?? null)}` : `new-${detail.template?.name ?? ''}`}
             name={detail.name}
             server={detail.name ? config.mcpServers[detail.name] : undefined}
             template={detail.template}
@@ -316,6 +318,8 @@ function ServerEditor({
       await onSave(trimmed, built.server, built.secrets, usedBy)
     } catch (err) {
       setError(errorMessage(err))
+    } finally {
+      // A save that changed only which profiles use the server keeps this editor open.
       setSaving(false)
     }
   }
