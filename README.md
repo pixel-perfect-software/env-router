@@ -143,8 +143,11 @@ You need, once:
 2. Rust, from [rustup.rs](https://rustup.rs). The repository pins its toolchain in
    `rust-toolchain.toml`, and rustup installs that version on first build. (Homebrew's `rust`
    doesn't read the pin; if you use it, match the version by hand.)
-3. Node.js 22.12 or later, from [nodejs.org](https://nodejs.org) or `brew install node`
+3. Node.js 24 or later, from [nodejs.org](https://nodejs.org) or `brew install node`
 4. pnpm: `npm install -g pnpm`. The project pins its own pnpm version, and pnpm fetches it.
+
+(With [asdf](https://asdf-vm.com), `asdf install` sets up the Node and pnpm versions pinned in
+`.tool-versions` instead of steps 3 and 4.)
 
 Then clone and build:
 

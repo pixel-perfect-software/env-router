@@ -10,8 +10,9 @@ RUN apt-get update \
       mingw-w64 \
  && rm -rf /var/lib/apt/lists/*
 
-# Node and pnpm, for the desktop app's frontend and `tauri build` (linux-bundle).
-ARG NODE_VERSION=22.12.0
+# Node and pnpm, for the desktop app's frontend and `tauri build` (linux-bundle). Keep Node at the
+# version in .tool-versions, which is outside this build context.
+ARG NODE_VERSION=24.21.0
 RUN arch=$(dpkg --print-architecture | sed 's/amd64/x64/') \
  && curl -fsSL "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-$arch.tar.xz" \
     | tar -xJ -C /usr/local --strip-components=1 \

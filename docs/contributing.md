@@ -6,8 +6,8 @@ how to work on the app without touching your real setup, and the rules the code 
 ## 🛠️ Setup
 
 Install the tools in the README's [Build from source](../README.md#-build-from-source) section
-(Xcode's command line tools on macOS or the WebKitGTK packages on Linux, rustup, Node.js 22.12 or
-later, pnpm), then:
+(Xcode's command line tools on macOS or the WebKitGTK packages on Linux, rustup, Node.js 24 or
+later, pnpm; or `asdf install` for the Node and pnpm in `.tool-versions`), then:
 
 ```sh
 git clone https://github.com/pixel-perfect-software/env-router.git

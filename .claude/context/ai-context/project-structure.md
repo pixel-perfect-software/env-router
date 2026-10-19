@@ -101,7 +101,7 @@ command of the same name and arguments.
 | Styling | Tailwind CSS 4 via `@tailwindcss/vite` |
 | Lint / format | Biome 2.5 (TS/JSON/CSS); `cargo fmt` and clippy (Rust) |
 | Tests | `cargo test` (Rust, including the built shim and real zsh, bash and fish); Vitest (`src/**/*.test.ts`) |
-| Package manager | pnpm 12.10.1 (pinned) |
+| Package manager | pnpm 12.14.0 and Node 24.21.0 (pinned in `.tool-versions`; pnpm also in `packageManager`) |
 | Platform | macOS 11+ on Apple Silicon; Linux x86_64 and aarch64 (glibc of Ubuntu 22.04 or later), WSL 2 included |
 
 ## Commands
