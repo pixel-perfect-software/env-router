@@ -2,8 +2,9 @@
 // Tauri commands answered from memory. main.tsx loads it only when `import.meta.env.DEV` and no
 // Tauri runtime is present, so it never ships. Pick a state with `?scenario=`:
 // first-run (default), populated, mcp (populated, with an MCP server library), shadowed, or broken (config.json can't be read until
-// "Open config.json" is clicked, which stands in for fixing it). `window.__mockDrop(path, x, y)`
-// simulates a Finder drop.
+// "Open config.json" is clicked, which stands in for fixing it). `?platform=linux` answers as a
+// Linux desktop would (home in /home, bash as the login shell, ~/.config editor settings, a
+// keyring). `window.__mockDrop(path, x, y)` simulates a Finder drop.
 
 import { emit } from '@tauri-apps/api/event'
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
@@ -21,7 +22,8 @@ import type {
   ToolInfo,
 } from '../lib/types'
 
-const HOME = '/Users/sam'
+const linux = new URLSearchParams(location.search).get('platform') === 'linux'
+const HOME = linux ? '/home/sam' : '/Users/sam'
 
 const scenario = new URLSearchParams(location.search).get('scenario') ?? 'first-run'
 
@@ -110,11 +112,13 @@ let config: ConfigState = withAgents({
     : [],
 })
 const setup: SetupStatus = {
+  platform: linux ? 'linux' : 'macos',
+  secretStore: linux ? 'keyring' : 'Keychain',
   shimInstalled: true,
   shimsDir: `${HOME}/.envrouter/shims`,
   shells: [
-    shell('zsh', ['.zshrc'], true, populated, true),
-    shell('bash', ['.bash_profile', '.bashrc'], true, false),
+    shell('zsh', ['.zshrc'], true, linux ? false : populated, !linux),
+    linux ? shell('bash', ['.bashrc'], true, populated, true) : shell('bash', ['.bash_profile', '.bashrc'], true, false),
     shell('fish', ['.config/fish/config.fish'], false, false),
   ],
 }
@@ -133,7 +137,7 @@ const editors: EditorStatus[] = (
   command: 'claude',
   available,
   extensionInstalled,
-  settingsFile: `${HOME}/Library/Application Support/${dir}/User/settings.json`,
+  settingsFile: `${HOME}/${linux ? '.config' : 'Library/Application Support'}/${dir}/User/settings.json`,
   wrapper: editor === 'codeInsiders' ? `${HOME}/bin/claude-wrap` : null,
   installed: false,
 }))

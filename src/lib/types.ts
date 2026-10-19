@@ -98,8 +98,15 @@ export interface ShellStatus {
   startupFiles: string[]
 }
 
-/** `SetupStatus` in `lib.rs` */
+/** `envrouter_core::platform::Platform` */
+export type Platform = 'macos' | 'linux' | 'wsl' | 'windows'
+
+/** `envrouter_ops::commands::SetupStatus` */
 export interface SetupStatus {
+  /** Which system this is, so the window can use its conventions (shortcuts, words). */
+  platform: Platform
+  /** What the store MCP secrets go to is called here: "Keychain", "keyring". */
+  secretStore: string
   /** The installed shim matches the one bundled with this version of the app. */
   shimInstalled: boolean
   shimsDir: string

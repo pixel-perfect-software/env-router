@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use envrouter_core::config::{self, ConfigState, IdeHook, McpServer};
 use envrouter_core::{paths, Error, Result};
-use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
+use tauri::{AppHandle, Manager, WindowEvent};
 
 use envrouter_ops::commands::{self, SetupStatus};
 use envrouter_ops::editors::{Editor, EditorStatus};
@@ -179,11 +179,15 @@ pub fn run() {
             tray::create(app.handle())?;
             Ok(())
         })
-        // Closing the window keeps EnvRouter in the menu bar; Quit lives in its menu.
+        // On macOS, closing the window keeps EnvRouter in the menu bar; Quit lives in its menu.
+        // Elsewhere closing quits: a Linux desktop may show no tray icon (GNOME has none by
+        // default), and a hidden window would leave no way back.
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                tray::hide_window(window.app_handle());
+                if cfg!(target_os = "macos") {
+                    api.prevent_close();
+                    tray::hide_window(window.app_handle());
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -203,10 +207,11 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|app, event| {
+    app.run(|_app, _event| {
         // Clicking the Dock icon while the window is hidden.
-        if let RunEvent::Reopen { .. } = event {
-            tray::show_window(app);
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen { .. } = _event {
+            tray::show_window(_app);
         }
     });
 }

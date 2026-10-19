@@ -4,7 +4,9 @@
 use envrouter_core::{config, paths};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{ActivationPolicy, AppHandle, Emitter, Manager, Wry};
+#[cfg(target_os = "macos")]
+use tauri::ActivationPolicy;
+use tauri::{AppHandle, Emitter, Manager, Wry};
 
 use envrouter_ops::shell::{self, Shell};
 
@@ -46,8 +48,9 @@ pub fn refresh(app: &AppHandle) {
     }
 }
 
-/// Brings the window back and puts the app in the Dock while it's open.
+/// Brings the window back, and on macOS puts the app in the Dock while it's open.
 pub fn show_window(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
     let _ = app.set_activation_policy(ActivationPolicy::Regular);
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
@@ -56,11 +59,12 @@ pub fn show_window(app: &AppHandle) {
     }
 }
 
-/// Hides the window instead of closing it, and leaves only the menu bar icon.
+/// Hides the window instead of closing it, and on macOS leaves only the menu bar icon.
 pub fn hide_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.hide();
     }
+    #[cfg(target_os = "macos")]
     let _ = app.set_activation_policy(ActivationPolicy::Accessory);
 }
 

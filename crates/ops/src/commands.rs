@@ -62,13 +62,20 @@ pub fn save_config(
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetupStatus {
+    /// Which system this is, so the window can use its conventions (shortcuts, words).
+    pub platform: Platform,
+    /// What the store MCP secrets go to is called here: "Keychain", "keyring".
+    pub secret_store: &'static str,
     pub shim_installed: bool,
     pub shims_dir: String,
     pub shells: Vec<ShellStatus>,
 }
 
 pub fn setup_status(home: &Path) -> Result<SetupStatus> {
+    let platform = Platform::current();
     Ok(SetupStatus {
+        platform,
+        secret_store: platform.secret_store_name(),
         shim_installed: shims::is_installed(home, &shims::bundled()?, &shims::bundled_keychain()?),
         shims_dir: paths::shims(home).display().to_string(),
         shells: Shell::ALL.iter().map(|&s| shell::status(s, home)).collect(),

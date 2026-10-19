@@ -7,7 +7,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Platform {
     MacOs,
     /// A Linux desktop or server.
@@ -37,6 +38,15 @@ impl Platform {
     /// shell, so bash reads only `.bashrc`.
     pub fn terminal_starts_login_shell(self) -> bool {
         !matches!(self, Platform::Linux)
+    }
+
+    /// What the window calls the store MCP secrets go to.
+    pub fn secret_store_name(self) -> &'static str {
+        match self {
+            Platform::MacOs => "Keychain",
+            Platform::Linux | Platform::Wsl => "keyring",
+            Platform::Windows => "Credential Manager",
+        }
     }
 
     /// The shell to assume when the login shell can't be found: each system's default.
