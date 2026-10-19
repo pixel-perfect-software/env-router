@@ -26,7 +26,12 @@ pub fn bundled_keychain() -> Result<PathBuf> {
 /// Installs the shim and the Keychain helper the app ships with, if either is missing or
 /// different, e.g. after an app update. Says whether either changed.
 pub fn install_bundled(home: &Path) -> Result<bool> {
-    install_binaries(home, &bundled()?, &bundled_keychain()?)
+    let changed = install_binaries(home, &bundled()?, &bundled_keychain()?)?;
+    // Linux builds ship the Windows helper too, for WSL. Elsewhere it isn't there.
+    let windows = bundled()?.with_file_name(format!("{}.exe", paths::KEYCHAIN_NAME));
+    let windows_changed =
+        windows.is_file() && install_file(&paths::windows_keychain_helper(home), &windows)?;
+    Ok(changed || windows_changed)
 }
 
 pub fn install_binaries(home: &Path, shim: &Path, keychain: &Path) -> Result<bool> {

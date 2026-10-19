@@ -34,6 +34,12 @@ pub fn cli_binary(home: &Path) -> PathBuf {
     root(home).join("bin").join(CLI_NAME)
 }
 
+/// The Windows build of the secrets helper, which a WSL distro runs over interop to keep its
+/// secrets in the Windows Credential Manager.
+pub fn windows_keychain_helper(home: &Path) -> PathBuf {
+    root(home).join("bin").join(format!("{KEYCHAIN_NAME}.exe"))
+}
+
 /// Rendered MCP files: `<profile id>/<command>/`, holding one config file per server and the
 /// launch manifest the shim reads. The app rewrites the whole folder on every save.
 pub fn mcp(home: &Path) -> PathBuf {

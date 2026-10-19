@@ -1,0 +1,14 @@
+# Linux build and test image for EnvRouter: real zsh, bash and fish, a GNOME Keyring for the
+# secrets round trip, the WebKitGTK packages the desktop app needs, and mingw-w64 to build the
+# Windows secrets helper.
+FROM docker.io/library/rust:1-bookworm
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      zsh fish gnome-keyring dbus libsecret-tools \
+      libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev \
+      mingw-w64 \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV CARGO_TARGET_DIR=/target ENVROUTER_REQUIRE_SHELLS=1
+WORKDIR /work
