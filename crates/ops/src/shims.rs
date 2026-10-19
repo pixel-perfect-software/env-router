@@ -8,13 +8,17 @@ use std::path::{Path, PathBuf};
 use envrouter_core::config::{self, ConfigState};
 use envrouter_core::{paths, Error, Result};
 
-/// The shim shipped with the app, next to the app's own executable. That's where Tauri puts
-/// `bundle.externalBin`: `Contents/MacOS` in the bundle, `target/<profile>` in development.
+/// The shim shipped with the app or the CLI, next to the running executable. That's where Tauri
+/// puts `bundle.externalBin` (`Contents/MacOS` in the bundle, `/usr/bin` from a `.deb`,
+/// `target/<profile>` in development) and where a release archive puts it beside `envrouter`.
+/// Links are followed, so a CLI linked into Homebrew's `bin` finds the files in its keg.
 pub fn bundled() -> Result<PathBuf> {
-    let exe = std::env::current_exe().map_err(|source| Error::Io {
-        path: PathBuf::from("current executable"),
-        source,
-    })?;
+    let exe = std::env::current_exe()
+        .and_then(fs::canonicalize)
+        .map_err(|source| Error::Io {
+            path: PathBuf::from("current executable"),
+            source,
+        })?;
     Ok(exe.with_file_name(paths::SHIM_NAME))
 }
 
