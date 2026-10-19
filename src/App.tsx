@@ -26,6 +26,7 @@ import {
 import { confirmDelete } from './lib/confirm'
 import { withoutServer, withServer, withUsedBy } from './lib/mcp'
 import { owningTrigger } from './lib/paths'
+import { guessPlatform, isShortcut, PlatformContext, platformInfo } from './lib/platform'
 import { ideHooks, KNOWN_TOOLS, toolByCommand, withAgents } from './lib/tools'
 import type { ConfigState, Editor, EditorStatus, Profile, SetupStatus, Shell, ToolInfo } from './lib/types'
 import { useFolderDrop } from './lib/useFolderDrop'
@@ -282,11 +283,14 @@ export default function App() {
   }
   const actions = useRef(shortcuts)
   actions.current = shortcuts
+  const platform = platformInfo(setup?.platform ?? guessPlatform(), setup?.secretStore)
+  const platformRef = useRef(platform)
+  platformRef.current = platform
 
   useEffect(() => {
     const unlisten = listen('check-folder', () => actions.current.checkFolder())
     const onKey = (e: KeyboardEvent) => {
-      if (!e.metaKey || e.altKey || e.ctrlKey) return
+      if (!isShortcut(e, platformRef.current)) return
       if (e.key === 'n') {
         e.preventDefault()
         actions.current.newProfile()
@@ -408,7 +412,11 @@ export default function App() {
           ...(folder
             ? [
                 { id: 'check', text: 'Check This Folder', action: () => runCheck(folder, defaultShell(), null) },
-                { id: 'reveal', text: 'Reveal in Finder', action: () => revealItemInDir(folder).catch((err) => setActionError(errorMessage(err))) },
+                {
+                  id: 'reveal',
+                  text: platform.isMac ? 'Reveal in Finder' : 'Show in Files',
+                  action: () => revealItemInDir(folder).catch((err) => setActionError(errorMessage(err))),
+                },
               ]
             : []),
           { item: 'Separator' as const },
@@ -446,122 +454,124 @@ export default function App() {
   const editingId = editing === 'new' ? newId : editing
 
   return (
-    <div className={`relative flex h-full flex-col ${hovering ? 'shadow-[inset_0_0_0_2px_var(--er-accent)]' : ''}`}>
-      {/* While the inspector is open, everything behind it is out of reach: Tab, clicks and
+    <PlatformContext.Provider value={platform}>
+      <div className={`relative flex h-full flex-col ${hovering ? 'shadow-[inset_0_0_0_2px_var(--er-accent)]' : ''}`}>
+        {/* While the inspector is open, everything behind it is out of reach: Tab, clicks and
           screen readers stay in the editor, so a stray Enter on a card can't drop its edits.
           `contents` keeps the window's layout as if this wrapper weren't there. */}
-      <div className="contents" inert={inspecting}>
-        <TitleBand
-          setup={setup}
-          blockedShell={blocked?.shell ?? null}
-          primary={view === 'profiles' && !inspecting && !bannerHasPrimary(health) && !docketHasAction}
-          shellsOpen={shellsOpen}
-          onToggleShells={() => {
-            setEditorsOpen(false)
-            setShellsOpen((o) => !o)
-          }}
-          editorsShown={editorsToShow(editors).length > 0}
-          editorsOpen={editorsOpen}
-          onToggleEditors={() => {
-            setShellsOpen(false)
-            setEditorsOpen((o) => !o)
-          }}
-          view={view}
-          onView={setView}
-          onCheckFolder={pickAndCheck}
-        />
-        {/* On Servers, the banner only shows when routing needs attention. */}
-        {(view === 'profiles' || !['ok', 'loading', 'setup'].includes(health.kind)) && (
-          <HealthLine
-            health={health}
-            quiet={view === 'servers'}
-            onNewProfile={() => setEditing('new')}
-            onEnableShell={enableShell}
+        <div className="contents" inert={inspecting}>
+          <TitleBand
+            setup={setup}
+            blockedShell={blocked?.shell ?? null}
+            primary={view === 'profiles' && !inspecting && !bannerHasPrimary(health) && !docketHasAction}
+            shellsOpen={shellsOpen}
+            onToggleShells={() => {
+              setEditorsOpen(false)
+              setShellsOpen((o) => !o)
+            }}
+            editorsShown={editorsToShow(editors).length > 0}
+            editorsOpen={editorsOpen}
+            onToggleEditors={() => {
+              setShellsOpen(false)
+              setEditorsOpen((o) => !o)
+            }}
+            view={view}
+            onView={setView}
             onCheckFolder={pickAndCheck}
-            onReinstall={() => config && commit(config).catch((err) => setActionError(errorMessage(err)))}
-            onRecheck={(folder, shell, tool) => runCheck(folder, shell, null, tool)}
-            onOpenConfig={() => openInEditor(`${home}/.envrouter/config.json`).catch((err) => setLoadError(errorMessage(err)))}
-            onDismissError={() => setActionError(null)}
           />
-        )}
-        {shellsOpen && setup && <ShellsPopover setup={setup} home={home} onSet={setShell} onClose={closeShells} />}
-        {editorsOpen && editors && <EditorsPopover editors={editors} home={home} onSet={setEditor} onClose={closeEditors} />}
-        {/* Soft edges where cards scroll under the banner and the floating check card. */}
-        {view === 'servers' && config && (
-          <ServersView
-            config={config}
-            home={home}
-            colors={profileColors(config.profiles.map((p) => p.id))}
-            detail={serverDetail}
-            onDetail={setServerDetail}
-            onSave={(previous, name, server, secrets, usedBy) =>
-              commit(withUsedBy(withServer(config, previous, name, server), name, usedBy), secrets)
-            }
-            onImport={(servers, secrets) =>
-              commit(
-                servers.reduce((next, [name, server]) => withServer(next, null, name, server), config),
-                secrets,
-              )
-            }
-            onDelete={(name) => commit(withoutServer(config, name))}
-          />
-        )}
-        {view === 'profiles' && (
-          <>
-            <main className="min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_10px,black_calc(100%-18px),transparent)]">
-              {config && (
-                <Frame
-                  profiles={config.profiles}
-                  home={home}
-                  editing={editing}
-                  slip={slip}
-                  dropTarget={dropTarget}
-                  onEdit={setEditing}
-                  onContextMenu={showSlotMenu}
-                  onOpenServer={openServer}
-                />
-              )}
-            </main>
-            <Docket
-              check={check}
-              shells={setup?.shells ?? []}
-              home={home}
-              routedTools={routedTools}
-              shimsDir={setup?.shimsDir ?? `${home}/.envrouter/shims`}
-              hovering={hovering}
-              onRecheck={(shell, tool) => check && runCheck(check.folder, shell, null, tool)}
-              onAction={runAction}
-              primary={!inspecting && !bannerHasPrimary(health)}
-              onDismiss={() => {
-                checkKey.current++
-                setCheck(null)
-                setSlip(null)
-              }}
+          {/* On Servers, the banner only shows when routing needs attention. */}
+          {(view === 'profiles' || !['ok', 'loading', 'setup'].includes(health.kind)) && (
+            <HealthLine
+              health={health}
+              quiet={view === 'servers'}
+              onNewProfile={() => setEditing('new')}
+              onEnableShell={enableShell}
+              onCheckFolder={pickAndCheck}
+              onReinstall={() => config && commit(config).catch((err) => setActionError(errorMessage(err)))}
+              onRecheck={(folder, shell, tool) => runCheck(folder, shell, null, tool)}
+              onOpenConfig={() => openInEditor(`${home}/.envrouter/config.json`).catch((err) => setLoadError(errorMessage(err)))}
+              onDismissError={() => setActionError(null)}
             />
-          </>
+          )}
+          {shellsOpen && setup && <ShellsPopover setup={setup} home={home} onSet={setShell} onClose={closeShells} />}
+          {editorsOpen && editors && <EditorsPopover editors={editors} home={home} onSet={setEditor} onClose={closeEditors} />}
+          {/* Soft edges where cards scroll under the banner and the floating check card. */}
+          {view === 'servers' && config && (
+            <ServersView
+              config={config}
+              home={home}
+              colors={profileColors(config.profiles.map((p) => p.id))}
+              detail={serverDetail}
+              onDetail={setServerDetail}
+              onSave={(previous, name, server, secrets, usedBy) =>
+                commit(withUsedBy(withServer(config, previous, name, server), name, usedBy), secrets)
+              }
+              onImport={(servers, secrets) =>
+                commit(
+                  servers.reduce((next, [name, server]) => withServer(next, null, name, server), config),
+                  secrets,
+                )
+              }
+              onDelete={(name) => commit(withoutServer(config, name))}
+            />
+          )}
+          {view === 'profiles' && (
+            <>
+              <main className="min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_10px,black_calc(100%-18px),transparent)]">
+                {config && (
+                  <Frame
+                    profiles={config.profiles}
+                    home={home}
+                    editing={editing}
+                    slip={slip}
+                    dropTarget={dropTarget}
+                    onEdit={setEditing}
+                    onContextMenu={showSlotMenu}
+                    onOpenServer={openServer}
+                  />
+                )}
+              </main>
+              <Docket
+                check={check}
+                shells={setup?.shells ?? []}
+                home={home}
+                routedTools={routedTools}
+                shimsDir={setup?.shimsDir ?? `${home}/.envrouter/shims`}
+                hovering={hovering}
+                onRecheck={(shell, tool) => check && runCheck(check.folder, shell, null, tool)}
+                onAction={runAction}
+                primary={!inspecting && !bannerHasPrimary(health)}
+                onDismiss={() => {
+                  checkKey.current++
+                  setCheck(null)
+                  setSlip(null)
+                }}
+              />
+            </>
+          )}
+        </div>
+        {config && editingId !== null && (
+          <ProfileInspector
+            key={editingId}
+            id={editingId}
+            profile={config.profiles.find((p) => p.id === editing)}
+            color={profileColors([...config.profiles.map((p) => p.id), newId]).get(editingId) ?? ''}
+            home={home}
+            library={config.mcpServers}
+            tools={mcpTools}
+            onCancel={() => setEditing(null)}
+            onSave={saveProfile}
+            onDelete={
+              editing === 'new'
+                ? undefined
+                : () => {
+                    const profile = config.profiles.find((p) => p.id === editing)
+                    return profile ? deleteProfile(profile) : Promise.resolve()
+                  }
+            }
+          />
         )}
       </div>
-      {config && editingId !== null && (
-        <ProfileInspector
-          key={editingId}
-          id={editingId}
-          profile={config.profiles.find((p) => p.id === editing)}
-          color={profileColors([...config.profiles.map((p) => p.id), newId]).get(editingId) ?? ''}
-          home={home}
-          library={config.mcpServers}
-          tools={mcpTools}
-          onCancel={() => setEditing(null)}
-          onSave={saveProfile}
-          onDelete={
-            editing === 'new'
-              ? undefined
-              : () => {
-                  const profile = config.profiles.find((p) => p.id === editing)
-                  return profile ? deleteProfile(profile) : Promise.resolve()
-                }
-          }
-        />
-      )}
-    </div>
+    </PlatformContext.Provider>
   )
 }

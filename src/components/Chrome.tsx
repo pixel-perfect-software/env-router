@@ -6,6 +6,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 import appIcon from '../../src-tauri/icons/app-icon-small.svg'
 import { errorMessage } from '../lib/api'
 import { tildify } from '../lib/paths'
+import { shortcutLabel, usePlatform } from '../lib/platform'
 import { toolLabel } from '../lib/tools'
 import type { Editor, EditorStatus, SetupStatus, Shell, ShellStatus } from '../lib/types'
 import { AgentMark, EditorIcon, FolderCheckIcon, PlugIcon, ShellIcon } from './icons'
@@ -40,16 +41,23 @@ export function TitleBand({
   onView: (view: 'profiles' | 'servers') => void
   onCheckFolder: () => void
 }) {
+  const platform = usePlatform()
   const shells = setup?.shells.filter((s) => s.available) ?? []
   return (
-    <div data-tauri-drag-region data-titlebar className="flex h-[52px] shrink-0 items-center gap-3 pr-4 pl-[86px]">
-      <div data-tauri-drag-region className="flex items-center gap-2">
-        <img data-tauri-drag-region src={appIcon} alt="" width={18} height={18} draggable={false} />
-        {/* A narrow window keeps the icon; the name stays for screen readers. */}
-        <h1 data-tauri-drag-region className="text-title font-semibold max-[900px]:sr-only">
-          EnvRouter
-        </h1>
-      </div>
+    <div data-tauri-drag-region data-titlebar className={`flex h-[52px] shrink-0 items-center gap-3 pr-4 ${platform.isMac ? 'pl-[86px]' : 'pl-4'}`}>
+      {/* On macOS the band is the title bar, beside the traffic lights. Elsewhere the system's own title bar already names the app, so
+          the band is just the toolbar; the name stays for screen readers. */}
+      {platform.isMac ? (
+        <div data-tauri-drag-region className="flex items-center gap-2">
+          <img data-tauri-drag-region src={appIcon} alt="" width={18} height={18} draggable={false} />
+          {/* A narrow window keeps the icon; the name stays for screen readers. */}
+          <h1 data-tauri-drag-region className="text-title font-semibold max-[900px]:sr-only">
+            EnvRouter
+          </h1>
+        </div>
+      ) : (
+        <h1 className="sr-only">EnvRouter</h1>
+      )}
       <Segmented
         label="View"
         size="toolbar"
@@ -108,7 +116,7 @@ export function TitleBand({
             <span className="max-[820px]:sr-only">Editors…</span>
           </Button>
         )}
-        <Button kind={primary ? 'primary' : 'push'} onClick={onCheckFolder} title="Check Folder… (⌘O)">
+        <Button kind={primary ? 'primary' : 'push'} onClick={onCheckFolder} title={`Check Folder… (${shortcutLabel('o', platform)})`}>
           <FolderCheckIcon />
           Check Folder…
         </Button>

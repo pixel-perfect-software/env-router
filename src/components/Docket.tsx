@@ -2,6 +2,7 @@
 // complete state at a time: pending, then a verdict, never a scrolling log.
 
 import { tildify } from '../lib/paths'
+import { shortcutLabel, usePlatform } from '../lib/platform'
 import { toolLabel } from '../lib/tools'
 import type { FolderCheck, Preview, Shell, ShellStatus } from '../lib/types'
 import { type VerdictAction, verdictOf } from '../lib/verdict'
@@ -46,6 +47,7 @@ export function Docket({
   primary: boolean
   onDismiss: () => void
 }) {
+  const platform = usePlatform()
   const base = 'mx-4 mb-4 flex min-h-[60px] shrink-0 flex-wrap items-center gap-x-4 gap-y-2.5 rounded-card px-4 py-3'
 
   if (hovering) {
@@ -65,8 +67,8 @@ export function Docket({
       <footer className={`${base} border-[1.5px] border-dashed border-ink-3/45 text-ink-2`}>
         <DropIcon />
         <p>
-          Drop a folder on this window, or press <kbd className="font-sans">⌘O</kbd>, to see which profile a new {shell?.shell ?? 'terminal'} window
-          uses there.
+          Drop a folder on this window, or press <kbd className="font-sans">{shortcutLabel('o', platform)}</kbd>, to see which profile a new{' '}
+          {shell?.shell ?? 'terminal'} window uses there.
         </p>
       </footer>
     )
