@@ -90,6 +90,8 @@ export function serverOf(draft: ServerDraft): { server: McpServer; secrets: Reco
       if (!key && blank(row.value)) continue
       if (!key) return `Give each ${what} a name.`
       if (key in out) return `${key} is set twice.`
+      // An empty credential would start the server without it, quietly; ask for one instead.
+      if (blank(row.value) && SECRET_NAME.test(key)) return `Enter a value for ${key}, or remove it.`
       const value = stored(row.value, key)
       if (typeof value !== 'string' && 'error' in value) return value.error
       out[key] = value
