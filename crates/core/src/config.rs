@@ -276,6 +276,15 @@ fn write_through_temp(path: &Path, contents: &[u8], mode: Option<u32>) -> Result
     fs::rename(&tmp, path).map_err(io_err)
 }
 
+/// The ids of every Keychain secret the server library refers to.
+pub fn secret_ids(config: &ConfigState) -> BTreeSet<&str> {
+    config
+        .mcp_servers
+        .values()
+        .flat_map(McpServer::secret_ids)
+        .collect()
+}
+
 /// Every command at least one profile routes, by its variable or by handing it MCP servers.
 /// Each gets a shim.
 pub fn tool_names(config: &ConfigState) -> BTreeSet<&str> {
@@ -775,6 +784,27 @@ mod tests {
             agent.mcp.as_mut().unwrap().config_arg = flag.into();
             assert!(validate(&config, &home()).is_err(), "{flag}");
         }
+    }
+
+    #[test]
+    fn secret_ids_gathers_every_reference_in_the_library() {
+        let mut config = with_server(
+            McpServer::Stdio {
+                command: "npx".into(),
+                args: vec![McpValue::Secret {
+                    secret: "AA".into(),
+                }],
+                env: BTreeMap::from([(
+                    "TOKEN".into(),
+                    McpValue::Secret {
+                        secret: "BB".into(),
+                    },
+                )]),
+            },
+            &[],
+        );
+        config.mcp_servers.insert("plain".into(), stdio("npx"));
+        assert_eq!(secret_ids(&config), BTreeSet::from(["AA", "BB"]));
     }
 
     #[test]

@@ -5,7 +5,7 @@
 //! The item's account is the canonical home folder, so a run under a scratch `HOME` (every
 //! test, and the safe way to try the app) never reads or writes the real secrets.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
 
@@ -46,4 +46,17 @@ pub fn write(home: &Path, secrets: &HashMap<String, String>) -> Result<()> {
     let json = serde_json::to_vec(secrets).expect("a string map always serializes");
     passwords::set_generic_password(SERVICE, &account, &json)
         .map_err(|err| Error::Keychain(err.to_string()))
+}
+
+/// Adds `new` and drops every secret not in `keep`, in one read and one write. A save calls it
+/// before writing `config.json`, so the config never names a secret that isn't stored yet.
+pub fn update(home: &Path, new: &HashMap<String, String>, keep: &BTreeSet<&str>) -> Result<()> {
+    let mut secrets = read(home)?;
+    let before = secrets.clone();
+    secrets.retain(|id, _| keep.contains(id.as_str()));
+    secrets.extend(new.iter().map(|(id, value)| (id.clone(), value.clone())));
+    if secrets == before {
+        return Ok(());
+    }
+    write(home, &secrets)
 }

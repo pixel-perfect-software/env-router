@@ -2,10 +2,11 @@ mod shell;
 mod shims;
 mod tray;
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use envrouter_core::config::{self, ConfigState};
-use envrouter_core::{mcp, paths, Error, Result};
+use envrouter_core::{mcp, paths, secrets, Error, Result};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 
@@ -31,23 +32,46 @@ async fn get_config(app: AppHandle) -> Result<ConfigState> {
 }
 
 /// Validates and saves the config, then renders each profile's MCP files and updates the
-/// shims to match. Changes apply to the
-/// next run of each tool in every terminal; nothing needs reloading.
+/// shims to match. `secrets` holds values typed since the last save, keyed by the ids the
+/// config refers to them by; they go to the Keychain before the config names them.
 #[tauri::command]
-async fn save_config(app: AppHandle, payload: ConfigState) -> Result<()> {
+async fn save_config(
+    app: AppHandle,
+    payload: ConfigState,
+    secrets: HashMap<String, String>,
+) -> Result<()> {
     let home = home(&app)?;
     blocking(move || {
         config::validate(&payload, &home)?;
-        shims::install_binary(&home, &shims::bundled()?)?;
+        let referenced = config::secret_ids(&payload);
+        if secrets.keys().any(|id| !referenced.contains(id.as_str())) {
+            return Err(Error::Invalid(
+                "A new secret isn't used by any server. Save the server again.".into(),
+            ));
+        }
+        let fresh_shim = shims::install_binary(&home, &shims::bundled()?)?;
         // Only inside home: a typo'd absolute path shouldn't create folders elsewhere.
         for dir in config::tool_dirs(&payload, &home) {
             if dir.starts_with(&home) && !dir.exists() {
                 std::fs::create_dir_all(&dir).map_err(|source| Error::Io { path: dir, source })?;
             }
         }
-        config::save(&paths::root(&home), &payload)?;
+        // The Keychain is read only when this save adds a secret or stops using one.
+        let root = paths::root(&home);
+        let dropped = config::load(&root).ok().flatten().is_some_and(|previous| {
+            config::secret_ids(&previous)
+                .iter()
+                .any(|id| !referenced.contains(id))
+        });
+        if !secrets.is_empty() || dropped {
+            secrets::update(&home, &secrets, &referenced)?;
+        }
+        config::save(&root, &payload)?;
         mcp::sync(&payload, &home)?;
         shims::sync(&home, &payload)?;
+        if fresh_shim && !referenced.is_empty() {
+            shims::ask_keychain_access(&home);
+        }
         tray::refresh(&app);
         Ok(())
     })

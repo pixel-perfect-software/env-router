@@ -54,7 +54,7 @@ adds a marked block to the end of `~/.zshrc` (or `$ZDOTDIR/.zshrc`), bash's logi
 | Command | Does |
 |---|---|
 | `get_config` | Reads the config, creating an empty one if it's missing |
-| `save_config(payload)` | Validates, saves, installs the shim, renders the MCP files, syncs the symlinks |
+| `save_config(payload, secrets)` | Validates, stores new MCP secrets in the Keychain (pruning unused ones), saves, installs the shim, renders the MCP files, syncs the symlinks |
 | `get_setup_status` | Whether the shim is installed, plus per-shell availability, default shell and block status |
 | `set_shell_integration(shell, enabled)` | Adds or removes the startup-file block |
 | `check_folder(shell, folder, tool)` | Real-shell check, after running the prompt hooks once: routed (with the MCP servers it adds), shadowed by an alias/function, shadowed on PATH (which includes a shell that's off, and says whether a prompt hook did it), not found, tool not installed, or shim failed |

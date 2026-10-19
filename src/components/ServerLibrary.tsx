@@ -6,10 +6,13 @@ import { useEffect, useRef, useState } from 'react'
 import { errorMessage } from '../lib/api'
 import { confirmDeleteServer, confirmDiscardServer } from '../lib/confirm'
 import {
+  type DraftValue,
   draftOf,
-  isSecret,
+  isPending,
+  newSecretId,
   type Pair,
   profilesUsing,
+  SECRET_NAME,
   SERVER_NAME,
   type ServerDraft,
   serverOf,
@@ -17,7 +20,7 @@ import {
   TRANSPORTS,
   type Transport,
 } from '../lib/mcp'
-import type { ConfigState, McpServer, McpValue } from '../lib/types'
+import type { ConfigState, McpServer } from '../lib/types'
 import { BackIcon, Button, ChevronIcon, CloseIcon, IconButton, LockIcon, PlugIcon, PlusIcon, ProfileDot, Segmented, TextField } from './ui'
 
 export function ServerLibrary({
@@ -30,7 +33,7 @@ export function ServerLibrary({
   config: ConfigState
   /** Profile colours, so the list shows who uses each server. */
   colors: Map<string, string>
-  onSave: (previous: string | null, name: string, server: McpServer) => Promise<void>
+  onSave: (previous: string | null, name: string, server: McpServer, secrets: Record<string, string>) => Promise<void>
   onDelete: (name: string) => Promise<void>
   onClose: () => void
 }) {
@@ -53,8 +56,8 @@ export function ServerLibrary({
             usedBy={selected ? profilesUsing(config, selected).map((p) => ({ name: p.name, color: colors.get(p.id) ?? '' })) : []}
             onBack={() => setSelected(null)}
             onClose={onClose}
-            onSave={async (name, server) => {
-              await onSave(selected || null, name, server)
+            onSave={async (name, server, secrets) => {
+              await onSave(selected || null, name, server, secrets)
               setSelected(null)
             }}
             onDelete={
@@ -178,7 +181,7 @@ function ServerEditor({
   usedBy: { name: string; color: string }[]
   onBack: () => void
   onClose: () => void
-  onSave: (name: string, server: McpServer) => Promise<void>
+  onSave: (name: string, server: McpServer, secrets: Record<string, string>) => Promise<void>
   onDelete?: () => Promise<void>
 }) {
   const initial = useRef(draftOf(name ?? '', server))
@@ -231,7 +234,7 @@ function ServerEditor({
     setSaving(true)
     setError(null)
     try {
-      await onSave(trimmed, built.server)
+      await onSave(trimmed, built.server, built.secrets)
     } catch (err) {
       setError(errorMessage(err))
       setSaving(false)
@@ -387,12 +390,58 @@ function ServerEditor({
   )
 }
 
-/** A value kept in the Keychain, shown in place of a field. Setting secrets arrives with Keychain support. */
-function SecretValue() {
+/**
+ * One value: a text field with a lock that sends it to the Keychain on save (the field then
+ * masks it), or, for a value already there, a sealed well that can only be replaced. A stored
+ * secret never comes back to the window.
+ */
+function ValueField({
+  value,
+  onChange,
+  label,
+  placeholder,
+}: {
+  value: DraftValue
+  onChange: (value: DraftValue) => void
+  label: string
+  placeholder: string
+}) {
+  if (!isPending(value) && typeof value !== 'string') {
+    return (
+      <span className="flex h-[28px] min-w-0 flex-1 items-center gap-1.5 rounded-control bg-card-muted pr-1 pl-2 text-small text-ink-2 shadow-[inset_0_0_0_1px_var(--er-rule)]">
+        <LockIcon />
+        <span className="flex-1 italic">In Keychain</span>
+        <Button
+          kind="plain"
+          className="!mx-0 !h-[22px]"
+          aria-label={`Replace ${label}`}
+          onClick={() => onChange({ secret: newSecretId(), value: '' })}
+        >
+          Replace
+        </Button>
+      </span>
+    )
+  }
+  const pending = isPending(value)
   return (
-    <span className="flex h-[28px] min-w-0 flex-1 items-center gap-1.5 rounded-control bg-card-muted px-2 text-small text-ink-2 italic shadow-[inset_0_0_0_1px_var(--er-rule)]">
-      <LockIcon />
-      In Keychain
+    <span className="relative flex min-w-0 flex-1">
+      <TextField
+        mono
+        type={pending ? 'password' : 'text'}
+        aria-label={label}
+        value={pending ? value.value : value}
+        onChange={(e) => onChange(pending ? { ...value, value: e.target.value } : e.target.value)}
+        placeholder={pending ? 'Saved to the Keychain' : placeholder}
+        className="w-full pr-8"
+      />
+      <IconButton
+        label={pending ? `Keep ${label} in config.json` : `Keep ${label} in the Keychain`}
+        aria-pressed={pending}
+        onClick={() => onChange(pending ? value.value : { secret: newSecretId(), value })}
+        className={`absolute top-px right-px !size-[26px] ${pending ? '!text-accent' : 'opacity-60 hover:opacity-100 focus-visible:opacity-100'}`}
+      >
+        <LockIcon />
+      </IconButton>
     </span>
   )
 }
@@ -407,8 +456,8 @@ function ValueList({
   label: string
   add: string
   placeholder: string
-  values: McpValue[]
-  onChange: (values: McpValue[]) => void
+  values: DraftValue[]
+  onChange: (values: DraftValue[]) => void
 }) {
   return (
     <fieldset className="min-w-0">
@@ -419,18 +468,12 @@ function ValueList({
             // Arguments have no identity but their place, and their order is the meaning.
             // biome-ignore lint/suspicious/noArrayIndexKey: see above
             <li key={i} className="flex items-center gap-1.5">
-              {isSecret(value) ? (
-                <SecretValue />
-              ) : (
-                <TextField
-                  mono
-                  aria-label={`${label} ${i + 1}`}
-                  value={value}
-                  onChange={(e) => onChange(values.map((v, j) => (j === i ? e.target.value : v)))}
-                  placeholder={placeholder}
-                  className="flex-1"
-                />
-              )}
+              <ValueField
+                label={`${label.toLowerCase()} ${i + 1}`}
+                value={value}
+                onChange={(next) => onChange(values.map((v, j) => (j === i ? next : v)))}
+                placeholder={placeholder}
+              />
               <IconButton label={`Remove ${label.toLowerCase()} ${i + 1}`} onClick={() => onChange(values.filter((_, j) => j !== i))}>
                 <CloseIcon />
               </IconButton>
@@ -444,6 +487,14 @@ function ValueList({
       </Button>
     </fieldset>
   )
+}
+
+/** A new, still empty value follows its name: under API_KEY or Authorization it heads for the Keychain. */
+const followName = (key: string, value: DraftValue): DraftValue => {
+  const empty = value === '' || (isPending(value) && value.value === '')
+  if (!empty) return value
+  if (SECRET_NAME.test(key)) return isPending(value) ? value : { secret: newSecretId(), value: '' }
+  return ''
 }
 
 function PairList({
@@ -472,22 +523,16 @@ function PairList({
                 mono
                 aria-label={`${label} name ${i + 1}`}
                 value={row.key}
-                onChange={(e) => update(i, { ...row, key: e.target.value })}
+                onChange={(e) => update(i, { key: e.target.value, value: followName(e.target.value, row.value) })}
                 placeholder={keyPlaceholder}
                 className="w-[46%]"
               />
-              {isSecret(row.value) ? (
-                <SecretValue />
-              ) : (
-                <TextField
-                  mono
-                  aria-label={`${row.key || label} value`}
-                  value={row.value}
-                  onChange={(e) => update(i, { ...row, value: e.target.value })}
-                  placeholder="value"
-                  className="flex-1"
-                />
-              )}
+              <ValueField
+                label={row.key || `${label.toLowerCase()} ${i + 1}`}
+                value={row.value}
+                onChange={(value) => update(i, { ...row, value })}
+                placeholder="value"
+              />
               <IconButton label={`Remove ${row.key || `${label.toLowerCase()} ${i + 1}`}`} onClick={() => onChange(rows.filter((_, j) => j !== i))}>
                 <CloseIcon />
               </IconButton>

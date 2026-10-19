@@ -19,21 +19,40 @@ pub fn bundled() -> Result<PathBuf> {
 }
 
 /// Copies `source` to the installed location if it's missing or different, e.g. after an
-/// app update. The rename is atomic, so a shim that's running keeps its old inode.
-pub fn install_binary(home: &Path, source: &Path) -> Result<()> {
+/// app update, and says whether it did. The rename is atomic, so a shim that's running keeps
+/// its old inode.
+pub fn install_binary(home: &Path, source: &Path) -> Result<bool> {
     let dest = paths::shim_binary(home);
     let bytes = fs::read(source).map_err(|source_err| Error::Io {
         path: source.to_path_buf(),
         source: source_err,
     })?;
     if fs::read(&dest).is_ok_and(|current| current == bytes) {
-        return Ok(());
+        return Ok(false);
     }
     config::write_atomic(&dest, &bytes)?;
     fs::set_permissions(&dest, fs::Permissions::from_mode(0o755)).map_err(|source| Error::Io {
         path: dest.clone(),
         source,
-    })
+    })?;
+    Ok(true)
+}
+
+/// Runs the installed shim once to read the Keychain, in the background. A new build has a new
+/// ad hoc signature, so macOS asks again before letting it read the secrets: better now, with
+/// the app in front, than in the middle of someone's `claude`.
+pub fn ask_keychain_access(home: &Path) {
+    let shim = paths::shim_binary(home);
+    let home = home.to_path_buf();
+    std::thread::spawn(move || {
+        let _ = std::process::Command::new(shim)
+            .env("HOME", home)
+            .env("ENVROUTER_KEYCHAIN_PROBE", "1")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    });
 }
 
 pub fn is_installed(home: &Path, source: &Path) -> bool {

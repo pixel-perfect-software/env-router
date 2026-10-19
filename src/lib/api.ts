@@ -7,8 +7,12 @@ import type { ConfigState, FolderCheck, Preview, SetupStatus, Shell, ShellStatus
 /** Reads `~/.envrouter/config.json`, creating an empty one on first run. */
 export const getConfig = () => invoke<ConfigState>('get_config')
 
-/** Validates and saves, then updates the shims. Takes effect on the next run of each tool. */
-export const saveConfig = (payload: ConfigState) => invoke<void>('save_config', { payload })
+/**
+ * Validates and saves, then updates the shims. Takes effect on the next run of each tool.
+ * `secrets`: values typed since the last save, keyed by the ids `payload` refers to them by;
+ * they go to the Keychain and never come back to the window.
+ */
+export const saveConfig = (payload: ConfigState, secrets: Record<string, string> = {}) => invoke<void>('save_config', { payload, secrets })
 
 export const getSetupStatus = () => invoke<SetupStatus>('get_setup_status')
 

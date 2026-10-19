@@ -239,9 +239,9 @@ export default function App() {
     }
   }, [hovering, config, inspecting])
 
-  const commit = async (edited: ConfigState) => {
+  const commit = async (edited: ConfigState, secrets: Record<string, string> = {}) => {
     const next = withAgents(edited)
-    await saveConfig(next)
+    await saveConfig(next, secrets)
     configSeq.current++
     setActionError(null)
     setConfig(next)
@@ -430,7 +430,7 @@ export default function App() {
         <ServerLibrary
           config={config}
           colors={profileColors(config.profiles.map((p) => p.id))}
-          onSave={(previous, name, server) => commit(withServer(config, previous, name, server))}
+          onSave={(previous, name, server, secrets) => commit(withServer(config, previous, name, server), secrets)}
           onDelete={(name) => commit(withoutServer(config, name))}
           onClose={() => setLibrary(false)}
         />
