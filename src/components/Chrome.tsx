@@ -310,6 +310,10 @@ const EDITOR_LABEL: Record<Editor, string> = {
   cursor: 'Cursor',
   windsurf: 'Windsurf',
   codium: 'VSCodium',
+  remoteCode: 'VS Code Server',
+  remoteCodeInsiders: 'VS Code Insiders Server',
+  remoteCursor: 'Cursor Server',
+  remoteWindsurf: 'Windsurf Server',
 }
 
 /** The editors the Editors popover lists: ones run on this Mac with the extension, or still routed after it was removed. */
@@ -461,13 +465,19 @@ function EditorDetail({ status, agent, home }: { status: EditorStatus; agent: st
     )
   if (!status.extensionInstalled) return <p className="truncate text-small text-ink-2 italic">The {agent} extension isn't installed</p>
   const file = tildify(status.settingsFile, home)
-  // Every editor keeps it under the same long folder, so the part that tells them apart stays visible.
   return (
     <p className="truncate font-mono text-small text-ink-2 select-text" title={file}>
-      {file.replace('/Library/Application Support/', '/Library/…/')}
+      {shortSettingsPath(file)}
     </p>
   )
 }
+
+/**
+ * Every desktop editor keeps its settings under the same long folder, so that part is shortened and the editor's own folder stays visible:
+ * `~/Library/…/Code/User/settings.json` on macOS. Linux paths (`~/.config/Code/User/settings.json`) and servers'
+ * (`~/.vscode-server/data/Machine/settings.json`) are short enough already.
+ */
+const shortSettingsPath = (file: string) => file.replace('/Library/Application Support/', '/Library/…/')
 
 /** A popover's closing note under a hairline; a failed switch's error takes its place. */
 function Note({ error, children }: { error: string | null; children: ReactNode }) {
