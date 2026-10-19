@@ -142,6 +142,29 @@ export default function App() {
   // coming back reads both again. Not the config while the inspector is open: it saves on top
   // of the config it opened with.
   const inspecting = editing !== null || library
+  // Closing a panel puts focus back where it was before the panel opened (the pencil, the
+  // titlebar button, a card), whichever way it was opened: button, shortcut or menu.
+  const lastOutside = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    const onFocus = (event: FocusEvent) => {
+      const target = event.target as HTMLElement
+      if (!target.closest('[data-inspector]')) lastOutside.current = target
+    }
+    document.addEventListener('focusin', onFocus)
+    return () => document.removeEventListener('focusin', onFocus)
+  }, [])
+  const wasInspecting = useRef(false)
+  useEffect(() => {
+    if (wasInspecting.current && !inspecting) {
+      const last = lastOutside.current
+      // A card swaps its pencil for "Editing" while open, so the pencil that was pressed is a
+      // new element now: find it again by its accessible name.
+      const label = last?.getAttribute('aria-label')
+      const target = last?.isConnected ? last : label ? document.querySelector<HTMLElement>(`[aria-label="${CSS.escape(label)}"]`) : null
+      target?.focus()
+    }
+    wasInspecting.current = inspecting
+  }, [inspecting])
   useEffect(() => {
     if (editing === null) return
     let current = true

@@ -153,6 +153,7 @@ export function ProfileInspector({
       <div aria-hidden="true" className="absolute inset-0 z-30 animate-[er-fade_160ms_ease-out] bg-black/15 dark:bg-black/35" />
       <form
         aria-label={profile ? `Edit ${profile.name}` : 'New profile'}
+        data-inspector
         className="absolute inset-y-0 right-0 z-40 flex w-[min(440px,calc(100%-40px))] animate-[er-slide_220ms_var(--ease-settle)] flex-col bg-raised shadow-raised"
         onSubmit={(e) => {
           e.preventDefault()
@@ -273,7 +274,7 @@ export function ProfileInspector({
                     return (
                       <li key={server} className="[&+&]:hair-t">
                         {/* A real checkbox, hidden, so the whole row is its label; the drawn box shows its state and focus. */}
-                        <label className="flex w-full items-center gap-2.5 rounded-control px-3 py-1.5 hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)] has-[:focus-visible]:outline-[3px] has-[:focus-visible]:outline-offset-1 has-[:focus-visible]:outline-[color-mix(in_srgb,var(--er-accent)_50%,transparent)] has-[:focus-visible]:outline-solid">
+                        <label className="relative flex w-full items-center gap-2.5 rounded-control px-3 py-1.5 hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)] has-[:focus-visible]:outline-[3px] has-[:focus-visible]:outline-offset-1 has-[:focus-visible]:outline-[color-mix(in_srgb,var(--er-accent)_50%,transparent)] has-[:focus-visible]:outline-solid">
                           <input
                             type="checkbox"
                             className="sr-only"
@@ -373,14 +374,14 @@ function ToolFilter({
   const summary = offHere === 0 ? `All ${tools.length} tools` : `${tools.length - offHere} of ${tools.length} tools on`
   const id = `tools-${server}`
   return (
-    <div className={`${indent} pb-1.5`}>
+    <div className={`${indent} pb-1`}>
       <div className="flex items-center gap-1">
         <button
           type="button"
           aria-expanded={open}
           aria-controls={id}
           onClick={() => setOpen((o) => !o)}
-          className="-ml-1 flex items-center gap-1 rounded-control px-1 text-caption text-ink-2 hover:text-ink"
+          className="-ml-1 flex min-h-[26px] items-center gap-1 rounded-control px-1 text-caption text-ink-2 hover:text-ink"
         >
           <span className={`transition-transform duration-150 ease-settle ${open ? 'rotate-90' : ''}`}>
             <ChevronIcon />
@@ -409,12 +410,12 @@ function ToolFilter({
         )}
       </div>
       {open && (
-        <ul id={id} className="mt-1 ml-[5px] space-y-px pl-2.5 hair-l">
+        <ul id={id} className="mt-1 ml-[5px] pl-2.5 hair-l">
           {tools.map((tool) => {
             const enabled = !off.includes(tool.name)
             return (
               <li key={tool.name}>
-                <label className="flex items-center gap-2 rounded-control px-1 py-[3px] hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)] has-[:focus-visible]:outline-[3px] has-[:focus-visible]:outline-[color-mix(in_srgb,var(--er-accent)_50%,transparent)] has-[:focus-visible]:outline-solid">
+                <label className="relative flex min-h-[28px] items-center gap-2 rounded-control px-1 hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)] has-[:focus-visible]:outline-[3px] has-[:focus-visible]:outline-[color-mix(in_srgb,var(--er-accent)_50%,transparent)] has-[:focus-visible]:outline-solid">
                   <input
                     type="checkbox"
                     className="sr-only"

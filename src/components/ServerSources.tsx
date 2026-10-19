@@ -209,7 +209,7 @@ export function ImportView({
             {rows.map((row, i) => (
               <li key={`${row.candidate.name}-${row.candidate.sources.join()}`} className="[&+&]:hair-t">
                 <label
-                  className={`flex w-full items-start gap-2.5 rounded-control px-3 py-2 has-[:focus-visible]:outline-[3px] has-[:focus-visible]:outline-[color-mix(in_srgb,var(--er-accent)_50%,transparent)] has-[:focus-visible]:outline-solid ${
+                  className={`relative flex w-full items-start gap-2.5 rounded-control px-3 py-2 has-[:focus-visible]:outline-[3px] has-[:focus-visible]:outline-[color-mix(in_srgb,var(--er-accent)_50%,transparent)] has-[:focus-visible]:outline-solid ${
                     row.present ? 'opacity-60' : 'hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)]'
                   }`}
                 >

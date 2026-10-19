@@ -17,7 +17,7 @@ export function Button({ kind = 'push', className = '', ...props }: ButtonHTMLAt
   return (
     <button
       type="button"
-      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-body disabled:pointer-events-none disabled:opacity-45 ${BUTTON[kind]} ${className}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-body disabled:pointer-events-none disabled:opacity-45 aria-disabled:opacity-45 ${BUTTON[kind]} ${className}`}
       {...props}
     />
   )

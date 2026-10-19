@@ -77,19 +77,28 @@ export function ServerLibrary({
     }
   }, [view.kind])
   const names = Object.keys(config.mcpServers).sort((a, b) => a.localeCompare(b))
+  // The server last opened, so going back to the list returns focus to its row.
+  const [lastOpened, setLastOpened] = useState<string | null>(null)
   const toList = () => setView({ kind: 'list' })
 
   return (
     <>
       <div aria-hidden="true" className="absolute inset-0 z-30 animate-[er-fade_160ms_ease-out] bg-black/15 dark:bg-black/35" />
-      <div className="absolute inset-y-0 right-0 z-40 flex w-[min(440px,calc(100%-40px))] animate-[er-slide_220ms_var(--ease-settle)] flex-col bg-raised shadow-raised">
+      <div
+        data-inspector
+        className="absolute inset-y-0 right-0 z-40 flex w-[min(440px,calc(100%-40px))] animate-[er-slide_220ms_var(--ease-settle)] flex-col bg-raised shadow-raised"
+      >
         {view.kind === 'list' && (
           <ServerList
             config={config}
             names={names}
             colors={colors}
             tools={tools}
-            onOpen={(name) => setView({ kind: 'edit', name })}
+            focusName={lastOpened}
+            onOpen={(name) => {
+              setLastOpened(name)
+              setView({ kind: 'edit', name })
+            }}
             onAdd={() => setView({ kind: 'edit', name: null })}
             onCatalog={() => setView({ kind: 'catalog' })}
             onImport={() => setView({ kind: 'import' })}
@@ -129,6 +138,7 @@ export function ServerLibrary({
             onClose={onClose}
             onSave={async (name, server, secrets) => {
               await onSave(view.name, name, server, secrets)
+              setLastOpened(name)
               toList()
             }}
             onDelete={
@@ -150,6 +160,7 @@ function ServerList({
   config,
   names,
   colors,
+  focusName,
   tools,
   onOpen,
   onAdd,
@@ -160,6 +171,8 @@ function ServerList({
   config: ConfigState
   names: string[]
   colors: Map<string, string>
+  /** The server whose editor was just left, to focus its row. */
+  focusName: string | null
   /** Tool lists from good checks, for a count beside each server. */
   tools: Record<string, ToolInfo[]>
   onOpen: (name: string) => void
@@ -169,7 +182,9 @@ function ServerList({
   onClose: () => void
 }) {
   const first = useRef<HTMLButtonElement>(null)
-  useEffect(() => first.current?.focus(), [])
+  const returnTo = useRef<HTMLButtonElement>(null)
+  // Back from a server's editor, focus lands on that server again; otherwise on the first.
+  useEffect(() => (returnTo.current ?? first.current)?.focus(), [])
   return (
     <section
       aria-label="MCP servers"
@@ -196,7 +211,7 @@ function ServerList({
                 return (
                   <li key={name} className="[&+&]:hair-t">
                     <button
-                      ref={i === 0 ? first : undefined}
+                      ref={name === focusName ? returnTo : i === 0 ? first : undefined}
                       type="button"
                       onClick={() => onOpen(name)}
                       className="group/row flex w-full items-center gap-2.5 rounded-control px-3 py-2 text-left hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)] focus-visible:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)]"
@@ -365,7 +380,8 @@ function ServerEditor({
         save()
       }}
       onKeyDown={(e) => {
-        if (e.key === 'Escape') leave(onClose)
+        // Back to the list, as from Catalog and Import; Escape there closes the panel.
+        if (e.key === 'Escape') leave(onBack)
       }}
     >
       <header className="flex items-center gap-1.5 pt-5 pr-5 pb-3 pl-3">
@@ -541,7 +557,8 @@ function ValueField({
         className="w-full pr-8"
       />
       <IconButton
-        label={pending ? `Keep ${label} in config.json` : `Keep ${label} in the Keychain`}
+        // One name; aria-pressed says whether it's on. A name that flips with the state reads as its opposite.
+        label={`Keep ${label} in the Keychain`}
         aria-pressed={pending}
         onClick={() => onChange(pending ? value.value : { secret: newSecretId(), value })}
         className={`absolute top-px right-px !size-[26px] ${pending ? '!text-accent' : 'opacity-60 hover:opacity-100 focus-visible:opacity-100'}`}
@@ -716,7 +733,8 @@ function CheckSection({ name, draft }: { name: string; draft: ServerDraft }) {
         ) : (
           <p className="min-w-0 flex-1 text-small text-ink-2 italic">Not checked yet</p>
         )}
-        <Button onClick={run} disabled={running}>
+        {/* aria-disabled, not disabled: a disabled button drops keyboard focus to the page. */}
+        <Button onClick={running ? undefined : run} aria-disabled={running}>
           <CheckIcon />
           {result || problem ? 'Check Again' : 'Check Server'}
         </Button>
