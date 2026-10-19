@@ -24,7 +24,7 @@ import type { ConfigState, McpServer, ServerCheck, ToolInfo } from '../lib/types
 import { CatalogIcon, CheckIcon, ImportIcon, TransportIcon } from './icons'
 import { ServerMark } from './ServerMark'
 import { CatalogView, ImportView } from './ServerSources'
-import { Button, CloseIcon, IconButton, LockIcon, PlusIcon, ProfileDot, Segmented, StatusTile, TextField, type Tone } from './ui'
+import { Button, ChevronIcon, CloseIcon, IconButton, LockIcon, PlusIcon, ProfileDot, Segmented, StatusTile, TextField, type Tone } from './ui'
 
 /** What the detail side shows. `name` null: a new server, blank or from `template`. */
 export type Detail = { kind: 'none' } | { kind: 'edit'; name: string | null; template?: ServerDraft } | { kind: 'catalog' } | { kind: 'import' }
@@ -149,6 +149,7 @@ export function ServersView({
           <CatalogView
             home={home}
             taken={names}
+            library={config.mcpServers}
             onBack={() => onDetail({ kind: 'none' })}
             onPick={(template) => onDetail({ kind: 'edit', name: null, template })}
           />
@@ -173,6 +174,8 @@ export function ServersView({
             taken={names.filter((n) => n !== detail.name)}
             profiles={profiles}
             initialUsedBy={detail.name ? profilesUsing(config, detail.name).map((p) => p.id) : []}
+            cachedTools={detail.name ? tools[detail.name] : undefined}
+            toolsOff={detail.name ? toolsOffIn(config, detail.name, profiles) : {}}
             onDirty={(value) => {
               dirty.current = value
             }}
@@ -199,6 +202,16 @@ export function ServersView({
       </section>
     </div>
   )
+}
+
+/** For each of a server's tools, the profiles that turn it off. */
+function toolsOffIn(config: ConfigState, server: string, profiles: ProfileChip[]): Record<string, ProfileChip[]> {
+  const off: Record<string, ProfileChip[]> = {}
+  for (const p of config.profiles) {
+    const chip = profiles.find((c) => c.id === p.id)
+    for (const tool of p.mcpServers[server]?.disabledTools ?? []) if (chip) off[tool] = [...(off[tool] ?? []), chip]
+  }
+  return off
 }
 
 /** The detail side with nothing chosen: the three ways a server gets here. */
@@ -233,6 +246,8 @@ function ServerEditor({
   taken,
   profiles,
   initialUsedBy,
+  cachedTools,
+  toolsOff,
   onDirty,
   onCancel,
   onSave,
@@ -248,6 +263,8 @@ function ServerEditor({
   profiles: ProfileChip[]
   /** Ids of the profiles that load this server now. */
   initialUsedBy: string[]
+  cachedTools: ToolInfo[] | undefined
+  toolsOff: Record<string, ProfileChip[]>
   onDirty: (dirty: boolean) => void
   onCancel: () => void
   onSave: (name: string, server: McpServer, secrets: Record<string, string>, usedBy: string[]) => Promise<void>
@@ -343,6 +360,40 @@ function ServerEditor({
       </header>
 
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 pt-4 pb-5">
+        {/* First: which profiles load the server is the part people change most. */}
+        <fieldset className="min-w-0">
+          <legend className="mb-1.5 text-small font-medium text-ink-2">Used by</legend>
+          {profiles.length === 0 ? (
+            <p className="text-small text-ink-2 italic">No profiles yet</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {profiles.map((p) => {
+                const on = usedBy.includes(p.id)
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setUsedBy((ids) => (on ? ids.filter((id) => id !== p.id) : [...ids, p.id]))}
+                    className={`flex h-[28px] items-center gap-1.5 rounded-full pr-3 pl-2.5 text-small transition-[background-color,box-shadow] duration-150 ease-settle ${
+                      on
+                        ? 'text-ink'
+                        : 'text-ink-2 shadow-[inset_0_0_0_1px_var(--er-rule)] hover:bg-[color-mix(in_srgb,var(--er-ink)_5%,transparent)] hover:text-ink'
+                    }`}
+                    style={
+                      on ? { background: `color-mix(in srgb, ${p.color} 16%, var(--er-card))`, boxShadow: `inset 0 0 0 1.5px ${p.color}` } : undefined
+                    }
+                  >
+                    <ProfileDot color={p.color} className={`size-2 ${on ? '' : 'opacity-70'}`} />
+                    {p.name}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          <p className="mt-1.5 text-caption text-ink-2">The agents load it in these profiles' folders.</p>
+        </fieldset>
+
         <div>
           <label htmlFor="server-name" className="mb-1.5 block text-small font-medium text-ink-2">
             Name
@@ -415,41 +466,7 @@ function ServerEditor({
             />
           </>
         )}
-
-        <CheckSection name={draft.name.trim()} draft={draft} />
-
-        <fieldset className="min-w-0">
-          <legend className="mb-1.5 text-small font-medium text-ink-2">Used by</legend>
-          {profiles.length === 0 ? (
-            <p className="text-small text-ink-2 italic">No profiles yet</p>
-          ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {profiles.map((p) => {
-                const on = usedBy.includes(p.id)
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => setUsedBy((ids) => (on ? ids.filter((id) => id !== p.id) : [...ids, p.id]))}
-                    className={`flex h-[28px] items-center gap-1.5 rounded-full pr-3 pl-2.5 text-small transition-[background-color,box-shadow] duration-150 ease-settle ${
-                      on
-                        ? 'text-ink'
-                        : 'text-ink-2 shadow-[inset_0_0_0_1px_var(--er-rule)] hover:bg-[color-mix(in_srgb,var(--er-ink)_5%,transparent)] hover:text-ink'
-                    }`}
-                    style={
-                      on ? { background: `color-mix(in srgb, ${p.color} 16%, var(--er-card))`, boxShadow: `inset 0 0 0 1.5px ${p.color}` } : undefined
-                    }
-                  >
-                    <ProfileDot color={p.color} className={`size-2 ${on ? '' : 'opacity-70'}`} />
-                    {p.name}
-                  </button>
-                )
-              })}
-            </div>
-          )}
-          <p className="mt-1.5 text-caption text-ink-2">The agents load it in these profiles' folders.</p>
-        </fieldset>
+        <CheckSection name={draft.name.trim()} draft={draft} cached={cachedTools} toolsOff={toolsOff} />
       </div>
 
       <footer className="flex items-center gap-2 bg-card-muted px-5 py-3 hair-t">
@@ -464,7 +481,7 @@ function ServerEditor({
         <Button onClick={onCancel} disabled={saving || (!dirty && Boolean(name))}>
           {name ? 'Revert' : 'Cancel'}
         </Button>
-        <Button kind="primary" type="submit" disabled={saving}>
+        <Button kind="primary" type="submit" disabled={saving || (!dirty && Boolean(name))}>
           {saving ? 'Saving…' : 'Save'}
         </Button>
       </footer>
@@ -495,7 +512,7 @@ function ValueField({
     return (
       <span className="flex h-[28px] min-w-0 flex-1 items-center gap-1.5 rounded-control bg-well pr-1 pl-2 text-small text-ink-2">
         <LockIcon />
-        <span className="flex-1 italic">In Keychain</span>
+        <span className="min-w-0 flex-1 truncate italic">In Keychain</span>
         <Button
           kind="plain"
           className="!mx-0 !h-[22px]"
@@ -521,10 +538,10 @@ function ValueField({
       />
       <IconButton
         // One name; aria-pressed says whether it's on. A name that flips with the state reads as its opposite.
-        label={`Keep ${label} in the Keychain`}
+        label={`Store ${label} in the Keychain on save`}
         aria-pressed={pending}
         onClick={() => onChange(pending ? value.value : { secret: newSecretId(), value })}
-        className={`absolute top-px right-px !size-[26px] ${pending ? '!text-accent' : 'opacity-60 hover:opacity-100 focus-visible:opacity-100'}`}
+        className={`absolute top-px right-px !size-[26px] ${pending ? '!bg-tint !text-accent' : 'opacity-60 hover:opacity-100 focus-visible:opacity-100'}`}
       >
         <LockIcon />
       </IconButton>
@@ -647,7 +664,19 @@ const CHECK_TONE: Record<ServerCheck['status'], Tone> = {
  * Check Server: starts the server as the form describes it, unsaved edits and typed secrets
  * included, and shows what it offers or why it didn't answer. Editing the form clears the result.
  */
-function CheckSection({ name, draft }: { name: string; draft: ServerDraft }) {
+function CheckSection({
+  name,
+  draft,
+  cached,
+  toolsOff,
+}: {
+  name: string
+  draft: ServerDraft
+  /** The tools from the last check that worked, kept between sessions; absent until one has. */
+  cached: ToolInfo[] | undefined
+  /** Per tool, the profiles that turn it off, so the list says where each one is off. */
+  toolsOff: Record<string, ProfileChip[]>
+}) {
   const [state, setState] = useState<{ key: string; result: ServerCheck | 'running' | { error: string } } | null>(null)
   const key = JSON.stringify(draft)
   const current = state?.key === key ? state.result : null
@@ -670,11 +699,18 @@ function CheckSection({ name, draft }: { name: string; draft: ServerDraft }) {
   const running = current === 'running'
   const result = current && current !== 'running' && 'status' in current ? current : null
   const problem = current && current !== 'running' && 'error' in current ? current.error : null
-  const tone: Tone = running ? 'pending' : result ? CHECK_TONE[result.status] : problem ? 'problem' : 'neutral'
+  // A fresh answer wins; otherwise the last good check's list, said to be from then.
+  const fromCache = !current && cached !== undefined
+  const tools = result?.status === 'ok' ? result.tools : fromCache ? cached : null
+  const tone: Tone = running ? 'pending' : result ? CHECK_TONE[result.status] : problem ? 'problem' : fromCache ? 'ok' : 'neutral'
+  const count = (n: number) => `${n} ${n === 1 ? 'tool' : 'tools'}`
+  // A short list starts open; a long one folds away until asked for. The user's choice holds.
+  const [open, setOpen] = useState<boolean | null>(null)
+  const listOpen = open ?? (tools?.length ?? 0) <= 8
   const headline = running
     ? 'Starting the server…'
     : result?.status === 'ok'
-      ? `${result.tools.length} ${result.tools.length === 1 ? 'tool' : 'tools'}`
+      ? count(result.tools.length)
       : result?.status === 'needsLogin'
         ? 'Needs a sign-in'
         : result?.status === 'unsupported'
@@ -683,15 +719,21 @@ function CheckSection({ name, draft }: { name: string; draft: ServerDraft }) {
             ? "Didn't answer"
             : problem
               ? "Can't check yet"
-              : null
+              : fromCache
+                ? count(cached.length)
+                : null
 
   return (
-    <section aria-label="Server check" aria-live="polite">
+    <section aria-label="Tools" aria-live="polite">
+      <h3 className="mb-1.5 text-small font-medium text-ink-2">Tools</h3>
       <div className="flex items-center gap-2.5">
         {headline ? (
           <>
             <StatusTile tone={tone} size={28} />
-            <p className="min-w-0 flex-1 truncate font-medium">{headline}</p>
+            <p className="min-w-0 flex-1 truncate">
+              <span className="font-medium">{headline}</span>
+              {fromCache && <span className="ml-2 text-small text-ink-2">from the last check</span>}
+            </p>
           </>
         ) : (
           <p className="min-w-0 flex-1 text-small text-ink-2 italic">Not checked yet</p>
@@ -699,17 +741,56 @@ function CheckSection({ name, draft }: { name: string; draft: ServerDraft }) {
         {/* aria-disabled, not disabled: a disabled button drops keyboard focus to the page. */}
         <Button onClick={running ? undefined : run} aria-disabled={running}>
           <CheckIcon />
-          {result || problem ? 'Check Again' : 'Check Server'}
+          {result || problem || fromCache ? 'Check Again' : 'Check Server'}
         </Button>
       </div>
       {(result?.message || problem) && <p className="mt-1.5 text-small text-ink-2">{result?.message ?? problem}</p>}
       {result?.log && (
-        <pre className="mt-2 max-h-[120px] overflow-auto rounded-control bg-card-muted px-2 py-1.5 font-mono text-caption whitespace-pre-wrap text-ink-2 select-text shadow-[inset_0_0_0_1px_var(--er-rule)]">
+        <pre className="mt-2 max-h-[120px] overflow-auto rounded-control bg-well px-2 py-1.5 font-mono text-caption whitespace-pre-wrap text-ink-2 select-text">
           {result.log}
         </pre>
       )}
-      {result?.status === 'ok' && result.tools.length > 0 && (
-        <p className="mt-1.5 font-mono text-caption leading-[18px] text-ink-2 select-text">{result.tools.map((t) => t.name).join('  ')}</p>
+      {tools && tools.length > 0 && (
+        <button
+          type="button"
+          aria-expanded={listOpen}
+          aria-controls="server-tools"
+          onClick={() => setOpen(!listOpen)}
+          className="mt-2 -ml-1 flex min-h-[26px] items-center gap-1 rounded-control px-1 text-small text-ink-2 hover:text-ink"
+        >
+          <span className={`transition-transform duration-150 ease-settle ${listOpen ? 'rotate-90' : ''}`}>
+            <ChevronIcon />
+          </span>
+          {listOpen ? 'Hide tools' : `Show ${tools.length === 1 ? 'the tool' : `all ${tools.length} tools`}`}
+        </button>
+      )}
+      {tools && tools.length > 0 && listOpen && (
+        <ul id="server-tools" className="mt-1 rounded-[8px] bg-well">
+          {tools.map((tool) => {
+            const off = toolsOff[tool.name] ?? []
+            return (
+              <li key={tool.name} className="flex min-h-[32px] items-center gap-3 px-3 py-1.5 [&+&]:hair-t">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-mono text-small text-ink select-text">{tool.name}</span>
+                  {tool.description && (
+                    <span className="block truncate text-caption text-ink-2" title={tool.description}>
+                      {tool.description}
+                    </span>
+                  )}
+                </span>
+                {off.length > 0 && (
+                  <span className="flex shrink-0 items-center gap-1 text-caption text-ink-2" title={`Off in ${off.map((p) => p.name).join(', ')}`}>
+                    off in
+                    {off.map((p) => (
+                      <ProfileDot key={p.id} color={p.color} className="size-2" />
+                    ))}
+                    <span className="sr-only">{off.map((p) => p.name).join(', ')}</span>
+                  </span>
+                )}
+              </li>
+            )
+          })}
+        </ul>
       )}
     </section>
   )

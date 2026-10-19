@@ -25,13 +25,19 @@ run in every terminal, with nothing to reload.
 - **Import only reads** (`src-tauri/src/mcp_import.rs`): each agent's own MCP files, located by its `mcpFiles` descriptor in `tools.ts` (Claude: `.claude.json` in `~` and each profile's config folder, including its `projects` tables, plus `.mcp.json` in trigger folders). Credential-looking values (`SECRET_NAME` in `src/lib/mcp.ts`) are moved to the Keychain on import; `${VAR}` references stay as typed. The catalog (`src/lib/mcpCatalog.ts`) is written from each vendor's README.
 - A profile's servers go to every agent with a descriptor, even if the profile leaves that agent's folder alone, so `config::tool_names` gives those agents shims too.
 
-The window is built around a direction called **the Sorting Frame**: one card per profile
-with its folders filed inside, rendered as modern layered Mac cards (the user asked for
-clearly separated surfaces, so don't regress to flat ruled grids). Before changing the UI, read `PRODUCT.md` and
-`.impeccable/surfaces/src-app-tsx.md` (the direction contract), and `DESIGN.md` (tokens and
-rules: one accent button per state, status-free profile colours, the editor is a right-side
-inspector). The app also lives in the menu bar (`src-tauri/src/tray.rs`), and closing the window
-only hides it.
+The window has two views, switched in the titlebar (⌘1, ⌘2). **Profiles** is built around a
+direction called **the Sorting Frame**: one card per profile with its folders filed inside,
+rendered as modern layered Mac cards (the user asked for clearly separated surfaces, so don't
+regress to flat ruled grids), with a profile's editor as a right-side inspector. **Servers** is
+a list beside the server editor, with Catalog and Import in the same detail area. Assigning a
+server to a profile works from both sides (the profile's MCP checklist, the server's Used by
+toggles), so keep both. Before changing the UI, read `PRODUCT.md`,
+`.impeccable/surfaces/src-app-tsx.md` (the direction contracts) and `DESIGN.md` (tokens and
+rules: one accent button per state, status-free profile colours). The window is translucent
+over macOS under-window vibrancy (`transparent`, `windowEffects` and `macOSPrivateApi` in
+`tauri.conf.json`, and the `macos-private-api` Tauri feature): only the ground lets it through,
+cards stay opaque, and the browser mock shows the solid ground. The app also lives in the menu
+bar (`src-tauri/src/tray.rs`), and closing the window only hides it.
 
 ## How routing resolves (`crates/core/src/resolve.rs`)
 - **The most specific profile wins outright.** The deepest trigger containing the folder picks the profile. If that profile doesn't configure the tool, the tool runs with **no** override; it never falls back to a shallower profile. The user chose this deliberately.

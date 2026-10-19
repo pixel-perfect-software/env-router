@@ -185,3 +185,14 @@ export function withUsedBy(config: ConfigState, name: string, profileIds: string
   })
   return { ...config, profiles }
 }
+
+/** Whether two servers reach the same thing: the same command and arguments, or the same URL. */
+export function sameEndpoint(a: McpServer, b: McpServer): boolean {
+  if (a.transport !== b.transport) return false
+  if (a.transport === 'stdio' && b.transport === 'stdio') {
+    const words = (s: McpServer & { transport: 'stdio' }) => [s.command, ...s.args.filter((x) => typeof x === 'string')].join(' ')
+    return words(a) === words(b)
+  }
+  const url = (s: McpServer) => ('url' in s ? s.url.trim().replace(/\/+$/, '') : '')
+  return url(a) === url(b)
+}

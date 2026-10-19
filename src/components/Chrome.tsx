@@ -34,7 +34,7 @@ export function TitleBand({
 }) {
   const shells = setup?.shells.filter((s) => s.available) ?? []
   return (
-    <div data-tauri-drag-region className="flex h-[52px] shrink-0 items-center gap-3 pr-4 pl-[86px]">
+    <div data-tauri-drag-region data-titlebar className="flex h-[52px] shrink-0 items-center gap-3 pr-4 pl-[86px]">
       <div data-tauri-drag-region className="flex items-center gap-2">
         <img data-tauri-drag-region src={appIcon} alt="" width={18} height={18} draggable={false} />
         {/* A narrow window keeps the icon; the name stays for screen readers. */}

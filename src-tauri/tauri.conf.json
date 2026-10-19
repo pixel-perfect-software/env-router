@@ -20,9 +20,12 @@
         "minHeight": 460,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "trafficLightPosition": { "x": 18, "y": 28 }
+        "trafficLightPosition": { "x": 18, "y": 28 },
+        "transparent": true,
+        "windowEffects": { "effects": ["underWindowBackground"], "state": "followsWindowActiveState" }
       }
     ],
+    "macOSPrivateApi": true,
     "security": {
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
     }

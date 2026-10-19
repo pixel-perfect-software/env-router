@@ -4,7 +4,17 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { errorMessage, importCandidates } from '../lib/api'
-import { draftFromCatalog, draftOf, freeName, isPending, type ServerDraft, serverOf, serverSummary, withSecretsLocked } from '../lib/mcp'
+import {
+  draftFromCatalog,
+  draftOf,
+  freeName,
+  isPending,
+  type ServerDraft,
+  sameEndpoint,
+  serverOf,
+  serverSummary,
+  withSecretsLocked,
+} from '../lib/mcp'
 import { catalog } from '../lib/mcpCatalog'
 import { tildify } from '../lib/paths'
 import { withAgents } from '../lib/tools'
@@ -35,11 +45,13 @@ const TRANSPORT_LABEL: Record<McpServer['transport'], string> = { stdio: 'Comman
 export function CatalogView({
   home,
   taken,
+  library,
   onBack,
   onPick,
 }: {
   home: string
   taken: string[]
+  library: Record<string, McpServer>
   onBack: () => void
   onPick: (draft: ServerDraft) => void
 }) {
@@ -56,7 +68,8 @@ export function CatalogView({
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-0.5 pb-5">
         <ul className="rounded-card bg-card shadow-card">
           {catalog(home).map((entry) => {
-            const added = names.has(entry.name)
+            // "In the library" only when it's the same server, not just the same name.
+            const added = Object.values(library).some((server) => sameEndpoint(server, entry.server))
             return (
               <li key={entry.name} className="[&+&]:hair-t">
                 <button
@@ -205,12 +218,16 @@ export function ImportView({
               <li key={`${row.candidate.name}-${row.candidate.sources.join()}`} className="[&+&]:hair-t">
                 <label
                   className={`relative flex w-full items-start gap-2.5 rounded-control px-3 py-2 focus-within-ring ${
-                    row.present ? 'opacity-60' : 'hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)]'
+                    row.present ? '' : 'hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)]'
                   }`}
                 >
                   <input type="checkbox" className="sr-only" checked={picked.has(i)} disabled={row.present} onChange={() => toggle(i)} />
-                  <span className="mt-[2px]">
+                  {/* A server already in the library fades its control and tile, never its text. */}
+                  <span className={`mt-[7px] ${row.present ? 'opacity-40' : ''}`}>
                     <CheckBox checked={picked.has(i)} />
+                  </span>
+                  <span className={row.present ? 'opacity-50' : ''}>
+                    <ServerMark name={row.candidate.name} server={row.candidate.server} size={28} />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline gap-2">

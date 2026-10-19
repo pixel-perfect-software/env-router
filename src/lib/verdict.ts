@@ -44,7 +44,8 @@ export function verdictOf(
     case 'routed': {
       const values = check.envVar && check.value ? [{ label: 'sets', value: `${check.envVar}=${tildify(check.value, home)}` }] : []
       if (check.profile && trigger) values.push({ label: 'via', value: tildify(trigger, home) })
-      if (check.mcp.length > 0) values.push({ label: 'mcp', value: check.mcp.join(', ') })
+      // Alphabetical, as the card footer lists them.
+      if (check.mcp.length > 0) values.push({ label: 'mcp', value: [...check.mcp].sort((a, b) => a.localeCompare(b)).join(', ') })
       values.push({ label: 'runs', value: tildify(check.real, home) })
       if (!check.profile) return { tone: 'neutral', headline: 'No profile owns this folder', note: `${tool} uses its default config here.`, values }
       // Loading the profile's MCP servers is routing too, even with the agent's own config.

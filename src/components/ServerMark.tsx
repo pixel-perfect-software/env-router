@@ -5,8 +5,7 @@ import { isNeutralBrand, serverLogo } from '../lib/serverLogo'
 import type { McpServer } from '../lib/types'
 
 export function ServerMark({ name, server, size = 28 }: { name: string; server: McpServer; size?: number }) {
-  // Dev-only switch for comparing with the committed look: `?off=logos`.
-  const logo = document.documentElement.hasAttribute('data-no-logos') ? null : serverLogo(name, server)
+  const logo = serverLogo(name, server)
   const glyph = Math.round(size * 0.56)
   const style = { width: size, height: size, borderRadius: Math.max(5, Math.round(size * 0.25)) }
   if (!logo) {

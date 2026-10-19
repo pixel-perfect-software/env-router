@@ -2,7 +2,7 @@
 // profile shows as a carve-out inside its parent, marked with the owning profile's colour, so
 // "the most specific folder wins" is something you can see, not something you're told.
 
-import { type MouseEvent, useLayoutEffect, useRef } from 'react'
+import { type MouseEvent, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { isInside, splitLeaf, tildify, triggerBase } from '../lib/paths'
 import { KNOWN_TOOLS, toolLabel } from '../lib/tools'
 import type { Profile } from '../lib/types'
@@ -128,6 +128,12 @@ function ProfileCard({
   }
 
   const servers = Object.keys(profile.mcpServers).sort((a, b) => a.localeCompare(b))
+  const [showAllServers, setShowAllServers] = useState(false)
+  // Expanding "+N" moves focus to the first server it revealed, so the keyboard lands on the new links.
+  const firstRevealed = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (showAllServers) firstRevealed.current?.focus()
+  }, [showAllServers])
 
   return (
     <section
@@ -204,29 +210,32 @@ function ProfileCard({
                 <PlugIcon />
                 <span className="sr-only">MCP servers</span>
               </dt>
-              {/* Each name opens its server; past three, "+N" opens the next one in the list. */}
-              <dd className="truncate font-mono text-ink">
-                {(servers.length > 3 ? servers.slice(0, 2) : servers).map((name, i) => (
+              {/* Each name opens its server; past three, "+N" shows the rest in place. */}
+              <dd className={`font-mono text-ink ${showAllServers ? '' : 'truncate'}`}>
+                {(servers.length > 3 && !showAllServers ? servers.slice(0, 2) : servers).map((name, i) => (
                   <span key={name}>
                     {i > 0 && ', '}
                     <button
+                      ref={showAllServers && i === 2 ? firstRevealed : undefined}
                       type="button"
                       onClick={() => onOpenServer(name)}
                       title={`Open ${name} in Servers`}
-                      className="rounded-[3px] decoration-ink-3 underline-offset-2 hover:text-accent hover:underline"
+                      className="rounded-[3px] underline decoration-[color-mix(in_srgb,var(--er-ink)_28%,transparent)] underline-offset-[3px] hover:text-accent hover:decoration-current"
                     >
                       {name}
                     </button>
                   </span>
                 ))}
-                {servers.length > 3 && (
+                {servers.length > 3 && !showAllServers && (
                   <>
                     {' '}
                     <button
                       type="button"
-                      onClick={() => onOpenServer(servers[2])}
+                      aria-expanded={false}
+                      aria-label={`Show ${servers.length - 2} more servers`}
+                      onClick={() => setShowAllServers(true)}
                       title={servers.slice(2).join(', ')}
-                      className="rounded-[3px] text-ink-2 hover:text-accent"
+                      className="rounded-[3px] text-ink-2 underline decoration-[color-mix(in_srgb,var(--er-ink)_28%,transparent)] underline-offset-[3px] hover:text-accent hover:decoration-current"
                     >
                       +{servers.length - 2}
                     </button>

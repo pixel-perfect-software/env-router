@@ -150,7 +150,7 @@ export const TextField = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLIn
       spellCheck={false}
       autoCorrect="off"
       autoCapitalize="off"
-      className={`h-[28px] min-w-0 rounded-control bg-field px-2 text-ink select-text shadow-[inset_0_0_0_1px_var(--er-field-edge)] placeholder:text-ink-2 placeholder:italic focus:shadow-[inset_0_0_0_1.5px_var(--er-accent)] focus:outline-none ${
+      className={`h-[28px] min-w-0 text-ellipsis rounded-control bg-field px-2 text-ink select-text shadow-[inset_0_0_0_1px_var(--er-field-edge)] placeholder:text-ink-2 placeholder:italic focus:shadow-[inset_0_0_0_1.5px_var(--er-accent)] focus:outline-none ${
         mono ? 'font-mono text-small' : 'text-body'
       } ${className}`}
       {...props}

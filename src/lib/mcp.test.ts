@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { draftFromCatalog, draftOf, freeName, isPending, newSecretId, serverOf, withoutServer, withSecretsLocked, withServer } from './mcp'
+import {
+  draftFromCatalog,
+  draftOf,
+  freeName,
+  isPending,
+  newSecretId,
+  sameEndpoint,
+  serverOf,
+  withoutServer,
+  withSecretsLocked,
+  withServer,
+  withUsedBy,
+} from './mcp'
 import type { ConfigState, McpServer } from './types'
 
 const github: McpServer = { transport: 'stdio', command: 'npx', args: ['-y', 'gh'], env: { GITHUB_TOKEN: { secret: 'AA11' } } }
@@ -104,5 +116,20 @@ describe('imports and the catalog', () => {
   it('finds a free name', () => {
     expect(freeName('gh', new Set(['x']))).toBe('gh')
     expect(freeName('gh', new Set(['gh', 'gh-2']))).toBe('gh-3')
+  })
+})
+
+describe('sameEndpoint and withUsedBy', () => {
+  it('matches servers by what they reach, not their names', () => {
+    const remote: McpServer = { transport: 'http', url: 'https://api.githubcopilot.com/mcp/', headers: {} }
+    expect(sameEndpoint(github, remote)).toBe(false)
+    expect(sameEndpoint(remote, { ...remote, url: 'https://api.githubcopilot.com/mcp', headers: { A: 'b' } })).toBe(true)
+    expect(sameEndpoint(github, { ...github, env: {} })).toBe(true)
+  })
+
+  it('sets exactly the profiles that load a server, keeping their turned-off tools', () => {
+    const next = withUsedBy(config(), 'github', ['w', 'h'])
+    expect(next.profiles.map((p) => p.mcpServers.github)).toEqual([{ disabledTools: ['fork'] }, { disabledTools: [] }])
+    expect(withUsedBy(next, 'github', []).profiles.every((p) => !p.mcpServers.github)).toBe(true)
   })
 })

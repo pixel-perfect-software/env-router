@@ -12,10 +12,6 @@ import type { ConfigState, FolderCheck, ImportCandidate, McpServer, Profile, Ser
 
 const HOME = '/Users/sam'
 
-// Prototype comparison: `?off=tint,wash,logos` turns those parts of the new look off.
-for (const part of new URLSearchParams(location.search).get('off')?.split(',') ?? []) {
-  if (['tint', 'wash', 'logos'].includes(part)) document.documentElement.setAttribute(`data-no-${part}`, '')
-}
 const scenario = new URLSearchParams(location.search).get('scenario') ?? 'first-run'
 
 const shell = (name: ShellStatus['shell'], files: string[], available: boolean, installed: boolean, isDefault = false): ShellStatus => ({
@@ -144,7 +140,11 @@ const setTool = (p: Profile | null, tool: string) => {
 
 /** `mcp::servers_for`: the library servers a profile hands a tool that takes them. */
 const mcpFor = (cfg: ConfigState, p: Profile | null, tool: string) =>
-  p && cfg.agents[tool]?.mcp ? Object.keys(p.mcpServers).filter((name) => cfg.mcpServers[name]) : []
+  p && cfg.agents[tool]?.mcp
+    ? Object.keys(p.mcpServers)
+        .filter((name) => cfg.mcpServers[name])
+        .sort()
+    : []
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 

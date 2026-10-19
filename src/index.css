@@ -65,34 +65,18 @@
   }
 }
 
-/* Prototype switches for comparing with the committed look (dev mock only, `?off=tint,wash,logos`). */
-:root[data-no-tint] {
-  --er-window: #eeeef1;
-  --er-card-muted: #f6f6f8;
-  --er-border: rgb(0 0 0 / 0.09);
-  --er-rule: #e6e6ea;
-  --er-ink: #1d1d1f;
-  --er-ink-2: #66666c;
-  --er-ink-3: #9a9aa0;
-  --er-well: #f6f6f8;
+/*
+ * In the app window, macOS draws its under-window vibrancy behind the page, so the ground lets
+ * it through: the desktop's tint shows faintly around the cards, as in Finder and Settings.
+ * Cards and raised surfaces stay opaque. Text that sits on the ground itself (the titlebar, the
+ * idle docket, placeholder cards) gets a ground opaque enough to keep its contrast over any
+ * wallpaper: the titlebar band nearly solid, the rest of the ground three-quarters.
+ */
+:root[data-vibrant] body {
+  background: color-mix(in srgb, var(--er-window) 76%, transparent);
 }
-@media (prefers-color-scheme: dark) {
-  :root[data-no-tint] {
-    --er-window: #18181a;
-    --er-card: #252527;
-    --er-card-muted: #1f1f21;
-    --er-raised: #2c2c2f;
-    --er-field: #1c1c1e;
-    --er-button: #3a3a3d;
-    --er-rule: #343437;
-    --er-ink: #f2f2f4;
-    --er-ink-2: #a3a3a9;
-    --er-ink-3: #6f6f75;
-    --er-well: #37373b;
-  }
-}
-:root[data-no-wash] {
-  --er-wash: 0%;
+:root[data-vibrant] [data-titlebar] {
+  background: color-mix(in srgb, var(--er-window) 90%, transparent);
 }
 
 @supports (color: AccentColor) {

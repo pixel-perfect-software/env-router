@@ -8,7 +8,7 @@ import { type Health, HealthLine, ShellsPopover, TitleBand } from './components/
 import { type CheckState, Docket } from './components/Docket'
 import { type DropTarget, Frame, type Slip } from './components/Frame'
 import { ProfileInspector } from './components/ProfileInspector'
-import { type Detail, ServersView } from './components/ServerLibrary'
+import { type Detail, ServersView } from './components/Servers'
 import { profileColors } from './components/ui'
 import {
   checkFolder,

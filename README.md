@@ -42,9 +42,11 @@ its prompt hooks once, and reports what running the tool there would really do, 
 alias, a shell function or another copy on `PATH` getting in the way. That includes a copy a
 prompt hook (mise, direnv) moves ahead of EnvRouter's shims.
 
-**MCP servers.** Add servers by hand, from a short catalog, or by importing the ones your agents
-already define (EnvRouter only reads their files). Check Server starts a server and lists its
-tools, so a profile can turn individual tools off.
+**MCP servers.** The Servers view (⌘2) lists every server beside its editor. Add servers by
+hand, from a short catalog, or by importing the ones your agents already define (EnvRouter only
+reads their files). Check Server starts a server and lists its tools, so a profile can turn
+individual tools off. Choose which profiles load a server from either side: the server's Used
+by toggles, or the profile's own checklist.
 
 ## Status
 

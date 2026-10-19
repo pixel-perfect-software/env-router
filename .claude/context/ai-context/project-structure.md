@@ -31,9 +31,9 @@ env-router/
 │   ├── App.tsx                # state, health derivation, check flow, shortcuts (⌘N, ⌘O)
 │   ├── index.css              # design tokens (light/dark, system accent), hairline utilities
 │   ├── components/            # Chrome (titlebar, health line, shells panel), Frame (slots),
-│   │                          # ProfileInspector (slide-in editor), ServerLibrary (MCP server inspector) and ServerSources (its catalog and import views),
+│   │                          # ProfileInspector (slide-in editor), Servers (the Servers view: list beside editor), ServerSources (Catalog and Import), ServerMark (server logos),
 │   │                          # Docket (check result), ui (controls, status, icons)
-│   ├── lib/                   # api.ts (typed commands), types.ts (wire types), tools.ts (tool registry, MCP descriptors), mcp.ts (server drafts, rename/remove, secret locking), mcpCatalog.ts (well-known servers),
+│   ├── lib/                   # api.ts (typed commands), types.ts (wire types), tools.ts (tool registry, MCP descriptors), mcp.ts (server drafts, rename/remove, secret locking), mcpCatalog.ts (well-known servers), serverLogo.ts (logo matching),
 │   │                          # verdict.ts (check wording, tested in verdict.test.ts), paths.ts, useFolderDrop.ts, confirm.ts
 │   └── dev/mockTauri.ts       # dev-only browser mock; never bundled
 ├── README.md, LICENSE         # what it is, how it works, build, uninstall; MIT
