@@ -289,7 +289,7 @@ fn remove_block(text: &str) -> String {
         let before = &text[..start];
         let before = before
             .strip_suffix("\n\n")
-            .map_or(before, |b| &before[..b.len() + 1]);
+            .map_or(before, |b| &before[..=b.len()]);
         text = format!("{before}{}", &text[end..]);
     }
     text
@@ -368,7 +368,7 @@ pub fn login_path(home: &Path) -> Result<String> {
     static CACHE: Mutex<Option<(PathBuf, String)>> = Mutex::new(None);
     let mut cache = CACHE
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some((cached_home, path)) = cache.as_ref() {
         if cached_home == home {
             return Ok(path.clone());
@@ -884,7 +884,6 @@ mod tests {
         fs::create_dir_all(home.join("bin")).unwrap();
         let real = home.join("bin/claude");
         fs::write(&real, "#!/bin/sh\necho REAL CLAUDE RAN\n").unwrap();
-        use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&real, fs::Permissions::from_mode(0o755)).unwrap();
 
         let config = config();

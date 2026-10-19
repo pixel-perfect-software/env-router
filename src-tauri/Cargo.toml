@@ -31,3 +31,6 @@ rmcp = { version = "3.5", default-features = false, features = [
   "reqwest",
 ] }
 tokio = { version = "1", features = ["io-util", "process", "time", "macros", "rt"] }
+
+[lints]
+workspace = true

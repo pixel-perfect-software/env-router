@@ -1,0 +1,6 @@
+# One Rust for local builds and CI. rustup reads this; Homebrew's `rust` formula doesn't, so
+# with Homebrew Rust keep it at this version by hand (`rustc --version`).
+[toolchain]
+channel = "1.99.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

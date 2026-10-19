@@ -85,7 +85,10 @@ adds a marked block to the end of `~/.zshrc` (or `$ZDOTDIR/.zshrc`), bash's logi
 | Build the app bundle | `pnpm tauri build` (writes `target/release/bundle/macos/EnvRouter.app`) |
 | All Rust tests | `cargo test --workspace` |
 | Frontend tests | `pnpm test` |
-| Rust lint | `cargo clippy --workspace --all-targets` |
+| Rust lint | `cargo clippy --workspace --all-targets` (workspace lints in the root `Cargo.toml`) |
+| Licences and advisories | `cargo deny check` (`deny.toml`) |
+| Unused dependencies | `cargo machete` |
+| Shim overhead | `hyperfine -N` a release `envrouter-shim` against an exec-only wrapper; `otool -L` should list only `libSystem` |
 | Rust format | `cargo fmt --all` |
 | Type check | `pnpm check-types` |
 | Lint and format | `pnpm format-and-lint` / `pnpm format-and-lint:fix` |

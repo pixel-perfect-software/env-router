@@ -610,7 +610,7 @@ mod tests {
         Profile {
             id: id.into(),
             name: id.into(),
-            trigger_paths: triggers.iter().map(|t| t.to_string()).collect(),
+            trigger_paths: triggers.iter().copied().map(String::from).collect(),
             tools: tool
                 .into_iter()
                 .map(|(name, env_var, path)| {
@@ -653,7 +653,7 @@ mod tests {
         a.mcp_servers.insert(
             "github".into(),
             McpUse {
-                disabled_tools: disabled.iter().map(|t| t.to_string()).collect(),
+                disabled_tools: disabled.iter().copied().map(String::from).collect(),
             },
         );
         ConfigState {

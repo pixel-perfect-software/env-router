@@ -60,7 +60,7 @@ pub fn candidates(config: &ConfigState, home: &Path) -> Vec<ImportCandidate> {
                     .find(|c| c.name == name && c.server == server)
                 {
                     Some(existing) if !existing.sources.contains(&source) => {
-                        existing.sources.push(source)
+                        existing.sources.push(source);
                     }
                     Some(_) => {}
                     None => found.push(ImportCandidate {

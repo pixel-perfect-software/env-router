@@ -4,7 +4,7 @@ use std::{env, fs};
 
 fn main() {
     stage_shim();
-    tauri_build::build()
+    tauri_build::build();
 }
 
 /// Builds `envrouter-shim` and the `envrouter-keychain` helper and stages them where

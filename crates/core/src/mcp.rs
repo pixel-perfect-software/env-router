@@ -318,7 +318,7 @@ mod tests {
     /// `linear` (remote). Profile `home` uses nothing.
     fn config() -> ConfigState {
         let using = |tools: &[&str]| McpUse {
-            disabled_tools: tools.iter().map(|t| t.to_string()).collect(),
+            disabled_tools: tools.iter().copied().map(String::from).collect(),
         };
         ConfigState {
             profiles: vec![

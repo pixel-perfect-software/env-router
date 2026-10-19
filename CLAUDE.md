@@ -54,7 +54,8 @@ A missing config means the tool runs silently. A broken one prints a warning and
 - **pnpm only.** `packageManager` pins `pnpm@12.10.1`, and `devEngines` downloads it if it's missing.
 - **Biome, not ESLint or Prettier:** 2-space indentation, **single quotes, no semicolons**, 150-column lines. Don't copy the double-quote/semicolon style from Tauri docs. Run `pnpm format-and-lint:fix`.
 - **Tailwind v4** through `@tailwindcss/vite`: no config file and no PostCSS; theme tokens go in `src/index.css` with `@theme`.
-- **Rust is a Cargo workspace** rooted at the repo (`crates/core`, `crates/shim`, `src-tauri`), with one `target/` at the root. Use `cargo fmt --all`. Release profile settings live in the root `Cargo.toml`.
+- **Rust is a Cargo workspace** rooted at the repo (`crates/core`, `crates/keychain`, `crates/shim`, `src-tauri`), with one `target/` at the root. Use `cargo fmt --all`. Release profile settings live in the root `Cargo.toml`.
+- **Rust tooling:** `rust-toolchain.toml` pins 1.99.0 (rustup reads it; Homebrew Rust doesn't, so match it by hand). `[workspace.lints]` forbids `unsafe` and adds a curated slice of clippy pedantic; every member opts in with `[lints] workspace = true`. `cargo deny check` (`deny.toml`) allows permissive licences only, so no GPL code can arrive through a dependency, and checks RustSec advisories. `cargo machete` finds unused dependencies. CI runs all of them.
 
 ## Gotchas
 - **Tests must never touch the real home directory.** Shell code resolves startup files from the `home` it's given, and finds zsh's `ZDOTDIR` by asking a fresh zsh, never from the process environment. Don't read `ZDOTDIR` or `HOME` from `std::env` in testable code. Claude Code's own environment sets `ZDOTDIR`.

@@ -152,7 +152,9 @@ async fn check_stdio(
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                let mut log = log.lock().unwrap_or_else(|p| p.into_inner());
+                let mut log = log
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if log.len() == LOG_LINES {
                     log.pop_front();
                 }
@@ -162,7 +164,9 @@ async fn check_stdio(
     }
     let result = tokio::time::timeout(TIMEOUT, list_tools(transport)).await;
     let tail = || {
-        let log = log.lock().unwrap_or_else(|p| p.into_inner());
+        let log = log
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         (!log.is_empty()).then(|| log.iter().cloned().collect::<Vec<_>>().join("\n"))
     };
     match result {

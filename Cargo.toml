@@ -11,6 +11,30 @@ security-framework = "3"
 tempfile = "3"
 thiserror = "2"
 
+# Every member opts in with `[lints] workspace = true`. CI runs clippy with `-D warnings`, so
+# these are errors there. A curated slice of clippy::pedantic: the lints that catch real
+# mistakes or keep the code uniform, not the ones that only add ceremony to an app.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+cloned_instead_of_copied = "warn"
+explicit_iter_loop = "warn"
+implicit_clone = "warn"
+inefficient_to_string = "warn"
+items_after_statements = "warn"
+manual_let_else = "warn"
+map_unwrap_or = "warn"
+match_wildcard_for_single_variants = "warn"
+needless_pass_by_value = "warn"
+range_plus_one = "warn"
+redundant_closure_for_method_calls = "warn"
+semicolon_if_nothing_returned = "warn"
+uninlined_format_args = "warn"
+unnested_or_patterns = "warn"
+dbg_macro = "warn"
+todo = "warn"
+
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
 codegen-units = 1

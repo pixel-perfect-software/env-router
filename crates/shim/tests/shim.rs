@@ -294,7 +294,7 @@ fn refuses_to_run_under_its_own_name() {
 
 impl Fixture {
     /// Writes the launch manifest the app would render for `profile_id`'s `claude`.
-    fn write_launch(&self, profile_id: &str, launch: serde_json::Value) {
+    fn write_launch(&self, profile_id: &str, launch: &serde_json::Value) {
         let dir = self
             .home
             .join(".envrouter/mcp")
@@ -332,7 +332,7 @@ fn fs_server() -> serde_json::Value {
 #[test]
 fn injects_mcp_arguments_ahead_of_the_users_own() {
     let f = Fixture::new(Some(CONFIG));
-    f.write_launch("2", fs_server());
+    f.write_launch("2", &fs_server());
     let output = f.run_with("dev/work/app", &["--", "two words"], &[]);
     assert_eq!(
         stdout(&output),
@@ -355,7 +355,7 @@ fn injects_mcp_arguments_ahead_of_the_users_own() {
 #[test]
 fn injects_mcp_servers_for_a_profile_that_leaves_the_variable_alone() {
     let f = Fixture::new(Some(CONFIG));
-    f.write_launch("3", fs_server());
+    f.write_launch("3", &fs_server());
     let output = f.run_with("dev/plain/sub", &[], &[]);
     assert_eq!(
         stdout(&output),
@@ -366,7 +366,7 @@ fn injects_mcp_servers_for_a_profile_that_leaves_the_variable_alone() {
 #[test]
 fn skips_mcp_injection_when_asked() {
     let f = Fixture::new(Some(CONFIG));
-    f.write_launch("2", fs_server());
+    f.write_launch("2", &fs_server());
     let output = f.run_with("dev/work/app", &["--strict-mcp-config", "x"], &[]);
     assert!(
         stdout(&output).ends_with(" 2 --strict-mcp-config x\n"),
@@ -402,7 +402,7 @@ fn leaves_out_a_server_whose_secret_is_unavailable() {
     let f = Fixture::new(Some(CONFIG));
     f.write_launch(
         "2",
-        serde_json::json!({
+        &serde_json::json!({
             "servers": [
                 { "name": "github", "args": ["--mcp-config=/m/github.json"], "secrets": ["7F3A"] },
                 { "name": "fs", "args": ["--mcp-config=/m/fs.json"] },
@@ -425,7 +425,7 @@ fn explain_lists_the_mcp_servers_without_asking_the_keychain() {
     let f = Fixture::new(Some(CONFIG));
     f.write_launch(
         "2",
-        serde_json::json!({
+        &serde_json::json!({
             "servers": [{ "name": "github", "args": ["--mcp-config=/m/github.json"], "secrets": ["7F3A"] }],
         }),
     );
@@ -453,7 +453,7 @@ fn passes_secrets_from_the_keychain_helper_as_environment_variables() {
     );
     f.write_launch(
         "2",
-        serde_json::json!({
+        &serde_json::json!({
             "servers": [{ "name": "github", "args": ["--mcp-config=/m/github.json"], "secrets": ["7F3A"] }],
         }),
     );

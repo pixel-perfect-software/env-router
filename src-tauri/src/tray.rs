@@ -105,7 +105,7 @@ fn menu(app: &AppHandle, (status, profiles): (String, Option<String>)) -> tauri:
         Some("CmdOrCtrl+Q"),
     )?));
     let refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
-        items.iter().map(|item| item.as_ref()).collect();
+        items.iter().map(std::convert::AsRef::as_ref).collect();
     Menu::with_items(app, &refs)
 }
 

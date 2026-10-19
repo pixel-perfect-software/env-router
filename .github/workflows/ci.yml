@@ -22,10 +22,12 @@ jobs:
         with:
           node-version: lts/*
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
+      # The runner's rustup installs the version and components rust-toolchain.toml pins.
+      - run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny,cargo-machete
       # The runner has zsh and bash; fish's folder check is only tested where fish is installed.
       - run: brew install fish
 
@@ -38,3 +40,6 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      # Licences (no copyleft in an MIT app), RustSec advisories, sources.
+      - run: cargo deny check
+      - run: cargo machete

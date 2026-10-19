@@ -78,7 +78,7 @@ mod tests {
         Profile {
             id: name.into(),
             name: name.into(),
-            trigger_paths: triggers.iter().map(|t| t.to_string()).collect(),
+            trigger_paths: triggers.iter().copied().map(String::from).collect(),
             tools: claude_dir
                 .map(|dir| {
                     (
