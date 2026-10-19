@@ -9,9 +9,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# The shell tests skip a shell that isn't installed; here a missing one fails the run instead.
+env:
+  ENVROUTER_REQUIRE_SHELLS: 1
+
 jobs:
   check:
-    # macOS: the app is macOS-only, and the Rust tests drive a real zsh.
+    # macOS: the app ships there, and the Rust tests drive a real zsh, bash and fish.
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,3 +47,15 @@ jobs:
       # Licences (no copyleft in an MIT app), RustSec advisories, sources.
       - run: cargo deny check
       - run: cargo machete
+
+  linux:
+    # The backend, shim and secrets crates on Linux, with real zsh, bash and fish. The app crate
+    # joins once the Linux window exists (it needs the WebKitGTK development packages).
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y zsh fish
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --locked -p envrouter-core -p envrouter-shim -p envrouter-keychain -p envrouter-ops --all-targets -- -D warnings
+      - run: cargo test --locked -p envrouter-core -p envrouter-shim -p envrouter-keychain -p envrouter-ops

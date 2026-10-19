@@ -19,8 +19,11 @@ pub struct Helpers {
 /// development runs the shim users get.
 pub fn build_helpers(workspace: &Path) -> Helpers {
     let target = env::var("TARGET").unwrap();
-    // The outer build holds the lock on the main target dir, so the helpers get their own.
-    let target_dir = workspace.join("target").join("shim");
+    // The outer build holds the lock on the main target dir, so the helpers get their own,
+    // inside whichever target dir this build uses.
+    let target_dir = env::var_os("CARGO_TARGET_DIR")
+        .map_or_else(|| workspace.join("target"), PathBuf::from)
+        .join("shim");
 
     let status = Command::new(env::var("CARGO").unwrap())
         .current_dir(workspace)

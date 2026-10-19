@@ -638,6 +638,20 @@ mod tests {
     use crate::shims;
     use envrouter_core::config::{Profile, ToolConfig};
 
+    /// Whether to skip a test that needs `shell`. CI sets `ENVROUTER_REQUIRE_SHELLS` so a shell
+    /// that didn't install fails the run rather than quietly testing less.
+    fn missing(shell: Shell) -> bool {
+        if shell.binary().is_some() {
+            return false;
+        }
+        assert!(
+            std::env::var_os("ENVROUTER_REQUIRE_SHELLS").is_none(),
+            "{} isn't installed, and ENVROUTER_REQUIRE_SHELLS is set",
+            shell.name()
+        );
+        true
+    }
+
     /// Pins the JSON the frontend's `FolderCheck` and `ShellStatus` types in
     /// `src/lib/types.ts` expect. Update both together.
     #[test]
@@ -799,7 +813,7 @@ mod tests {
 
     #[test]
     fn zsh_startup_file_follows_zdotdir_from_zshenv_not_the_app_environment() {
-        if Shell::Zsh.binary().is_none() {
+        if missing(Shell::Zsh) {
             return;
         }
         let root = tempfile::tempdir().unwrap();
@@ -838,13 +852,22 @@ mod tests {
                 continue;
             }
             for (before, after) in &cases {
-                let output = Command::new(shell)
-                    .args(["-c", &script])
-                    .env_clear()
-                    .env("HOME", home)
-                    .env("PATH", before)
-                    .output()
-                    .unwrap();
+                let run = |script: &str| {
+                    Command::new(shell)
+                        .args(["-c", script])
+                        .env_clear()
+                        .env("HOME", home)
+                        .env("PATH", before)
+                        .output()
+                        .unwrap()
+                };
+                // Debian's /etc/zsh/zshenv, which zsh always reads first, fills in an empty
+                // PATH before the block runs. The case only tests the block where the shell
+                // starts with the PATH it was given.
+                if String::from_utf8_lossy(&run("printf '%s' \"$PATH\"").stdout) != *before {
+                    continue;
+                }
+                let output = run(&script);
                 assert_eq!(
                     String::from_utf8_lossy(&output.stdout),
                     *after,
@@ -904,7 +927,7 @@ mod tests {
 
     #[test]
     fn check_folder_in_real_zsh() {
-        if Shell::Zsh.binary().is_none() {
+        if missing(Shell::Zsh) {
             return;
         }
 
@@ -945,7 +968,7 @@ mod tests {
     /// a terminal title with no newline, as oh-my-zsh does.
     #[test]
     fn check_folder_runs_zsh_prompt_hooks() {
-        if Shell::Zsh.binary().is_none() {
+        if missing(Shell::Zsh) {
             return;
         }
         let (_root, home) = zsh_home(concat!(
@@ -970,7 +993,7 @@ mod tests {
     /// The same through bash's PROMPT_COMMAND, which also runs bash's probe end to end.
     #[test]
     fn check_folder_runs_bash_prompt_command() {
-        if Shell::Bash.binary().is_none() {
+        if missing(Shell::Bash) {
             return;
         }
         let (_root, home) = zsh_home("");
@@ -1000,7 +1023,7 @@ mod tests {
     /// that shadows the tool, the way fish users keep functions.
     #[test]
     fn check_folder_in_real_fish() {
-        if Shell::Fish.binary().is_none() {
+        if missing(Shell::Fish) {
             return;
         }
         let (_root, home) = zsh_home("");
@@ -1047,7 +1070,7 @@ mod tests {
     /// A shim with no real tool behind it. The name is one no machine has installed.
     #[test]
     fn check_folder_tells_a_missing_tool_from_a_failed_shim() {
-        if Shell::Zsh.binary().is_none() {
+        if missing(Shell::Zsh) {
             return;
         }
         let tool = "envrouter-absent-tool";

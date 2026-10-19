@@ -1,25 +1,29 @@
-//! MCP secret values, kept in one generic-password item in the login Keychain as a JSON map
-//! from id to value. One item means one access prompt for the helper, not one per secret, after
-//! each rebuild changes its ad hoc signature.
+//! MCP secret values, kept in one item in the platform's secret store as a JSON map from id to
+//! value. One item means one access prompt for the helper, not one per secret, after each
+//! rebuild changes its ad hoc signature.
 //!
 //! The app links this crate to write secrets. The shim doesn't: it runs the
 //! `envrouter-keychain` binary only when a server needs a secret, so launches that don't pay
-//! nothing to load the Security framework.
+//! nothing to load the store's framework.
 //!
 //! The item's account is the canonical home folder, so a run under a scratch `HOME` (every
 //! test, and the safe way to try the app) never reads or writes the real secrets.
+//!
+//! Each platform's store is a module in `store/` with the same three functions on one item:
+//! `get`, `set` and `delete`. The macOS Keychain is the only one so far; elsewhere every call
+//! reports that there's no store, and a server that needs a secret is left out.
 
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
 
-use security_framework::passwords;
-
 use envrouter_core::{Error, Result};
 
+#[cfg_attr(target_os = "macos", path = "store/macos.rs")]
+#[cfg_attr(not(target_os = "macos"), path = "store/unavailable.rs")]
+mod store;
+
 const SERVICE: &str = "EnvRouter MCP secrets";
-/// `errSecItemNotFound`.
-const NOT_FOUND: i32 = -25300;
 
 fn account(home: &Path) -> String {
     fs::canonicalize(home)
@@ -30,11 +34,10 @@ fn account(home: &Path) -> String {
 
 /// Every secret, or an empty map if none were ever saved.
 pub fn read(home: &Path) -> Result<HashMap<String, String>> {
-    match passwords::get_generic_password(SERVICE, &account(home)) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
+    match store::get(SERVICE, &account(home))? {
+        Some(bytes) => serde_json::from_slice(&bytes)
             .map_err(|err| Error::Keychain(format!("the saved secrets are unreadable: {err}"))),
-        Err(err) if err.code() == NOT_FOUND => Ok(HashMap::new()),
-        Err(err) => Err(Error::Keychain(err.to_string())),
+        None => Ok(HashMap::new()),
     }
 }
 
@@ -42,14 +45,10 @@ pub fn read(home: &Path) -> Result<HashMap<String, String>> {
 pub fn write(home: &Path, secrets: &HashMap<String, String>) -> Result<()> {
     let account = account(home);
     if secrets.is_empty() {
-        return match passwords::delete_generic_password(SERVICE, &account) {
-            Err(err) if err.code() != NOT_FOUND => Err(Error::Keychain(err.to_string())),
-            _ => Ok(()),
-        };
+        return store::delete(SERVICE, &account);
     }
     let json = serde_json::to_vec(secrets).expect("a string map always serializes");
-    passwords::set_generic_password(SERVICE, &account, &json)
-        .map_err(|err| Error::Keychain(err.to_string()))
+    store::set(SERVICE, &account, &json)
 }
 
 /// Adds `new` and drops every secret not in `keep`, in one read and one write. A save calls it
