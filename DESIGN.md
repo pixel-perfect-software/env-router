@@ -350,7 +350,7 @@ Gently rounded, concentric corners. Cards, banners, the docket and the popover u
 
 The mark's plate is a continuous-corner squircle, not a rounded rectangle; its corners follow the macOS app-icon shape. Inside it everything is rounded: a Finder folder with a curved tab, a round-capped track, round coins and a round pivot. The menu bar folder uses 1.6-unit corner radii on its 18-unit grid.
 
-Carve-outs and slips indent 13px under their parent folder with a hairline left rule. The idle docket is the one dashed shape in the system (1.5px dashed). Icons are drawn on a 16px grid with a 1.5px round-capped stroke (14px and 12px variants for folders, branches and chevrons), always inline SVG.
+Carve-outs and slips indent 13px under their parent folder with a hairline left rule. The idle docket is the one dashed shape in the system (1.5px dashed). Icons come from Lucide (`src/components/icons.tsx`), rendered as inline SVG at 16px with a true 1.5px stroke (`absoluteStrokeWidth`), so 14px and 12px variants (folders, the plug, branches, chevrons, locks) keep the same line weight.
 
 ## Components
 
@@ -382,7 +382,16 @@ Native push buttons, small and tactile.
 - **Segmented:** a 7% ink track with 2px padding; the selected segment is a button-surface chip with a contact shadow, the others secondary ink.
 
 ### Navigation
-There is no navigation. The titlebar holds the app icon (the small cut at 18px, 8px before the name) and the app name, shell status (a green dot when on, an empty tertiary ring when off, a red cross when blocked, each with a hidden text state), Shells…, MCP Servers…, and Check Folder… (⌘O).
+There is no navigation. The titlebar holds the app icon (the small cut at 18px, 8px before the name) and the app name, shell status (a green dot when on, an empty tertiary ring when off, a red cross when blocked, each with a hidden text state), then Shells…, MCP Servers… and Check Folder… (⌘O), each with a leading icon.
+
+### Iconography
+One vocabulary, so a glance says what a row is:
+- **Agents** wear their own marks (Simple Icons, CC0): Claude's starburst and the Copilot face, monochrome in ink colour, at 14px in card footers and the inspector and 12px in the docket's Agent segments. An agent without a mark gets Lucide's bot.
+- **MCP** is the plug: the titlebar's MCP Servers…, a card footer's server line.
+- **Transports**: a terminal for Command, a globe for HTTP, a radio tower for SSE, on server rows, in the catalog, the profile checklist and the transport segments.
+- **Actions**: a terminal for Shells…, a folder with a lens for Check Folder…, a package for From Catalog…, a tray for Import…, a pulse for Check Server.
+- **Card footers** are a two-column list: the mark, then the value in mono. The label lives in the tooltip and for screen readers. More than three servers show the first two and "+N".
+- **The narrow window** (under 760px) collapses Shells… and MCP Servers… to their icons, the name kept as tooltip and accessible label; Check Folder… keeps its text.
 
 ### Status Tile
 The shared status mark for the banner (32px) and the check result (28px): an 8px-rounded tile washed with 14% of the status colour, holding a 1.8px stroke glyph whose shape states the result. Check is ok, bang is warn, cross is problem, dash is neutral (no profile owns the folder), and a dashed circle pulsing at 1.1s is pending. A new verdict stamps in (scale 1.35 to 1, 180ms).
@@ -433,7 +442,7 @@ The app icon and menu bar glyph, drawn by hand as SVG in `src-tauri/icons/` and 
 - **Do** set paths, variables and values in mono and keep them selectable; everything else stays system sans and unselectable.
 - **Do** edit profiles in the right-side inspector, with the grid visible behind it and the edited card outlined.
 - **Do** mark card selection and drop targets with a 2px accent outline at 2px offset (plus the tint for a drop target).
-- **Do** draw icons as inline SVG on the 16px, 1.5px-stroke grid.
+- **Do** take icons from `src/components/icons.tsx` (Lucide at a true 1.5px stroke, agent marks from Simple Icons), and add a new one there rather than drawing it inline.
 - **Do** show the idle docket as a dashed drop zone, and the result as a single raised card.
 - **Do** keep motion on the settle curve (`cubic-bezier(0.16, 1, 0.3, 1)`) between 140 and 300ms, and let reduced motion collapse it.
 - **Do** verify both themes and a non-blue system accent at 900 × 620 and 680 × 460.

@@ -1,7 +1,7 @@
 // The window's control vocabulary: push buttons, a switch, a text field, state marks, icons,
 // and profile colours. Everything else composes these.
 
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SVGProps } from 'react'
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
 import { forwardRef } from 'react'
 
 type ButtonKind = 'push' | 'primary' | 'plain'
@@ -24,9 +24,13 @@ export function Button({ kind = 'push', className = '', ...props }: ButtonHTMLAt
 }
 
 /** A borderless square button for an icon, labelled for assistive tech. */
-export function IconButton({ label, className = '', children, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
+export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { label: string }>(function IconButton(
+  { label, className = '', children, ...props },
+  ref,
+) {
   return (
     <button
+      ref={ref}
       type="button"
       aria-label={label}
       title={label}
@@ -36,7 +40,7 @@ export function IconButton({ label, className = '', children, ...props }: Button
       {children}
     </button>
   )
-}
+})
 
 export function Switch({
   checked,
@@ -107,23 +111,25 @@ export function Segmented<T extends string>({
   onChange,
 }: {
   label: string
-  options: [T, string][]
+  /** Value, label, and an optional leading icon. */
+  options: [T, string, ReactNode?][]
   value: T
   onChange: (value: T) => void
 }) {
   return (
     <fieldset className="flex w-fit shrink-0 rounded-[7px] bg-[color-mix(in_srgb,var(--er-ink)_7%,transparent)] p-[2px]">
       <legend className="sr-only">{label}</legend>
-      {options.map(([option, text]) => (
+      {options.map(([option, text, icon]) => (
         <button
           key={option}
           type="button"
           aria-pressed={option === value}
           onClick={() => onChange(option)}
-          className={`h-[22px] rounded-[5px] px-2.5 text-small whitespace-nowrap ${
+          className={`flex h-[22px] items-center gap-1.5 rounded-[5px] px-2.5 text-small whitespace-nowrap ${
             option === value ? 'bg-button text-ink shadow-[0_0.5px_1.5px_rgb(0_0_0/0.18)]' : 'text-ink-2 hover:text-ink'
           }`}
         >
+          {icon}
           {text}
         </button>
       ))}
@@ -182,90 +188,18 @@ export function Mark({ kind, className = '' }: { kind: MarkKind; className?: str
   }
 }
 
-/** Icons: one 16px grid, 1.5 stroke, round joins. */
-function Icon({ children, ...props }: SVGProps<SVGSVGElement> & { children: ReactNode }) {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      {...props}
-    >
-      {children}
-    </svg>
-  )
-}
-
-export const PencilIcon = () => (
-  <Icon>
-    <path d="M10.5 3.5l2 2L6 12H4v-2z" />
-  </Icon>
-)
-
-export const PlusIcon = () => (
-  <Icon>
-    <path d="M8 3.5v9M3.5 8h9" />
-  </Icon>
-)
-
-export const CloseIcon = () => (
-  <Icon>
-    <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
-  </Icon>
-)
-
-/** A folder slip dropping into a slot. */
-export const DropIcon = () => (
-  <Icon>
-    <path d="M8 2.5v6M5.5 6L8 8.5 10.5 6M2.5 9.5v3.5h11V9.5" />
-  </Icon>
-)
-
-/** The inset carve-out marker: a nested trigger handed to another profile. */
-export const BranchIcon = () => (
-  <Icon width="12" height="12">
-    <path d="M4 2.5v5.5h8M9.5 5.5L12 8l-2.5 2.5" />
-  </Icon>
-)
-
-export const BackIcon = () => (
-  <Icon>
-    <path d="M10 3.5L5.5 8l4.5 4.5" />
-  </Icon>
-)
-
-export const ChevronIcon = () => (
-  <Icon width="12" height="12">
-    <path d="M6 3.5L10.5 8 6 12.5" />
-  </Icon>
-)
-
-/** A server plug: the mark for an MCP server row. */
-export const PlugIcon = () => (
-  <Icon width="14" height="14" strokeWidth="1.4">
-    <path d="M5.5 2v3M10.5 2v3M3.5 5h9v2.5a4.5 4.5 0 0 1-9 0zM8 12v2" />
-  </Icon>
-)
-
-/** A secret held in the Keychain. */
-export const LockIcon = () => (
-  <Icon width="12" height="12" strokeWidth="1.4">
-    <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
-    <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
-  </Icon>
-)
-
-export const FolderIcon = () => (
-  <Icon width="14" height="14" strokeWidth="1.4">
-    <path d="M2 4.5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z" />
-  </Icon>
-)
+export {
+  BackIcon,
+  BranchIcon,
+  ChevronIcon,
+  CloseIcon,
+  DropIcon,
+  FolderIcon,
+  LockIcon,
+  PencilIcon,
+  PlugIcon,
+  PlusIcon,
+} from './icons'
 
 /**
  * Profile colours: blues, purples, cyans and greys only, because red, amber and green belong

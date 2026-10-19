@@ -5,6 +5,7 @@ import { tildify } from '../lib/paths'
 import { toolLabel } from '../lib/tools'
 import type { FolderCheck, Preview, Shell, ShellStatus } from '../lib/types'
 import { type VerdictAction, verdictOf } from '../lib/verdict'
+import { AgentMark } from './icons'
 import { Button, CloseIcon, DropIcon, IconButton, Segmented, StatusTile } from './ui'
 
 export interface CheckState {
@@ -134,7 +135,7 @@ export function Docket({
         {routedTools.length > 1 && (
           <Segmented
             label="Agent"
-            options={routedTools.map((t) => [t, toolLabel(t)])}
+            options={routedTools.map((t) => [t, toolLabel(t), <AgentMark key={t} command={t} size={12} />])}
             value={check.tool}
             onChange={(tool) => onRecheck(check.shell, tool)}
           />

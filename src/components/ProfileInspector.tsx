@@ -10,6 +10,7 @@ import { mcpAgentLabels, serverSummary } from '../lib/mcp'
 import { splitLeaf, tildify } from '../lib/paths'
 import { KNOWN_TOOLS } from '../lib/tools'
 import type { McpServer, Profile, ToolInfo } from '../lib/types'
+import { AgentMark, TransportIcon } from './icons'
 import { Button, CheckBox, ChevronIcon, CloseIcon, FolderIcon, IconButton, PlusIcon, ProfileDot, TextField } from './ui'
 
 interface FolderRow {
@@ -232,7 +233,8 @@ export function ProfileInspector({
             <ul className="space-y-3">
               {KNOWN_TOOLS.map((tool) => (
                 <li key={tool.command}>
-                  <label htmlFor={`tool-${tool.command}`} className="mb-1 flex items-baseline gap-2 text-small">
+                  <label htmlFor={`tool-${tool.command}`} className="mb-1 flex items-center gap-2 text-small">
+                    <AgentMark command={tool.command} className="text-ink-2" />
                     <span className="font-medium">{tool.label}</span>
                     <code className="font-mono text-caption text-ink-2">{tool.envVar}</code>
                   </label>
@@ -287,6 +289,9 @@ export function ProfileInspector({
                           />
                           <CheckBox checked={on} />
                           <span className={`shrink-0 font-mono text-small ${on ? 'text-ink' : 'text-ink-2'}`}>{server}</span>
+                          <span className="shrink-0 text-ink-2">
+                            <TransportIcon transport={library[server].transport} size={12} />
+                          </span>
                           <span className="min-w-0 flex-1 truncate font-mono text-caption text-ink-2" title={serverSummary(library[server])}>
                             {serverSummary(library[server])}
                           </span>

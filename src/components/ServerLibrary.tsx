@@ -3,7 +3,7 @@
 // Which profile loads a server is chosen in that profile's editor, not here.
 
 import { useEffect, useRef, useState } from 'react'
-import { checkMcpServer, errorMessage } from '../lib/api'
+import { checkMcpServer, errorMessage, getMcpTools } from '../lib/api'
 import { confirmDeleteServer, confirmDiscardServer } from '../lib/confirm'
 import {
   type DraftValue,
@@ -20,7 +20,8 @@ import {
   TRANSPORTS,
   type Transport,
 } from '../lib/mcp'
-import type { ConfigState, McpServer, ServerCheck } from '../lib/types'
+import type { ConfigState, McpServer, ServerCheck, ToolInfo } from '../lib/types'
+import { CatalogIcon, CheckIcon, ImportIcon, TransportIcon } from './icons'
 import { CatalogView, ImportView } from './ServerSources'
 import {
   BackIcon,
@@ -29,7 +30,6 @@ import {
   CloseIcon,
   IconButton,
   LockIcon,
-  PlugIcon,
   PlusIcon,
   ProfileDot,
   Segmented,
@@ -64,6 +64,18 @@ export function ServerLibrary({
   onClose: () => void
 }) {
   const [view, setView] = useState<View>({ kind: 'list' })
+  const [tools, setTools] = useState<Record<string, ToolInfo[]>>({})
+  // Read again each time the list shows, so a check just run in the editor counts.
+  useEffect(() => {
+    if (view.kind !== 'list') return
+    let current = true
+    getMcpTools()
+      .then((found) => current && setTools(found))
+      .catch(() => {})
+    return () => {
+      current = false
+    }
+  }, [view.kind])
   const names = Object.keys(config.mcpServers).sort((a, b) => a.localeCompare(b))
   const toList = () => setView({ kind: 'list' })
 
@@ -76,6 +88,7 @@ export function ServerLibrary({
             config={config}
             names={names}
             colors={colors}
+            tools={tools}
             onOpen={(name) => setView({ kind: 'edit', name })}
             onAdd={() => setView({ kind: 'edit', name: null })}
             onCatalog={() => setView({ kind: 'catalog' })}
@@ -137,6 +150,7 @@ function ServerList({
   config,
   names,
   colors,
+  tools,
   onOpen,
   onAdd,
   onCatalog,
@@ -146,6 +160,8 @@ function ServerList({
   config: ConfigState
   names: string[]
   colors: Map<string, string>
+  /** Tool lists from good checks, for a count beside each server. */
+  tools: Record<string, ToolInfo[]>
   onOpen: (name: string) => void
   onAdd: () => void
   onCatalog: () => void
@@ -186,12 +202,15 @@ function ServerList({
                       className="group/row flex w-full items-center gap-2.5 rounded-control px-3 py-2 text-left hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)] focus-visible:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)]"
                     >
                       <span className="text-ink-2">
-                        <PlugIcon />
+                        <TransportIcon transport={server.transport} />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="flex items-baseline gap-2">
                           <span className="truncate font-mono text-small text-ink">{name}</span>
-                          <span className="shrink-0 text-caption text-ink-2">{TRANSPORTS.find(([t]) => t === server.transport)?.[1]}</span>
+                          <span className="shrink-0 text-caption text-ink-2">
+                            {TRANSPORTS.find(([t]) => t === server.transport)?.[1]}
+                            {tools[name] && ` · ${tools[name].length} ${tools[name].length === 1 ? 'tool' : 'tools'}`}
+                          </span>
                         </span>
                         <span className="block truncate font-mono text-caption text-ink-2" title={serverSummary(server)}>
                           {serverSummary(server)}
@@ -220,8 +239,14 @@ function ServerList({
             <PlusIcon />
             Add Server…
           </Button>
-          <Button onClick={onCatalog}>From Catalog…</Button>
-          <Button onClick={onImport}>Import…</Button>
+          <Button onClick={onCatalog}>
+            <CatalogIcon />
+            From Catalog…
+          </Button>
+          <Button onClick={onImport}>
+            <ImportIcon />
+            Import…
+          </Button>
         </div>
       </div>
       <footer className="flex items-center justify-end gap-2 bg-card-muted px-5 py-3 hair-t">
@@ -375,7 +400,12 @@ function ServerEditor({
 
         <fieldset className="min-w-0">
           <legend className="mb-1.5 text-small font-medium text-ink-2">Connects with</legend>
-          <Segmented label="Transport" options={TRANSPORTS} value={draft.transport} onChange={(t: Transport) => set('transport', t)} />
+          <Segmented
+            label="Transport"
+            options={TRANSPORTS.map(([t, text]) => [t, text, <TransportIcon key={t} transport={t} size={12} />])}
+            value={draft.transport}
+            onChange={(t: Transport) => set('transport', t)}
+          />
         </fieldset>
 
         {stdio ? (
@@ -687,6 +717,7 @@ function CheckSection({ name, draft }: { name: string; draft: ServerDraft }) {
           <p className="min-w-0 flex-1 text-small text-ink-2 italic">Not checked yet</p>
         )}
         <Button onClick={run} disabled={running}>
+          <CheckIcon />
           {result || problem ? 'Check Again' : 'Check Server'}
         </Button>
       </div>

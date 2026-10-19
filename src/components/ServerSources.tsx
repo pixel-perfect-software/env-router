@@ -2,19 +2,26 @@
 // (a pick opens the editor, prefilled) and importing what the agents already define in their
 // own files. Imports copy; the source files are never changed.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { errorMessage, importCandidates } from '../lib/api'
 import { draftFromCatalog, draftOf, freeName, isPending, type ServerDraft, serverOf, serverSummary, withSecretsLocked } from '../lib/mcp'
 import { catalog } from '../lib/mcpCatalog'
 import { tildify } from '../lib/paths'
 import { withAgents } from '../lib/tools'
 import type { ConfigState, ImportCandidate, McpServer } from '../lib/types'
+import { TransportIcon } from './icons'
 import { BackIcon, Button, CheckBox, ChevronIcon, CloseIcon, IconButton, LockIcon, Mark } from './ui'
 
+/**
+ * The view's title bar. Its back button takes focus when the view opens: the button that
+ * opened the view is gone, and without this focus would fall out of the panel.
+ */
 function Header({ title, onBack, onClose, disabled }: { title: string; onBack: () => void; onClose: () => void; disabled?: boolean }) {
+  const back = useRef<HTMLButtonElement>(null)
+  useEffect(() => back.current?.focus(), [])
   return (
     <header className="flex items-center gap-1.5 pt-5 pr-5 pb-3 pl-3">
-      <IconButton label="All servers" onClick={onBack} disabled={disabled}>
+      <IconButton ref={back} label="All servers" onClick={onBack} disabled={disabled}>
         <BackIcon />
       </IconButton>
       <h2 className="min-w-0 flex-1 truncate text-title font-semibold">{title}</h2>
@@ -59,8 +66,11 @@ export function CatalogView({
                 <button
                   type="button"
                   onClick={() => onPick(draftFromCatalog(freeName(entry.name, names), entry.server, entry.secrets ?? {}))}
-                  className="group/row flex w-full items-center gap-2.5 rounded-control px-3 py-2 text-left hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)]"
+                  className="group/row flex w-full items-start gap-2.5 rounded-control px-3 py-2 text-left hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)]"
                 >
+                  <span className="mt-[2px] text-ink-2">
+                    <TransportIcon transport={entry.server.transport} />
+                  </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline gap-2">
                       <span className="font-medium">{entry.label}</span>
@@ -74,7 +84,7 @@ export function CatalogView({
                     </span>
                     <span className="block text-small text-ink-2">{entry.description}</span>
                   </span>
-                  <span className="text-ink-2 opacity-60 group-hover/row:opacity-100">
+                  <span className="mt-[3px] text-ink-2 opacity-60 group-hover/row:opacity-100">
                     <ChevronIcon />
                   </span>
                 </button>

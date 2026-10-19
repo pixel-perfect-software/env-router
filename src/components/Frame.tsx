@@ -6,7 +6,8 @@ import { type MouseEvent, useLayoutEffect, useRef } from 'react'
 import { isInside, splitLeaf, tildify, triggerBase } from '../lib/paths'
 import { KNOWN_TOOLS, toolLabel } from '../lib/tools'
 import type { Profile } from '../lib/types'
-import { BranchIcon, FolderIcon, IconButton, Mark, type MarkKind, PencilIcon, PlusIcon, ProfileDot, profileColors } from './ui'
+import { AgentMark } from './icons'
+import { BranchIcon, FolderIcon, IconButton, Mark, type MarkKind, PencilIcon, PlugIcon, PlusIcon, ProfileDot, profileColors } from './ui'
 
 /** A folder that was just checked, filed in the card that owns it. */
 export interface Slip {
@@ -174,23 +175,31 @@ function ProfileCard({
         ))}
       </ul>
 
-      <footer className="flex flex-col gap-0.5 px-3.5 py-2 hair-t">
-        {routedTools(profile).length === 0 ? (
-          <p className="text-small text-ink-2 italic">Every agent uses its default config</p>
-        ) : (
-          routedTools(profile).map(([command, path]) => (
-            <p key={command} className="flex min-w-0 items-baseline gap-2 text-small">
-              <span className="shrink-0 text-ink-2">{toolLabel(command)}</span>
-              <code className="min-w-0 truncate font-mono text-ink select-text">{tildify(path, home)}</code>
-            </p>
-          ))
-        )}
-        {servers.length > 0 && (
-          <p className="flex min-w-0 items-baseline gap-2 text-small" title={servers.join(', ')}>
-            <span className="shrink-0 text-ink-2">MCP</span>
-            <code className="min-w-0 truncate font-mono text-ink select-text">{servers.join(', ')}</code>
-          </p>
-        )}
+      <footer className="px-3.5 py-2 hair-t">
+        {routedTools(profile).length === 0 && <p className="text-small text-ink-2 italic">Every agent uses its default config</p>}
+        {/* One line per thing the profile hands out: an agent's mark and its config folder, then the plug and its MCP servers. */}
+        <dl className="grid grid-cols-[14px_minmax(0,1fr)] items-center gap-x-2 gap-y-1 text-small">
+          {routedTools(profile).map(([command, path]) => (
+            <div key={command} className="contents" title={`${toolLabel(command)} uses ${tildify(path, home)}`}>
+              <dt className="text-ink-2">
+                <AgentMark command={command} />
+                <span className="sr-only">{toolLabel(command)}</span>
+              </dt>
+              <dd className="truncate font-mono text-ink select-text">{tildify(path, home)}</dd>
+            </div>
+          ))}
+          {servers.length > 0 && (
+            <div className="contents" title={`MCP servers: ${servers.join(', ')}`}>
+              <dt className="text-ink-2">
+                <PlugIcon />
+                <span className="sr-only">MCP servers</span>
+              </dt>
+              <dd className="truncate font-mono text-ink select-text">
+                {servers.length > 3 ? `${servers.slice(0, 2).join(', ')} +${servers.length - 2}` : servers.join(', ')}
+              </dd>
+            </div>
+          )}
+        </dl>
       </footer>
     </section>
   )

@@ -7,6 +7,7 @@ import appIcon from '../../src-tauri/icons/app-icon-small.svg'
 import { errorMessage } from '../lib/api'
 import { tildify } from '../lib/paths'
 import type { SetupStatus, Shell, ShellStatus } from '../lib/types'
+import { FolderCheckIcon, PlugIcon, ShellIcon } from './icons'
 import { Button, CloseIcon, IconButton, StatusTile, Switch, type Tone } from './ui'
 
 export function TitleBand({
@@ -64,15 +65,20 @@ export function TitleBand({
               aria-controls="shells-panel"
               onClick={onToggleShells}
               className={shellsOpen ? 'brightness-90' : ''}
+              title="Shells…"
             >
-              Shells…
+              <ShellIcon />
+              {/* A narrow window keeps the icon; the name stays as the tooltip and accessible label. */}
+              <span className="max-[760px]:sr-only">Shells…</span>
             </Button>
           </>
         )}
-        <Button aria-haspopup="dialog" onClick={onOpenServers}>
-          MCP Servers…
+        <Button aria-haspopup="dialog" onClick={onOpenServers} title="MCP Servers…">
+          <PlugIcon width={16} height={16} />
+          <span className="max-[760px]:sr-only">MCP Servers…</span>
         </Button>
         <Button kind={primary ? 'primary' : 'push'} onClick={onCheckFolder} title="Check Folder… (⌘O)">
+          <FolderCheckIcon />
           Check Folder…
         </Button>
       </div>
