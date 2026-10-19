@@ -6,23 +6,44 @@
 //! It must never stop someone from running their tool. A missing or broken config only
 //! produces a warning, and the tool runs unrouted.
 
+use std::collections::HashMap;
 use std::env;
+use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
-use envrouter_core::{config, paths, resolve, EXIT_TOOL_NOT_FOUND};
+use envrouter_core::mcp::{self, Launch};
+use envrouter_core::{config, paths, resolve, secrets, EXIT_TOOL_NOT_FOUND};
 
 /// When set to `1`, print how this invocation would be routed, as one line of JSON, and exit
 /// without running the tool. The app uses it to check a folder. Any other value is ignored, so
 /// a stray `ENVROUTER_EXPLAIN=0` can't quietly stop every tool from running.
 const EXPLAIN_VAR: &str = "ENVROUTER_EXPLAIN";
+/// `0` turns MCP injection off for a run: the tool gets only the servers it configures itself.
+const MCP_VAR: &str = "ENVROUTER_MCP";
+/// When set to `1`, read the Keychain secrets once and exit. The app runs this after installing
+/// a new shim, so macOS asks to let the shim in while the app is in front, not in the middle of
+/// someone's `claude`.
+const KEYCHAIN_PROBE_VAR: &str = "ENVROUTER_KEYCHAIN_PROBE";
+/// An unanswered Keychain prompt mustn't hold the tool forever.
+const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(20);
 
 fn main() -> ExitCode {
     let mut args = env::args_os();
     let argv0 = args.next().unwrap_or_default();
+    let user_args: Vec<OsString> = args.collect();
+    let home = env::var_os("HOME")
+        .filter(|home| !home.is_empty())
+        .map(PathBuf::from);
+    if env::var_os(KEYCHAIN_PROBE_VAR).is_some_and(|value| value == "1") {
+        return probe_keychain(home.as_deref());
+    }
     let Some(tool) = Path::new(&argv0)
         .file_name()
         .and_then(|name| name.to_str())
@@ -36,24 +57,33 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
 
-    let home = env::var_os("HOME")
-        .filter(|home| !home.is_empty())
-        .map(PathBuf::from);
     let Some(real) = find_real(&tool, home.as_deref()) else {
         eprintln!(
             "envrouter: can't find `{tool}` on PATH outside ~/.envrouter/shims. Is it installed?"
         );
         return ExitCode::from(EXIT_TOOL_NOT_FOUND);
     };
-    let (profile, env_var) = route(&tool, home.as_deref());
+    let route = route(&tool, home.as_deref());
+    let launch = route
+        .launch
+        .filter(|launch| launch.applies_to(&user_args))
+        .filter(|_| env::var_os(MCP_VAR).is_none_or(|value| value != "0"));
 
     if env::var_os(EXPLAIN_VAR).is_some_and(|value| value == "1") {
-        let (var, value) = env_var.unzip();
+        let (var, value) = route.env.unzip();
+        // The servers the run would get with every secret readable. Explaining never asks the
+        // Keychain, so a check can't raise a prompt.
+        let servers: Vec<&str> = launch
+            .iter()
+            .flat_map(|launch| &launch.servers)
+            .map(|server| server.name.as_str())
+            .collect();
         let explanation = serde_json::json!({
             "tool": tool,
-            "profile": profile,
+            "profile": route.profile,
             "envVar": var,
             "value": value,
+            "mcp": servers,
             "real": real,
         });
         println!("{explanation}");
@@ -61,8 +91,13 @@ fn main() -> ExitCode {
     }
 
     let mut command = Command::new(&real);
-    command.args(args);
-    if let Some((var, value)) = env_var {
+    if let (Some(launch), Some(home)) = (launch, home.as_deref()) {
+        let injection = inject(&launch, home, &tool);
+        // Ahead of the user's arguments, so none can land after a `--` they typed.
+        command.args(&injection.args).envs(injection.env);
+    }
+    command.args(&user_args);
+    if let Some((var, value)) = route.env {
         command.env(var, value);
     }
     let err = command.exec(); // Only returns on failure.
@@ -70,32 +105,107 @@ fn main() -> ExitCode {
     ExitCode::from(126)
 }
 
-/// The active profile's name and the variable to set, if any.
-fn route(tool: &str, home: Option<&Path>) -> (Option<String>, Option<(String, String)>) {
+struct Route {
+    /// The active profile's name.
+    profile: Option<String>,
+    /// The variable to set, if any.
+    env: Option<(String, String)>,
+    /// The MCP servers the profile hands this tool, if any.
+    launch: Option<Launch>,
+}
+
+fn route(tool: &str, home: Option<&Path>) -> Route {
+    let none = Route {
+        profile: None,
+        env: None,
+        launch: None,
+    };
     let Some(home) = home else {
-        return (None, None);
+        return none;
     };
     let config = match config::load(&paths::root(home)) {
         Ok(Some(config)) => config,
-        Ok(None) => return (None, None),
+        Ok(None) => return none,
         Err(err) => {
-            // Some messages already end in a full stop.
-            let err = err.to_string();
-            eprintln!(
-                "envrouter: {}. Running {tool} without a profile.",
-                err.trim_end_matches('.')
-            );
-            return (None, None);
+            warn(&err, &format!("Running {tool} without a profile"));
+            return none;
         }
     };
     // A deleted working directory has no profile.
     let Ok(cwd) = env::current_dir() else {
-        return (None, None);
+        return none;
     };
     let resolution = resolve::resolve(&config, home, &cwd, tool);
-    (resolution.profile.map(|p| p.name.clone()), resolution.env)
+    let launch = resolution.profile.and_then(|profile| {
+        mcp::load_launch(home, &profile.id, tool)
+            .inspect_err(|err| warn(err, &format!("Running {tool} without MCP servers")))
+            .ok()
+            .flatten()
+    });
+    Route {
+        profile: resolution.profile.map(|p| p.name.clone()),
+        env: resolution.env,
+        launch,
+    }
 }
 
+/// What to add to the run, reading the Keychain only if a server needs a secret. A server
+/// whose secret can't be read is left out, with a warning, rather than started without it.
+fn inject(launch: &Launch, home: &Path, tool: &str) -> mcp::Injection {
+    if launch.secret_ids().is_empty() {
+        return launch.inject(&HashMap::new());
+    }
+    match read_secrets(home) {
+        Ok(secrets) => {
+            let injection = launch.inject(&secrets);
+            for name in &injection.dropped {
+                eprintln!("envrouter: the MCP server {name} needs a secret that isn't in the Keychain. Running {tool} without it.");
+            }
+            injection
+        }
+        Err(err) => {
+            let injection = launch.inject(&HashMap::new());
+            eprintln!(
+                "envrouter: couldn't read MCP secrets ({err}). Running {tool} without {}.",
+                injection.dropped.join(", ")
+            );
+            injection
+        }
+    }
+}
+
+/// The Keychain's answer, on a thread so an unanswered prompt times out.
+fn read_secrets(home: &Path) -> Result<HashMap<String, String>, String> {
+    let (sender, receiver) = mpsc::channel();
+    let home = home.to_path_buf();
+    thread::spawn(move || {
+        let _ = sender.send(secrets::read(&home).map_err(|err| err.to_string()));
+    });
+    receiver
+        .recv_timeout(KEYCHAIN_TIMEOUT)
+        .unwrap_or_else(|_| Err("the Keychain didn't answer within 20 seconds".into()))
+}
+
+fn probe_keychain(home: Option<&Path>) -> ExitCode {
+    let Some(home) = home else {
+        eprintln!("envrouter: HOME isn't set");
+        return ExitCode::from(2);
+    };
+    match read_secrets(home) {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("envrouter: {err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// One line on stderr: what went wrong, then what the shim does about it.
+fn warn(err: &impl std::fmt::Display, then: &str) {
+    // Some messages already end in a full stop.
+    let err = err.to_string();
+    eprintln!("envrouter: {}. {then}.", err.trim_end_matches('.'));
+}
 /// The first `tool` on PATH that isn't a shim. It skips the shims directory and anything
 /// that resolves to this binary or another copy of it, so a duplicated PATH entry, a stray
 /// link or a second install can't make shims exec themselves or each other in a loop.

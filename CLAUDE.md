@@ -2,18 +2,26 @@
 
 @.claude/context/ai-context/docs-overview.md
 
-EnvRouter is a macOS desktop app (Tauri v2) that sets per-folder environment variables for
-coding agents (Claude Code, Codex, Copilot CLI, Gemini CLI), so `claude` run in `~/dev/work` uses a different `CLAUDE_CONFIG_DIR` than in
-`~/dev/personal`. The user defines **profiles**: each one maps trigger folders to a variable
-per tool. Profiles are stored in `~/.envrouter/config.json`. Other macOS users get it as
+EnvRouter is a macOS desktop app (Tauri v2) that does two things per folder for coding agents
+(Claude Code, Codex, Copilot CLI, Gemini CLI): it sets the agent's config variable, so `claude`
+run in `~/dev/work` uses a different `CLAUDE_CONFIG_DIR` than in `~/dev/personal`, and it hands
+the agent a set of **MCP servers**. The user defines **profiles**: each one maps trigger folders to
+a variable per tool and a selection from the MCP **server library**. Profiles are stored in `~/.envrouter/config.json`. Other macOS users get it as
 source and build it themselves (README "Build and install"). There's deliberately no paid
 Apple Developer ID, so no Developer ID signing, notarization or prebuilt downloads.
 
 **How it works: shims, like mise or volta.** `~/.envrouter/shims/<tool>` is a symlink to
 `~/.envrouter/bin/envrouter-shim`, a small Rust binary, and a marked block in the user's shell
 startup files puts `shims/` first on PATH. On each run the shim reads `config.json`, picks the
-profile for the current folder, sets that tool's variable, and `exec`s the real tool found
-later on PATH. Config edits apply on the next run in every terminal, with nothing to reload.
+profile for the current folder, sets that tool's variable, adds that profile's MCP servers to
+the command line, and `exec`s the real tool found later on PATH. Config edits apply on the next
+run in every terminal, with nothing to reload.
+
+## How MCP servers reach an agent (`crates/core/src/mcp.rs`)
+- **No gateway or daemon.** On every save the app renders, per profile and per agent with an MCP descriptor, one config file per server in the agent's dialect plus a `launch.json` manifest, under `~/.envrouter/mcp/<profile id>/<command>/` (files 0600, folder 0700). The shim reads only the manifest and adds its arguments ahead of the user's own.
+- **Always the `--flag=value` form.** Claude's `--mcp-config` and `--disallowedTools` take several values, so `--mcp-config <file>` as two arguments swallows the next one (`claude --mcp-config f mcp --help` breaks; `--mcp-config=f mcp --help` works, verified on 2.1.303). `config::validate` rejects a descriptor without the `=`. `claude mcp list` never shows flag-injected servers.
+- **Secrets live in one login-Keychain item** (`crates/core/src/secrets.rs`), keyed by the canonical home folder, so scratch-HOME runs and tests never see the real one. Rendered files refer to `${ENVROUTER_SECRET_<ID>}`; the shim reads the item only when a server needs a secret, with a 20s timeout, and sets those variables on the agent. Secret values are never in argv, `config.json` or a rendered file.
+- A profile's servers go to every agent with a descriptor, even if the profile leaves that agent's folder alone, so `config::tool_names` gives those agents shims too.
 
 The window is built around a direction called **the Sorting Frame**: one card per profile
 with its folders filed inside, rendered as modern layered Mac cards (the user asked for
@@ -30,14 +38,14 @@ only hides it.
 - **`config::validate` runs on every save.** It rejects a folder claimed by two profiles, tool or env var names that aren't strict identifiers, and a tool folder that isn't absolute or `~`-based (a relative one would resolve against wherever the tool runs; `resolve` skips one from a hand-edited config too). Tool names become file names in `shims/` and are interpolated into shell probes, so keep `is_command_name` strict.
 
 ## The shim must never block the tool
-A missing config means the tool runs silently. A broken one prints a warning and the tool still runs. When looking for the real binary, the shim skips the shims directory, empty PATH entries (the current directory), and anything that canonicalizes to itself, so it can never exec itself in a loop. Keep these properties; `crates/shim/tests/shim.rs` covers each one.
+A missing config means the tool runs silently. A broken one prints a warning and the tool still runs. The same goes for MCP: no manifest means no injection, a broken one warns, a server whose secret can't be read is left out with a warning, `--strict-mcp-config` (or `ENVROUTER_MCP=0`) turns injection off for that run, and explaining never asks the Keychain. When looking for the real binary, the shim skips the shims directory, empty PATH entries (the current directory), and anything that canonicalizes to itself, so it can never exec itself in a loop. Keep these properties; `crates/shim/tests/shim.rs` covers each one.
 
 ## Constraints
-- **No OAuth or credential handling.** EnvRouter only routes env vars; it never logs anyone into a tool.
+- **No logins or OAuth.** EnvRouter never signs anyone into an agent or an MCP server; agents run their own sign-in (`/mcp`). The one credential it handles is MCP secret values the user enters, kept in the Keychain item above.
 - **Tauri v2 APIs only.** v1 examples (`tauri.conf.json > allowlist`, `@tauri-apps/api/fs`) are wrong here. Use plugins and `capabilities/*.json`.
 - **All file access happens in Rust commands.** There's deliberately no fs plugin, and `capabilities/default.json` grants only the three plugin calls the window makes (dialog open, dialog message, opener reveal), one by one. Don't go back to a plugin's `:default` set, and don't add `@tauri-apps/plugin-fs` back.
 - **The window has a CSP** (`app.security.csp` in `tauri.conf.json`): scripts and styles from the bundle only, and IPC. Loading anything remote or adding an inline script means changing the policy on purpose.
-- **Keep the data model tool-agnostic.** `Profile.tools` is a `Record<toolName, { envVar, path }>`. Nothing in Rust special-cases an agent. Add an agent with one entry in `src/lib/tools.ts`, and only after checking its docs: the variable must relocate logins too, not just settings. Note quirks such as Gemini's parent-folder semantics in the entry's `note`. `save_config` creates missing agent folders inside home, because Codex refuses a `CODEX_HOME` that doesn't exist.
+- **Keep the data model tool-agnostic.** `Profile.tools` is a `Record<toolName, { envVar, path }>`. Nothing in Rust branches on an agent's name: agent behaviour is data in `src/lib/tools.ts` (its variable, and an MCP descriptor naming a config *dialect*, a file format), which the window writes into `config.agents` on every save. Rust renders dialects, not agents. Add an agent with one entry in `src/lib/tools.ts`, and only after checking its docs: the variable must relocate logins too, not just settings. Note quirks such as Gemini's parent-folder semantics in the entry's `note`. `save_config` creates missing agent folders inside home, because Codex refuses a `CODEX_HOME` that doesn't exist.
 - **Bump `CONFIG_VERSION` in `config.rs`** for any change to the shape of `config.json`, and migrate older versions in `config::load`. The shim refuses configs from a newer version.
 
 ## Conventions

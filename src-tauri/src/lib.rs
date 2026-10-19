@@ -5,7 +5,7 @@ mod tray;
 use std::path::{Path, PathBuf};
 
 use envrouter_core::config::{self, ConfigState};
-use envrouter_core::{paths, Error, Result};
+use envrouter_core::{mcp, paths, Error, Result};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 
@@ -30,7 +30,8 @@ async fn get_config(app: AppHandle) -> Result<ConfigState> {
     blocking(move || config::load_or_init(&paths::root(&home))).await
 }
 
-/// Validates and saves the config, then updates the shims to match. Changes apply to the
+/// Validates and saves the config, then renders each profile's MCP files and updates the
+/// shims to match. Changes apply to the
 /// next run of each tool in every terminal; nothing needs reloading.
 #[tauri::command]
 async fn save_config(app: AppHandle, payload: ConfigState) -> Result<()> {
@@ -45,6 +46,7 @@ async fn save_config(app: AppHandle, payload: ConfigState) -> Result<()> {
             }
         }
         config::save(&paths::root(&home), &payload)?;
+        mcp::sync(&payload, &home)?;
         shims::sync(&home, &payload)?;
         tray::refresh(&app);
         Ok(())

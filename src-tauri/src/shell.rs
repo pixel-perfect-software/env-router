@@ -10,7 +10,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use envrouter_core::config::{self, ConfigState};
-use envrouter_core::{paths, resolve, Error, Result, EXIT_TOOL_NOT_FOUND};
+use envrouter_core::{mcp, paths, resolve, Error, Result, EXIT_TOOL_NOT_FOUND};
 use serde::{Deserialize, Serialize};
 
 const BEGIN: &str = "# >>> envrouter >>>";
@@ -334,6 +334,8 @@ pub enum FolderCheck {
         profile: Option<String>,
         env_var: Option<String>,
         value: Option<String>,
+        /// The MCP servers the run gets, if every secret they need is readable.
+        mcp: Vec<String>,
         real: String,
     },
     /// An alias or function with the tool's name runs instead of anything on PATH.
@@ -468,6 +470,7 @@ pub fn check_folder(shell: Shell, home: &Path, folder: &Path, tool: &str) -> Res
         profile: explanation.profile,
         env_var: explanation.env_var,
         value: explanation.value,
+        mcp: explanation.mcp,
         real: explanation.real,
     })
 }
@@ -482,6 +485,10 @@ pub fn preview(config: &ConfigState, home: &Path, folder: &Path, tool: &str) -> 
         profile: resolution.profile.map(|p| p.name.clone()),
         env_var,
         value,
+        mcp: resolution
+            .profile
+            .map(|profile| mcp::servers_for(config, profile, tool))
+            .unwrap_or_default(),
     }
 }
 
@@ -492,6 +499,8 @@ pub struct Preview {
     pub profile: Option<String>,
     pub env_var: Option<String>,
     pub value: Option<String>,
+    /// The MCP servers the profile hands the tool.
+    pub mcp: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -500,6 +509,7 @@ struct Explanation {
     profile: Option<String>,
     env_var: Option<String>,
     value: Option<String>,
+    mcp: Vec<String>,
     real: String,
 }
 
@@ -593,9 +603,20 @@ mod tests {
                 profile: None,
                 env_var: Some("V".into()),
                 value: Some("/x".into()),
+                mcp: vec!["github".into()],
                 real: "/bin/t".into(),
             }),
-            r#"{"status":"routed","profile":null,"envVar":"V","value":"/x","real":"/bin/t"}"#
+            r#"{"status":"routed","profile":null,"envVar":"V","value":"/x","mcp":["github"],"real":"/bin/t"}"#
+        );
+        assert_eq!(
+            json(&Preview {
+                profile_id: Some("1".into()),
+                profile: Some("Work".into()),
+                env_var: None,
+                value: None,
+                mcp: Vec::new(),
+            }),
+            r#"{"profileId":"1","profile":"Work","envVar":null,"value":null,"mcp":[]}"#
         );
         assert_eq!(
             json(&FolderCheck::ShadowedByShell {
@@ -801,6 +822,7 @@ mod tests {
                     },
                 )]
                 .into(),
+                ..Default::default()
             }],
             ..Default::default()
         }
@@ -856,6 +878,7 @@ mod tests {
                 profile: Some("Work".into()),
                 env_var: Some("CLAUDE_CONFIG_DIR".into()),
                 value: Some(home.join(".claude-work").display().to_string()),
+                mcp: Vec::new(),
                 real: home.join("bin/claude").display().to_string(),
             }
         );

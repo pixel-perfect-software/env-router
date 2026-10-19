@@ -14,7 +14,11 @@ use crate::error::{Error, Result};
 const CONFIG_FILE: &str = "config.json";
 
 /// Bump when the file's shape changes, and migrate older versions in [`load`].
-pub const CONFIG_VERSION: u32 = 1;
+///
+/// 2 added the MCP server library (`mcpServers`), each profile's selection from it, and the
+/// agents' MCP descriptors (`agents`). Every new field defaults to empty, so a version 1 file
+/// reads as a version 2 one with no servers.
+pub const CONFIG_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,6 +37,116 @@ pub struct Profile {
     /// Keyed by the command the shim stands in for, e.g. `claude`.
     #[serde(default)]
     pub tools: BTreeMap<String, ToolConfig>,
+    /// The library servers this profile's folders get, keyed by server name. They go to every
+    /// agent with an MCP descriptor, whether or not the profile sets that agent's folder.
+    #[serde(default)]
+    pub mcp_servers: BTreeMap<String, McpUse>,
+}
+
+/// How a profile uses one library server.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpUse {
+    /// Tools the agent is told not to use. A deny list, so tools a server adds later are on.
+    #[serde(default)]
+    pub disabled_tools: Vec<String>,
+}
+
+/// One MCP server in the library, in no particular agent's format.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "transport", rename_all = "camelCase")]
+pub enum McpServer {
+    #[serde(rename_all = "camelCase")]
+    Stdio {
+        command: String,
+        #[serde(default)]
+        args: Vec<McpValue>,
+        #[serde(default)]
+        env: BTreeMap<String, McpValue>,
+    },
+    /// Streamable HTTP.
+    #[serde(rename_all = "camelCase")]
+    Http {
+        url: String,
+        #[serde(default)]
+        headers: BTreeMap<String, McpValue>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Sse {
+        url: String,
+        #[serde(default)]
+        headers: BTreeMap<String, McpValue>,
+    },
+}
+
+impl McpServer {
+    /// Every value that can hold a secret: args, env values and headers.
+    pub fn values(&self) -> Box<dyn Iterator<Item = &McpValue> + '_> {
+        match self {
+            McpServer::Stdio { args, env, .. } => Box::new(args.iter().chain(env.values())),
+            McpServer::Http { headers, .. } | McpServer::Sse { headers, .. } => {
+                Box::new(headers.values())
+            }
+        }
+    }
+
+    /// The ids of the Keychain secrets this server needs.
+    pub fn secret_ids(&self) -> BTreeSet<&str> {
+        self.values()
+            .filter_map(|value| match value {
+                McpValue::Secret { secret } => Some(secret.as_str()),
+                McpValue::Plain(_) => None,
+            })
+            .collect()
+    }
+}
+
+/// A plain string, or a reference to a secret kept in the Keychain. The secret's value never
+/// appears in `config.json`, in a rendered file or on a command line.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum McpValue {
+    Plain(String),
+    Secret { secret: String },
+}
+
+/// What EnvRouter knows about an agent beyond its variable. The window writes these from its
+/// registry (`src/lib/tools.ts`) on every save, so Rust never needs an agent's name.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentDef {
+    /// How to hand the agent MCP servers at launch. `None`: it gets none.
+    #[serde(default)]
+    pub mcp: Option<McpInjection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpInjection {
+    /// The config file format the agent reads.
+    pub dialect: McpDialect,
+    /// One argument is this followed by a rendered file's path, e.g. `--mcp-config=`. It must
+    /// hold an `=`: Claude's flags take several values, so `--mcp-config <file>` as two
+    /// arguments would swallow whatever the user typed next, a subcommand or a prompt.
+    pub config_arg: String,
+    /// Followed by the comma-separated tools to turn off, e.g. `--disallowedTools=`. `None`:
+    /// the agent can't turn tools off by flag.
+    #[serde(default)]
+    pub deny_arg: Option<String>,
+    /// Any of these among the user's own arguments turns injection off for that run.
+    #[serde(default)]
+    pub skip_any_args: Vec<String>,
+}
+
+/// An MCP config file format, named after the agent that defined it. Several agents can share
+/// one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum McpDialect {
+    /// `{"mcpServers": {...}}` as Claude Code's `--mcp-config` reads it.
+    Claude,
+    /// Copilot CLI's `--additional-mcp-config`: Claude's shape plus a required `tools` list.
+    Copilot,
 }
 
 impl Profile {
@@ -46,12 +160,16 @@ impl Profile {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 pub struct ConfigState {
     /// A file without one predates versioning, so it's version 1, not the current version.
     #[serde(default = "first_version")]
     pub version: u32,
     pub profiles: Vec<Profile>,
+    /// The server library, keyed by the name agents see.
+    pub mcp_servers: BTreeMap<String, McpServer>,
+    /// Keyed by command, like `Profile::tools`.
+    pub agents: BTreeMap<String, AgentDef>,
 }
 
 fn first_version() -> u32 {
@@ -63,6 +181,8 @@ impl Default for ConfigState {
         Self {
             version: CONFIG_VERSION,
             profiles: Vec::new(),
+            mcp_servers: BTreeMap::new(),
+            agents: BTreeMap::new(),
         }
     }
 }
@@ -102,7 +222,7 @@ pub fn load_or_init(dir: &Path) -> Result<ConfigState> {
 pub fn save(dir: &Path, config: &ConfigState) -> Result<()> {
     let current = ConfigState {
         version: CONFIG_VERSION,
-        profiles: config.profiles.clone(),
+        ..config.clone()
     };
     let json = serde_json::to_string_pretty(&current).expect("ConfigState always serializes");
     write_atomic(&dir.join(CONFIG_FILE), format!("{json}\n"))
@@ -112,6 +232,17 @@ pub fn save(dir: &Path, config: &ConfigState) -> Result<()> {
 /// file. The contents are flushed to disk before the rename, so a crash can't leave the file
 /// (which may be someone's `.zshrc`) empty. An existing file keeps its permissions.
 pub fn write_atomic(path: &Path, contents: impl AsRef<[u8]>) -> Result<()> {
+    write_through_temp(path, contents.as_ref(), None)
+}
+
+/// Like [`write_atomic`], but the file is readable by its owner only, from the moment it
+/// exists.
+#[cfg(unix)]
+pub fn write_private(path: &Path, contents: impl AsRef<[u8]>) -> Result<()> {
+    write_through_temp(path, contents.as_ref(), Some(0o600))
+}
+
+fn write_through_temp(path: &Path, contents: &[u8], mode: Option<u32>) -> Result<()> {
     let io_err = |source| Error::Io {
         path: path.to_path_buf(),
         source,
@@ -121,29 +252,46 @@ pub fn write_atomic(path: &Path, contents: impl AsRef<[u8]>) -> Result<()> {
     }
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".envrouter-tmp");
-    let mut file = File::create(&tmp).map_err(io_err)?;
-    file.write_all(contents.as_ref()).map_err(io_err)?;
+    let mut options = File::options();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    if let Some(mode) = mode {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(mode);
+    }
+    let mut file = options.open(&tmp).map_err(io_err)?;
+    file.write_all(contents).map_err(io_err)?;
     file.sync_all().map_err(io_err)?;
     drop(file);
-    if let Ok(meta) = fs::metadata(path) {
-        fs::set_permissions(&tmp, meta.permissions()).map_err(io_err)?;
+    match (mode, fs::metadata(path)) {
+        // A stale temp file from a crash keeps its old mode through `open`, so set it again.
+        #[cfg(unix)]
+        (Some(mode), _) => {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&tmp, fs::Permissions::from_mode(mode)).map_err(io_err)?;
+        }
+        (_, Ok(meta)) => fs::set_permissions(&tmp, meta.permissions()).map_err(io_err)?,
+        _ => {}
     }
     fs::rename(&tmp, path).map_err(io_err)
 }
 
-/// Every command at least one profile routes. Each gets a shim.
+/// Every command at least one profile routes, by its variable or by handing it MCP servers.
+/// Each gets a shim.
 pub fn tool_names(config: &ConfigState) -> BTreeSet<&str> {
-    config
-        .profiles
+    let by_var = config.profiles.iter().flat_map(|profile| {
+        profile
+            .tools
+            .keys()
+            .filter(|name| profile.tool(name).is_some())
+    });
+    let any_servers = config.profiles.iter().any(|p| !p.mcp_servers.is_empty());
+    let by_mcp = config
+        .agents
         .iter()
-        .flat_map(|profile| {
-            profile
-                .tools
-                .keys()
-                .filter(|name| profile.tool(name).is_some())
-        })
-        .map(String::as_str)
-        .collect()
+        .filter(move |(_, agent)| any_servers && agent.mcp.is_some())
+        .map(|(name, _)| name);
+    by_var.chain(by_mcp).map(String::as_str).collect()
 }
 
 /// The folders configured tools are pointed at, with `~` expanded. Some tools (Codex) refuse
@@ -244,6 +392,7 @@ pub fn validate(config: &ConfigState, home: &Path) -> Result<()> {
                 )));
             }
         }
+        validate_profile_mcp(config, profile)?;
         for raw in &profile.trigger_paths {
             let base = trigger_base(raw, home)?;
             // Compared as `resolve` compares them: through symlinks and letter case, two
@@ -261,7 +410,134 @@ pub fn validate(config: &ConfigState, home: &Path) -> Result<()> {
             }
         }
     }
+    for (name, server) in &config.mcp_servers {
+        validate_server(name, server)?;
+    }
+    for (name, agent) in &config.agents {
+        validate_agent(name, agent)?;
+    }
     Ok(())
+}
+
+fn validate_profile_mcp(config: &ConfigState, profile: &Profile) -> Result<()> {
+    if profile.mcp_servers.is_empty() {
+        return Ok(());
+    }
+    // The id names the folder its rendered MCP files go in.
+    if !is_file_name(&profile.id) {
+        return Err(Error::Invalid(format!(
+            "Profile \"{}\" has the id \"{}\", which can't name a folder. Use letters, digits, - and _.",
+            profile.name, profile.id
+        )));
+    }
+    for (server, using) in &profile.mcp_servers {
+        if !config.mcp_servers.contains_key(server) {
+            return Err(Error::Invalid(format!(
+                "Profile \"{}\" uses the MCP server \"{server}\", which isn't in the server list.",
+                profile.name
+            )));
+        }
+        if let Some(tool) = using.disabled_tools.iter().find(|t| !is_mcp_tool_name(t)) {
+            return Err(Error::Invalid(format!(
+                "\"{tool}\" in profile \"{}\" isn't a valid MCP tool name.",
+                profile.name
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_server(name: &str, server: &McpServer) -> Result<()> {
+    let invalid = |problem: String| Err(Error::Invalid(format!("MCP server \"{name}\" {problem}")));
+    if !is_file_name(name) {
+        return invalid("needs a name made of letters, digits, - and _.".into());
+    }
+    match server {
+        McpServer::Stdio { command, env, .. } => {
+            if command.trim().is_empty() {
+                return invalid("needs a command to run.".into());
+            }
+            if let Some(key) = env.keys().find(|key| !is_env_var_name(key)) {
+                return invalid(format!(
+                    "sets \"{key}\", which isn't a valid environment variable name."
+                ));
+            }
+        }
+        McpServer::Http { url, headers } | McpServer::Sse { url, headers } => {
+            let rest = url
+                .strip_prefix("https://")
+                .or_else(|| url.strip_prefix("http://"));
+            if rest.is_none_or(|rest| rest.trim().is_empty()) {
+                return invalid(format!(
+                    "has the URL \"{url}\". It must start with https:// or http://."
+                ));
+            }
+            if let Some(key) = headers.keys().find(|key| !is_header_name(key)) {
+                return invalid(format!("has a header named \"{key}\", which isn't valid."));
+            }
+        }
+    }
+    for value in server.values() {
+        if let McpValue::Secret { secret } = value {
+            if !is_secret_id(secret) {
+                return invalid(format!(
+                    "refers to a secret with a malformed id, \"{secret}\"."
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_agent(name: &str, agent: &AgentDef) -> Result<()> {
+    if !is_command_name(name) {
+        return Err(Error::Invalid(format!(
+            "\"{name}\" in the agent list isn't a valid command name."
+        )));
+    }
+    let Some(mcp) = &agent.mcp else {
+        return Ok(());
+    };
+    // One argument in the `--flag=` form, never a flag waiting for the next argument.
+    let is_prefix = |arg: &str| {
+        arg.starts_with('-')
+            && arg.find('=').is_some_and(|eq| eq > 1)
+            && !arg.contains(char::is_whitespace)
+    };
+    if !is_prefix(&mcp.config_arg) || mcp.deny_arg.as_deref().is_some_and(|a| !is_prefix(a)) {
+        return Err(Error::Invalid(format!(
+            "The MCP arguments for {name} must each be one option of the form --flag=."
+        )));
+    }
+    Ok(())
+}
+
+/// Letters, digits, `-` and `_`: safe as a file or folder name, and in Claude's
+/// `mcp__<server>__<tool>` tool names.
+pub fn is_file_name(s: &str) -> bool {
+    (1..=64).contains(&s.len())
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// The characters MCP allows in a tool name.
+pub fn is_mcp_tool_name(s: &str) -> bool {
+    (1..=128).contains(&s.len())
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
+/// Uppercase hex: it's part of the `ENVROUTER_SECRET_<ID>` variable name.
+pub fn is_secret_id(s: &str) -> bool {
+    (1..=64).contains(&s.len())
+        && s.chars()
+            .all(|c| c.is_ascii_digit() || matches!(c, 'A'..='F'))
+}
+
+fn is_header_name(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 /// ASCII letters, digits and `_`, not starting with a digit.
@@ -308,7 +584,206 @@ mod tests {
                     )
                 })
                 .collect(),
+            ..Default::default()
         }
+    }
+
+    fn stdio(command: &str) -> McpServer {
+        McpServer::Stdio {
+            command: command.into(),
+            args: Vec::new(),
+            env: BTreeMap::new(),
+        }
+    }
+
+    fn claude_agent() -> AgentDef {
+        AgentDef {
+            mcp: Some(McpInjection {
+                dialect: McpDialect::Claude,
+                config_arg: "--mcp-config=".into(),
+                deny_arg: Some("--disallowedTools=".into()),
+                skip_any_args: vec!["--strict-mcp-config".into()],
+            }),
+        }
+    }
+
+    /// A config with one server, `github`, used by profile `a`.
+    fn with_server(server: McpServer, disabled: &[&str]) -> ConfigState {
+        let mut a = profile("a", &["~/dev"], None);
+        a.mcp_servers.insert(
+            "github".into(),
+            McpUse {
+                disabled_tools: disabled.iter().map(|t| t.to_string()).collect(),
+            },
+        );
+        ConfigState {
+            profiles: vec![a],
+            mcp_servers: BTreeMap::from([("github".into(), server)]),
+            agents: BTreeMap::from([("claude".into(), claude_agent())]),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn mcp_fields_have_the_wire_shape_the_window_uses() {
+        let mut config = with_server(
+            McpServer::Stdio {
+                command: "npx".into(),
+                args: vec![McpValue::Plain("-y".into())],
+                env: BTreeMap::from([(
+                    "GITHUB_TOKEN".into(),
+                    McpValue::Secret {
+                        secret: "7F3A".into(),
+                    },
+                )]),
+            },
+            &["delete_repo"],
+        );
+        config.mcp_servers.insert(
+            "linear".into(),
+            McpServer::Http {
+                url: "https://mcp.linear.app/mcp".into(),
+                headers: BTreeMap::new(),
+            },
+        );
+        let json = serde_json::to_value(&config).unwrap();
+        assert_eq!(
+            json["mcpServers"]["github"],
+            serde_json::json!({
+                "transport": "stdio",
+                "command": "npx",
+                "args": ["-y"],
+                "env": { "GITHUB_TOKEN": { "secret": "7F3A" } },
+            })
+        );
+        assert_eq!(json["mcpServers"]["linear"]["transport"], "http");
+        assert_eq!(
+            json["profiles"][0]["mcpServers"]["github"],
+            serde_json::json!({ "disabledTools": ["delete_repo"] })
+        );
+        assert_eq!(
+            json["agents"]["claude"]["mcp"],
+            serde_json::json!({
+                "dialect": "claude",
+                "configArg": "--mcp-config=",
+                "denyArg": "--disallowedTools=",
+                "skipAnyArgs": ["--strict-mcp-config"],
+            })
+        );
+        assert_eq!(serde_json::from_value::<ConfigState>(json).unwrap(), config);
+    }
+
+    #[test]
+    fn save_keeps_every_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = with_server(stdio("npx"), &[]);
+        save(dir.path(), &config).unwrap();
+        assert_eq!(load(dir.path()).unwrap().unwrap(), config);
+    }
+
+    #[test]
+    fn load_reads_a_version_1_file_as_one_without_servers() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join(CONFIG_FILE),
+            r#"{ "version": 1, "profiles": [{ "id": "a", "name": "A", "triggerPaths": ["~/dev"], "tools": {} }] }"#,
+        )
+        .unwrap();
+        let config = load(dir.path()).unwrap().unwrap();
+        assert!(config.mcp_servers.is_empty() && config.agents.is_empty());
+        assert!(config.profiles[0].mcp_servers.is_empty());
+        save(dir.path(), &config).unwrap();
+        assert_eq!(load(dir.path()).unwrap().unwrap().version, CONFIG_VERSION);
+    }
+
+    #[test]
+    fn validate_accepts_a_well_formed_library() {
+        validate(&with_server(stdio("npx"), &["delete_repo"]), &home()).unwrap();
+        let sse = McpServer::Sse {
+            url: "http://localhost:3000/sse".into(),
+            headers: BTreeMap::from([(
+                "Authorization".into(),
+                McpValue::Secret {
+                    secret: "00FF".into(),
+                },
+            )]),
+        };
+        validate(&with_server(sse, &[]), &home()).unwrap();
+    }
+
+    #[test]
+    fn validate_rejects_bad_servers() {
+        let remote = |url: &str, header: &str| McpServer::Http {
+            url: url.into(),
+            headers: BTreeMap::from([(header.into(), McpValue::Plain("x".into()))]),
+        };
+        let bad = [
+            stdio(" "),
+            McpServer::Stdio {
+                command: "npx".into(),
+                args: Vec::new(),
+                env: BTreeMap::from([("1BAD".into(), McpValue::Plain("x".into()))]),
+            },
+            McpServer::Stdio {
+                command: "npx".into(),
+                args: vec![McpValue::Secret {
+                    secret: "not-hex".into(),
+                }],
+                env: BTreeMap::new(),
+            },
+            remote("ftp://example.com", "X-Ok"),
+            remote("https://", "X-Ok"),
+            remote("https://example.com", "Bad Header"),
+        ];
+        for server in bad {
+            assert!(
+                validate(&with_server(server.clone(), &[]), &home()).is_err(),
+                "{server:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_rejects_bad_names_and_selections() {
+        let mut bad_name = with_server(stdio("npx"), &[]);
+        let server = bad_name.mcp_servers.remove("github").unwrap();
+        bad_name.mcp_servers.insert("git hub".into(), server);
+        bad_name.profiles[0].mcp_servers.clear();
+        assert!(validate(&bad_name, &home()).is_err());
+
+        let mut missing = with_server(stdio("npx"), &[]);
+        missing.mcp_servers.clear();
+        let err = validate(&missing, &home()).unwrap_err().to_string();
+        assert!(err.contains("isn't in the server list"), "{err}");
+
+        let bad_tool = with_server(stdio("npx"), &["delete repo"]);
+        assert!(validate(&bad_tool, &home()).is_err());
+
+        let mut bad_id = with_server(stdio("npx"), &[]);
+        bad_id.profiles[0].id = "../a".into();
+        assert!(validate(&bad_id, &home()).is_err());
+        // The id only names a folder once the profile uses a server.
+        bad_id.profiles[0].mcp_servers.clear();
+        validate(&bad_id, &home()).unwrap();
+    }
+
+    #[test]
+    fn validate_rejects_bad_agent_flags() {
+        for flag in ["--mcp-config", "mcp-config=", "-=", "--mcp config="] {
+            let mut config = with_server(stdio("npx"), &[]);
+            let agent = config.agents.get_mut("claude").unwrap();
+            agent.mcp.as_mut().unwrap().config_arg = flag.into();
+            assert!(validate(&config, &home()).is_err(), "{flag}");
+        }
+    }
+
+    #[test]
+    fn tool_names_adds_mcp_agents_once_a_profile_uses_a_server() {
+        let mut config = with_server(stdio("npx"), &[]);
+        config.agents.insert("aider".into(), AgentDef::default());
+        assert_eq!(tool_names(&config), BTreeSet::from(["claude"]));
+        config.profiles[0].mcp_servers.clear();
+        assert!(tool_names(&config).is_empty());
     }
 
     fn config(profiles: Vec<Profile>) -> ConfigState {

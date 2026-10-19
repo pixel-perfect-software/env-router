@@ -110,6 +110,7 @@ mod tests {
                         )
                     })
                     .collect(),
+                ..Default::default()
             }],
             ..Default::default()
         }

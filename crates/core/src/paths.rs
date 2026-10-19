@@ -19,3 +19,13 @@ pub fn shims(home: &Path) -> PathBuf {
 pub fn shim_binary(home: &Path) -> PathBuf {
     root(home).join("bin").join(SHIM_NAME)
 }
+
+/// Rendered MCP files: `<profile id>/<command>/`, holding one config file per server and the
+/// launch manifest the shim reads. The app rewrites the whole folder on every save.
+pub fn mcp(home: &Path) -> PathBuf {
+    root(home).join("mcp")
+}
+
+pub fn mcp_launch(home: &Path, profile_id: &str, command: &str) -> PathBuf {
+    mcp(home).join(profile_id).join(command).join("launch.json")
+}

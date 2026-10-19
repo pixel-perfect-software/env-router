@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 const SHIM: &str = env!("CARGO_BIN_EXE_envrouter-shim");
 
 const CONFIG: &str = r#"{
-  "version": 1,
+  "version": 2,
   "profiles": [
     { "id": "1", "name": "Personal", "triggerPaths": ["~/dev"],
       "tools": { "claude": { "envVar": "CLAUDE_CONFIG_DIR", "path": "~/.claude-me" } } },
@@ -290,4 +290,148 @@ fn refuses_to_run_under_its_own_name() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
+}
+
+impl Fixture {
+    /// Writes the launch manifest the app would render for `profile_id`'s `claude`.
+    fn write_launch(&self, profile_id: &str, launch: serde_json::Value) {
+        let dir = self
+            .home
+            .join(".envrouter/mcp")
+            .join(profile_id)
+            .join("claude");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("launch.json"), launch.to_string()).unwrap();
+    }
+
+    fn run_with(&self, cwd: &str, args: &[&str], env: &[(&str, &str)]) -> Output {
+        Command::new(self.shims.join("claude"))
+            .args(args)
+            .current_dir(self.home.join(cwd))
+            .env("HOME", &self.home)
+            .env("PATH", self.default_path())
+            .env_remove("CLAUDE_CONFIG_DIR")
+            .env_remove("ENVROUTER_EXPLAIN")
+            .env_remove("ENVROUTER_MCP")
+            .envs(env.iter().copied())
+            .output()
+            .unwrap()
+    }
+}
+
+fn fs_server() -> serde_json::Value {
+    serde_json::json!({
+        "skipAnyArgs": ["--strict-mcp-config"],
+        "servers": [{
+            "name": "fs",
+            "args": ["--mcp-config=/m/fs.json", "--disallowedTools=mcp__fs__rm"],
+        }],
+    })
+}
+
+#[test]
+fn injects_mcp_arguments_ahead_of_the_users_own() {
+    let f = Fixture::new(Some(CONFIG));
+    f.write_launch("2", fs_server());
+    let output = f.run_with("dev/work/app", &["--", "two words"], &[]);
+    assert_eq!(
+        stdout(&output),
+        format!(
+            "{}/.claude-work 4 --mcp-config=/m/fs.json --disallowedTools=mcp__fs__rm -- two words\n",
+            f.home.display()
+        )
+    );
+    assert_eq!(stderr(&output), "");
+
+    // Another profile has no manifest, so it gets nothing, quietly.
+    let output = f.run_with("dev", &["x"], &[]);
+    assert_eq!(
+        stdout(&output),
+        format!("{}/.claude-me 1 x\n", f.home.display())
+    );
+    assert_eq!(stderr(&output), "");
+}
+
+#[test]
+fn injects_mcp_servers_for_a_profile_that_leaves_the_variable_alone() {
+    let f = Fixture::new(Some(CONFIG));
+    f.write_launch("3", fs_server());
+    let output = f.run_with("dev/plain/sub", &[], &[]);
+    assert_eq!(
+        stdout(&output),
+        "unset 2 --mcp-config=/m/fs.json --disallowedTools=mcp__fs__rm\n"
+    );
+}
+
+#[test]
+fn skips_mcp_injection_when_asked() {
+    let f = Fixture::new(Some(CONFIG));
+    f.write_launch("2", fs_server());
+    let output = f.run_with("dev/work/app", &["--strict-mcp-config", "x"], &[]);
+    assert!(
+        stdout(&output).ends_with(" 2 --strict-mcp-config x\n"),
+        "{}",
+        stdout(&output)
+    );
+    let output = f.run_with("dev/work/app", &["x"], &[("ENVROUTER_MCP", "0")]);
+    assert!(stdout(&output).ends_with(" 1 x\n"), "{}", stdout(&output));
+}
+
+#[test]
+fn a_broken_manifest_warns_and_runs_without_mcp() {
+    let f = Fixture::new(Some(CONFIG));
+    let dir = f.home.join(".envrouter/mcp/2/claude");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("launch.json"), "{ not json").unwrap();
+    let output = f.run_with("dev/work/app", &["x"], &[]);
+    assert_eq!(
+        stdout(&output),
+        format!("{}/.claude-work 1 x\n", f.home.display())
+    );
+    assert!(
+        stderr(&output).contains("without MCP servers"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+/// The scratch HOME has no Keychain item, so the server that needs a secret is left out and
+/// the other still loads. (The lookup is keyed by HOME, so it never sees the real secrets.)
+#[test]
+fn leaves_out_a_server_whose_secret_is_unavailable() {
+    let f = Fixture::new(Some(CONFIG));
+    f.write_launch(
+        "2",
+        serde_json::json!({
+            "servers": [
+                { "name": "github", "args": ["--mcp-config=/m/github.json"], "secrets": ["7F3A"] },
+                { "name": "fs", "args": ["--mcp-config=/m/fs.json"] },
+            ],
+        }),
+    );
+    let output = f.run_with("dev/work/app", &["x"], &[]);
+    assert_eq!(
+        stdout(&output),
+        format!(
+            "{}/.claude-work 2 --mcp-config=/m/fs.json x\n",
+            f.home.display()
+        )
+    );
+    assert!(stderr(&output).contains("github"), "{}", stderr(&output));
+}
+
+#[test]
+fn explain_lists_the_mcp_servers_without_asking_the_keychain() {
+    let f = Fixture::new(Some(CONFIG));
+    f.write_launch(
+        "2",
+        serde_json::json!({
+            "servers": [{ "name": "github", "args": ["--mcp-config=/m/github.json"], "secrets": ["7F3A"] }],
+        }),
+    );
+    let output = f.run_with("dev/work/app", &[], &[("ENVROUTER_EXPLAIN", "1")]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let explanation: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(explanation["mcp"], serde_json::json!(["github"]));
+    assert_eq!(stderr(&output), "");
 }
