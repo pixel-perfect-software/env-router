@@ -8,3 +8,4 @@ work under their directory; this list exists so you can find them *before* you s
 - `.claude/context/ai-context/project-structure.md` — tree, stack, commands. Read before adding a directory.
 - `DESIGN.md` — design system: tokens (light/dark), components, rules. Read for UI work and design review.
 - `PRODUCT.md` — product truth (users, purpose, principles). Read before any UI or copy work.
+- `README.md` and `docs/contributing.md` — the user and contributor docs. Update them when a change is visible to users or changes a development command.

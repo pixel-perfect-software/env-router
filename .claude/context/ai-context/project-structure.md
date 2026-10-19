@@ -36,7 +36,9 @@ env-router/
 │   ├── lib/                   # api.ts (typed commands), types.ts (wire types), tools.ts (tool registry, MCP descriptors), mcp.ts (server drafts, rename/remove, secret locking), mcpCatalog.ts (well-known servers), serverLogo.ts (logo matching),
 │   │                          # verdict.ts (check wording, tested in verdict.test.ts), paths.ts, useFolderDrop.ts, confirm.ts
 │   └── dev/mockTauri.ts       # dev-only browser mock; never bundled
-├── README.md, LICENSE         # what it is, how it works, build, uninstall; MIT
+├── README.md, LICENSE         # users: what it is, build, getting started, troubleshooting, uninstall; MIT
+├── docs/contributing.md       # contributors: setup, commands, mock scenarios, rules, PRs
+├── docs/images/               # README screenshots (browser mock, `mcp` scenario, light and dark)
 ├── .github/workflows/ci.yml   # lint, type check, frontend and Rust tests on macOS (with fish installed)
 ├── PRODUCT.md                 # product truth for design work
 ├── .impeccable/               # design-workflow state: surface brief, review captures
