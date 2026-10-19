@@ -5,7 +5,7 @@
 use envrouter_core::{Error, Result};
 
 fn unavailable() -> Error {
-    Error::Keychain("there's no secret store EnvRouter can use on this system".into())
+    Error::SecretStore("there's no secret store EnvRouter can use on this system".into())
 }
 
 pub fn get(_service: &str, _account: &str) -> Result<Option<Vec<u8>>> {

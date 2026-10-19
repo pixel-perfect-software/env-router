@@ -10,8 +10,9 @@
 //! test, and the safe way to try the app) never reads or writes the real secrets.
 //!
 //! Each platform's store is a module in `store/` with the same three functions on one item:
-//! `get`, `set` and `delete`. The macOS Keychain is the only one so far; elsewhere every call
-//! reports that there's no store, and a server that needs a secret is left out.
+//! `get`, `set` and `delete`: the macOS Keychain, and the Secret Service (GNOME Keyring, KWallet)
+//! on Linux. Where there's no store, every call says so, and a server that needs a secret is
+//! left out.
 
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
@@ -20,7 +21,8 @@ use std::path::Path;
 use envrouter_core::{Error, Result};
 
 #[cfg_attr(target_os = "macos", path = "store/macos.rs")]
-#[cfg_attr(not(target_os = "macos"), path = "store/unavailable.rs")]
+#[cfg_attr(all(unix, not(target_os = "macos")), path = "store/secret_service.rs")]
+#[cfg_attr(not(unix), path = "store/unavailable.rs")]
 mod store;
 
 const SERVICE: &str = "EnvRouter MCP secrets";
@@ -36,7 +38,7 @@ fn account(home: &Path) -> String {
 pub fn read(home: &Path) -> Result<HashMap<String, String>> {
     match store::get(SERVICE, &account(home))? {
         Some(bytes) => serde_json::from_slice(&bytes)
-            .map_err(|err| Error::Keychain(format!("the saved secrets are unreadable: {err}"))),
+            .map_err(|err| Error::SecretStore(format!("the saved secrets are unreadable: {err}"))),
         None => Ok(HashMap::new()),
     }
 }
