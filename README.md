@@ -58,7 +58,7 @@ selection of MCP servers from a library you keep in the app:
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/servers-dark.png" />
-    <img src="docs/images/servers-light.png" width="860" alt="The Servers view: a list of five MCP servers (github, linear, playwright, postgres, sentry) beside the editor for github, whose Used by toggles show it loads in the Work profile." />
+    <img src="docs/images/servers-light.png" width="860" alt="The MCP Servers view: a list of five MCP servers (github, linear, playwright, postgres, sentry) beside the editor for github, whose Used by toggles show it loads in the Work profile." />
   </picture>
 </p>
 
