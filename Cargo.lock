@@ -1212,6 +1212,8 @@ dependencies = [
  "envrouter-keychain",
  "http",
  "jsonc-parser",
+ "nix",
+ "process-wrap",
  "rmcp",
  "serde",
  "serde_json",

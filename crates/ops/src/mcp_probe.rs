@@ -14,14 +14,23 @@ use std::time::Duration;
 
 use envrouter_core::config::{self, ConfigState, McpServer, McpValue};
 use envrouter_core::{paths, Error, Result};
+use nix::sys::signal::Signal;
+use process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop, ProcessGroup};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
-use rmcp::transport::{StreamableHttpClientTransport, TokioChildProcess};
+use rmcp::transport::StreamableHttpClientTransport;
 use rmcp::ServiceExt;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 /// Long enough for a first `npx` run to download its package.
 const TIMEOUT: Duration = Duration::from_secs(45);
+/// How a checked stdio server is stopped once its stdin is closed: each signal goes to its
+/// process group, then it gets this long to exit before the next.
+const STOP: [(Option<Signal>, Duration); 3] = [
+    (None, Duration::from_secs(1)),
+    (Some(Signal::SIGINT), Duration::from_secs(1)),
+    (Some(Signal::SIGTERM), Duration::from_secs(2)),
+];
 /// The tail of a server's stderr kept for a failed check.
 const LOG_LINES: usize = 20;
 
@@ -131,12 +140,17 @@ async fn check_stdio(
         .env("PATH", path)
         .env("HOME", home)
         .envs(env.iter().map(|(key, value)| (key, text(value, secrets))))
-        .current_dir(home);
-    let (transport, stderr) = match TokioChildProcess::builder(cmd)
-        .stderr(Stdio::piped())
+        .current_dir(home)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    // A group of its own, so stopping it reaches whatever it starts.
+    let mut child = match CommandWrap::from(cmd)
+        .wrap(ProcessGroup::leader())
+        .wrap(KillOnDrop)
         .spawn()
     {
-        Ok(spawned) => spawned,
+        Ok(child) => child,
         Err(err) => {
             return ServerCheck::failed(
                 CheckStatus::Failed,
@@ -145,9 +159,17 @@ async fn check_stdio(
             )
         }
     };
+    let (Some(stdin), Some(stdout)) = (child.stdin().take(), child.stdout().take()) else {
+        stop(child.as_mut()).await;
+        return ServerCheck::failed(
+            CheckStatus::Failed,
+            format!("Couldn't talk to {command}."),
+            None,
+        );
+    };
     // Kept while the check runs; read again once it's over, for a failure.
     let log = std::sync::Arc::new(std::sync::Mutex::new(VecDeque::new()));
-    if let Some(stderr) = stderr {
+    if let Some(stderr) = child.stderr().take() {
         let log = log.clone();
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
@@ -162,7 +184,8 @@ async fn check_stdio(
             }
         });
     }
-    let result = tokio::time::timeout(TIMEOUT, list_tools(transport)).await;
+    let result = tokio::time::timeout(TIMEOUT, list_tools((stdout, stdin))).await;
+    stop(child.as_mut()).await;
     let tail = || {
         let log = log
             .lock()
@@ -242,7 +265,23 @@ async fn check_http(
     }
 }
 
-/// Initializes, lists every page of tools, then closes, which stops a stdio server.
+/// Stops a checked stdio server and everything it started, the way the agents stop one. Most
+/// exit when their stdin closes. A wrapper such as `docker run` needs a signal, which it passes
+/// to its container (a container only acts on it under `--init`), so the group gets SIGINT and
+/// then SIGTERM. Anything left after that, or after the server itself exits, gets SIGKILL.
+async fn stop(child: &mut dyn ChildWrapper) {
+    for (signal, grace) in STOP {
+        if let Some(signal) = signal {
+            let _ = child.signal(signal as i32);
+        }
+        if tokio::time::timeout(grace, child.wait()).await.is_ok() {
+            break;
+        }
+    }
+    let _ = Box::into_pin(child.kill()).await;
+}
+
+/// Initializes, lists every page of tools, then closes the server's stdin.
 async fn list_tools<T, E, A>(transport: T) -> std::result::Result<Vec<ToolInfo>, String>
 where
     T: rmcp::transport::IntoTransport<rmcp::RoleClient, E, A>,
@@ -385,6 +424,52 @@ done
                 },
             ]
         );
+    }
+
+    fn alive(pid: &str) -> bool {
+        std::process::Command::new("kill")
+            .args(["-0", pid.trim()])
+            .stderr(Stdio::null())
+            .status()
+            .unwrap()
+            .success()
+    }
+
+    #[tokio::test]
+    async fn stops_the_server_and_what_it_started() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = dir.path().join("server");
+        // Like `docker run` in front of a container under --init: it outlives its stdin and
+        // SIGINT, and only SIGTERM stops it. What it starts ignores everything but SIGKILL.
+        let start = format!(
+            "trap '' INT\ntrap 'touch {dir}/termed; exit 0' TERM\n\
+             (trap '' INT TERM; exec sleep 600) &\necho $! > {dir}/started\nwhile IFS",
+            dir = dir.path().display()
+        );
+        write_executable(
+            &server,
+            &FAKE_SERVER
+                .replace("while IFS", &start)
+                .replace("done\n", "done\nwhile :; do sleep 1; done\n"),
+        );
+        let check = check(
+            &stdio(&server, &[]),
+            &HashMap::new(),
+            dir.path(),
+            "/usr/bin:/bin",
+        )
+        .await;
+        assert_eq!(check.status, CheckStatus::Ok, "{check:?}");
+        assert!(dir.path().join("termed").exists(), "never got SIGTERM");
+        let started = fs::read_to_string(dir.path().join("started")).unwrap();
+        // Reparented once the server went, so give its new parent a moment to reap it.
+        for _ in 0..20 {
+            if !alive(&started) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!("what the server started is still running");
     }
 
     #[tokio::test]
