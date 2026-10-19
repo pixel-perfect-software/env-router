@@ -10,6 +10,7 @@ import type {
   IdeHook,
   ImportCandidate,
   McpServer,
+  Pasted,
   Preview,
   ServerCheck,
   SetupStatus,
@@ -58,6 +59,8 @@ export const getMcpTools = () => invoke<Record<string, ToolInfo[]>>('get_mcp_too
 
 /** MCP servers the agents already define in their own files (as `payload` describes the agents and profiles). Read only. */
 export const importCandidates = (payload: ConfigState) => invoke<ImportCandidate[]>('import_candidates', { payload })
+/** The servers in pasted JSON. Rejects with a message to show as is. */
+export const parseMcpJson = (text: string) => invoke<Pasted>('parse_mcp_json', { text })
 
 /** Opens a file inside the home folder in the default text editor. */
 export const openInEditor = (path: string) => invoke<void>('open_in_editor', { path })

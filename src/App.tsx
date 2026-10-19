@@ -92,6 +92,8 @@ export default function App() {
   // A failed one-off action (turning on a shell, reinstalling). Cleared by the next success.
   const [actionError, setActionError] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | 'new' | null>(null)
+  // What a new profile starts from when it's a copy; gone once the inspector closes.
+  const [template, setTemplate] = useState<Profile | null>(null)
   // The window's two places. A dev-only `?view=servers` opens on the second, for review.
   const [view, setViewState] = useState<'profiles' | 'servers'>(() =>
     import.meta.env.DEV && new URLSearchParams(location.search).get('view') === 'servers' ? 'servers' : 'profiles',
@@ -185,7 +187,10 @@ export default function App() {
     wasInspecting.current = inspecting
   }, [inspecting])
   useEffect(() => {
-    if (editing === null) return
+    if (editing === null) {
+      setTemplate(null)
+      return
+    }
     let current = true
     getMcpTools()
       .then((tools) => current && setMcpTools(tools))
@@ -403,12 +408,22 @@ export default function App() {
     }
   }
 
+  /**
+   * Opens a new profile copied from `profile`: its agents, servers and turned-off tools, but no
+   * folders, since a folder belongs to one profile.
+   */
+  const duplicateProfile = (profile: Profile) => {
+    setTemplate({ ...profile, id: newId, name: `${profile.name} copy`, triggerPaths: [] })
+    setEditing('new')
+  }
+
   const showSlotMenu = async (profile: Profile, folder: string | null, event: MouseEvent) => {
     event.preventDefault()
     try {
       const menu = await Menu.new({
         items: [
           { id: 'edit', text: 'Edit Profile…', action: () => setEditing(profile.id) },
+          { id: 'duplicate', text: 'Duplicate Profile…', action: () => duplicateProfile(profile) },
           ...(folder
             ? [
                 { id: 'check', text: 'Check This Folder', action: () => runCheck(folder, defaultShell(), null) },
@@ -555,6 +570,7 @@ export default function App() {
             key={editingId}
             id={editingId}
             profile={config.profiles.find((p) => p.id === editing)}
+            template={editing === 'new' ? (template ?? undefined) : undefined}
             color={profileColors([...config.profiles.map((p) => p.id), newId]).get(editingId) ?? ''}
             home={home}
             library={config.mcpServers}
@@ -567,6 +583,14 @@ export default function App() {
                 : () => {
                     const profile = config.profiles.find((p) => p.id === editing)
                     return profile ? deleteProfile(profile) : Promise.resolve()
+                  }
+            }
+            onDuplicate={
+              editing === 'new'
+                ? undefined
+                : () => {
+                    const profile = config.profiles.find((p) => p.id === editing)
+                    if (profile) duplicateProfile(profile)
                   }
             }
           />

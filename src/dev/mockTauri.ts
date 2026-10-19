@@ -15,6 +15,7 @@ import type {
   FolderCheck,
   ImportCandidate,
   McpServer,
+  Pasted,
   Profile,
   ServerCheck,
   SetupStatus,
@@ -182,6 +183,51 @@ const mcpFor = (cfg: ConfigState, p: Profile | null, tool: string) =>
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+/** `mcp_import::parse_pasted`, without its JSONC: the same shapes, entries and messages. */
+const parsePasted = (text: string): Pasted => {
+  if (!text.trim()) throw "Paste a server's JSON first."
+  let json: Record<string, unknown>
+  try {
+    json = JSON.parse(text)
+  } catch (err) {
+    try {
+      json = JSON.parse(`{${text.trim().replace(/,$/, '')}}`)
+    } catch {
+      throw `That isn't JSON EnvRouter can read: ${(err as Error).message}.`
+    }
+  }
+  const obj = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null)
+  const isEntry = (v: unknown) => Boolean(obj(v) && ('command' in (v as object) || 'url' in (v as object)))
+  const entry = (v: unknown): McpServer | null => {
+    const e = obj(v)
+    if (!e) return null
+    if (typeof e.command === 'string')
+      return { transport: 'stdio', command: e.command, args: (e.args as string[]) ?? [], env: (e.env as Record<string, string>) ?? {} }
+    if (typeof e.url !== 'string') return null
+    if (e.type && !['http', 'streamable-http', 'sse'].includes(String(e.type))) return null
+    return { transport: e.type === 'sse' ? 'sse' : 'http', url: e.url, headers: (e.headers as Record<string, string>) ?? {} }
+  }
+  if (isEntry(json)) {
+    const server = entry(json)
+    if (!server) throw "EnvRouter can't use this server's transport or values."
+    return { servers: [{ name: null, server }], skipped: [] }
+  }
+  const table =
+    obj(json.mcpServers) ??
+    obj(json.servers) ??
+    obj(obj(json.mcp)?.servers) ??
+    (Object.keys(json).length > 0 && Object.values(json).every(isEntry) ? json : null)
+  if (!table) throw 'There are no MCP servers in it. Paste the part with mcpServers, or one server with its command or url.'
+  const pasted: Pasted = { servers: [], skipped: [] }
+  for (const [name, value] of Object.entries(table)) {
+    const server = entry(value)
+    if (server) pasted.servers.push({ name, server })
+    else pasted.skipped.push(name)
+  }
+  if (pasted.servers.length === 0) throw `EnvRouter can't use ${pasted.skipped.join(', ')}: their transports or values aren't ones it supports.`
+  return pasted
+}
+
 const respond = async (cmd: string, args: unknown): Promise<unknown> => {
   const a = (args ?? {}) as Record<string, unknown>
   switch (cmd) {
@@ -193,9 +239,11 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       return opts.multiple ? [`${HOME}/clients/acme`, `${HOME}/dev/acme-api`] : `${HOME}/dev/work/billing-api`
     }
     case 'plugin:dialog|message': {
-      // `ask` is sent as a message with custom buttons and resolves to the label clicked. Always confirm.
+      // `ask` is sent as a message with custom buttons and resolves to the label clicked. The
+      // browser's own confirm stands in for the native sheet, so a delete asks here too.
       const [labels] = Object.values((a.buttons ?? {}) as Record<string, unknown>)
-      return Array.isArray(labels) ? labels[0] : 'Ok'
+      const yes = window.confirm([a.title, a.message].filter(Boolean).join('\n\n'))
+      return Array.isArray(labels) ? labels[yes ? 0 : 1] : yes ? 'Ok' : 'Cancel'
     }
     case 'get_config':
       if (configBroken) throw `${HOME}/.envrouter/config.json is not valid JSON: expected \`,\` or \`}\` at line 7 column 5`
@@ -256,6 +304,8 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
           sources: [`${HOME}/dev/work/billing-api/.mcp.json`],
         },
       ] satisfies ImportCandidate[]
+    case 'parse_mcp_json':
+      return parsePasted(String(a.text ?? ''))
     case 'get_mcp_tools':
       return Object.fromEntries([...checked].filter((name) => config.mcpServers[name]).map((name) => [name, serverTools[name] ?? []]))
     case 'check_mcp_server': {

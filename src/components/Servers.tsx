@@ -2,15 +2,19 @@
 // Catalog and Import open in the same place as the editor, so nothing drills more than one level
 // deep. Which profiles load a server is set here (Used by) or in a profile's own editor.
 
-import { useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { checkMcpServer, errorMessage, getMcpTools } from '../lib/api'
 import { confirmDeleteServer, confirmDiscardServer } from '../lib/confirm'
 import {
   type DraftValue,
   draftOf,
+  duplicateDraft,
+  initSlot,
   isPending,
   newSecretId,
   type Pair,
+  plainCredentials,
+  plainNote,
   profilesUsing,
   SECRET_NAME,
   SERVER_NAME,
@@ -19,16 +23,23 @@ import {
   serverSummary,
   TRANSPORTS,
   type Transport,
+  withInit,
 } from '../lib/mcp'
 import { usePlatform } from '../lib/platform'
 import type { ConfigState, McpServer, ServerCheck, ToolInfo } from '../lib/types'
-import { CatalogIcon, CheckIcon, ImportIcon, TransportIcon } from './icons'
+import { CatalogIcon, CheckIcon, ImportIcon, PasteIcon, TransportIcon } from './icons'
 import { ServerMark } from './ServerMark'
-import { CatalogView, ImportView } from './ServerSources'
+import { CatalogView, ImportView, type PastedServers, PasteView } from './ServerSources'
 import { Button, ChevronIcon, CloseIcon, IconButton, LockIcon, PlusIcon, ProfileDot, Segmented, StatusTile, TextField, type Tone } from './ui'
 
 /** What the detail side shows. `name` null: a new server, blank or from `template`. */
-export type Detail = { kind: 'none' } | { kind: 'edit'; name: string | null; template?: ServerDraft } | { kind: 'catalog' } | { kind: 'import' }
+export type Detail =
+  | { kind: 'none' }
+  | { kind: 'edit'; name: string | null; template?: ServerDraft }
+  | { kind: 'catalog' }
+  | { kind: 'paste' }
+  /** The agents' own servers, or `pasted` ones. */
+  | { kind: 'import'; pasted?: PastedServers }
 
 /** A profile as the Used by toggles show it. */
 interface ProfileChip {
@@ -95,8 +106,19 @@ export function ServersView({
           <IconButton label="Add from Catalog" aria-pressed={detail.kind === 'catalog'} onClick={() => go({ kind: 'catalog' })}>
             <CatalogIcon />
           </IconButton>
-          <IconButton label="Import from Your Agents" aria-pressed={detail.kind === 'import'} onClick={() => go({ kind: 'import' })}>
+          <IconButton
+            label="Import from Your Agents"
+            aria-pressed={detail.kind === 'import' && !detail.pasted}
+            onClick={() => go({ kind: 'import' })}
+          >
             <ImportIcon />
+          </IconButton>
+          <IconButton
+            label="Paste JSON"
+            aria-pressed={detail.kind === 'paste' || (detail.kind === 'import' && Boolean(detail.pasted))}
+            onClick={() => go({ kind: 'paste' })}
+          >
+            <PasteIcon />
           </IconButton>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
@@ -155,10 +177,21 @@ export function ServersView({
             onPick={(template) => onDetail({ kind: 'edit', name: null, template })}
           />
         )}
+        {detail.kind === 'paste' && (
+          <PasteView
+            taken={names}
+            onBack={() => onDetail({ kind: 'none' })}
+            onOne={(template) => onDetail({ kind: 'edit', name: null, template })}
+            onMany={(pasted) => onDetail({ kind: 'import', pasted })}
+          />
+        )}
         {detail.kind === 'import' && (
           <ImportView
+            // Agents' and pasted servers are separate reviews; switching starts the other afresh.
+            key={detail.pasted ? 'pasted' : 'agents'}
             config={config}
             home={home}
+            pasted={detail.pasted}
             onBack={() => onDetail({ kind: 'none' })}
             onImport={async (servers, secrets) => {
               await onImport(servers, secrets)
@@ -200,6 +233,16 @@ export function ServersView({
                   }
                 : undefined
             }
+            onDuplicate={
+              detail.name && config.mcpServers[detail.name]
+                ? () =>
+                    go({
+                      kind: 'edit',
+                      name: null,
+                      template: duplicateDraft(detail.name ?? '', config.mcpServers[detail.name ?? ''], new Set(names)),
+                    })
+                : undefined
+            }
           />
         )}
       </section>
@@ -232,6 +275,10 @@ function NoServer({ empty, onPick }: { empty: boolean; onPick: (detail: Detail) 
             <ImportIcon />
             Import from Your Agents…
           </Button>
+          <Button onClick={() => onPick({ kind: 'paste' })}>
+            <PasteIcon />
+            Paste JSON…
+          </Button>
           <Button onClick={() => onPick({ kind: 'edit', name: null })}>
             <PlusIcon />
             Add by Hand…
@@ -255,11 +302,12 @@ function ServerEditor({
   onCancel,
   onSave,
   onDelete,
+  onDuplicate,
 }: {
   /** null for a new server. */
   name: string | null
   server: McpServer | undefined
-  /** A new server's starting point, from the catalog. */
+  /** A new server's starting point: a catalog entry or a copy of another server. */
   template?: ServerDraft
   /** Other servers' names, which this one can't take. */
   taken: string[]
@@ -272,6 +320,8 @@ function ServerEditor({
   onCancel: () => void
   onSave: (name: string, server: McpServer, secrets: Record<string, string>, usedBy: string[]) => Promise<void>
   onDelete?: () => Promise<void>
+  /** Opens a new server copied from the saved one (unsaved edits ask first). */
+  onDuplicate?: () => void
 }) {
   const initial = useRef(template ?? draftOf(name ?? '', server))
   const [draft, setDraft] = useState<ServerDraft>(initial.current)
@@ -343,6 +393,8 @@ function ServerEditor({
   }
 
   const stdio = draft.transport === 'stdio'
+  const initAt = stdio ? initSlot(draft.command, draft.args) : null
+  const plain = plainCredentials(draft)
   return (
     <form
       aria-label={name ? `Edit ${name}` : 'New MCP server'}
@@ -443,8 +495,34 @@ function ServerEditor({
                 className="w-full"
               />
             </div>
-            <ValueList label="Arguments" add="Add Argument" placeholder="-y" values={draft.args} onChange={(args) => set('args', args)} />
-            <PairList label="Environment" add="Add Variable" keyPlaceholder="API_KEY" rows={draft.env} onChange={(env) => set('env', env)} />
+            <ValueList
+              label="Arguments"
+              add="Add Argument"
+              placeholder="-y"
+              values={draft.args}
+              onChange={(args) => set('args', args)}
+              note={draft.args.length > 0 && <LockLegend />}
+            />
+            {initAt !== null && (
+              <Caution
+                action={
+                  <Button onClick={() => set('args', withInit(draft.args, initAt))}>
+                    Add <span className="font-mono">--init</span>
+                  </Button>
+                }
+              >
+                Without <span className="font-mono">--init</span>, the container keeps running after the agent stops it.
+              </Caution>
+            )}
+            {plain.length > 0 && <Caution>{plainNote(plain)}</Caution>}
+            <PairList
+              label="Environment"
+              add="Add Variable"
+              keyPlaceholder="API_KEY"
+              rows={draft.env}
+              onChange={(env) => set('env', env)}
+              note={draft.args.length === 0 && draft.env.length > 0 && <LockLegend />}
+            />
           </>
         ) : (
           <>
@@ -462,12 +540,14 @@ function ServerEditor({
                 className="w-full"
               />
             </div>
+            {plain.length > 0 && <Caution>{plainNote(plain)}</Caution>}
             <PairList
               label="Headers"
               add="Add Header"
               keyPlaceholder="Authorization"
               rows={draft.headers}
               onChange={(headers) => set('headers', headers)}
+              note={draft.headers.length > 0 && <LockLegend />}
             />
           </>
         )}
@@ -478,6 +558,11 @@ function ServerEditor({
         {onDelete && (
           <Button onClick={remove} disabled={saving}>
             Delete…
+          </Button>
+        )}
+        {onDuplicate && (
+          <Button onClick={onDuplicate} disabled={saving}>
+            Duplicate
           </Button>
         )}
         <p role="alert" className="min-w-0 flex-1 text-small text-problem">
@@ -491,6 +576,27 @@ function ServerEditor({
         </Button>
       </footer>
     </form>
+  )
+}
+
+/** A warning tucked under the field it's about: a well with the amber tile, one line, and maybe a fix. */
+function Caution({ children, action }: { children: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="-mt-3 flex items-center gap-2 rounded-[8px] bg-well py-1.5 pr-1.5 pl-2">
+      <StatusTile tone="warn" size={20} />
+      <p className="min-w-0 flex-1 py-0.5 text-small text-ink-2">{children}</p>
+      {action}
+    </div>
+  )
+}
+
+/** What the lock beside a value does, under the first list that has values: its tooltip takes too long to come up. */
+function LockLegend() {
+  const platform = usePlatform()
+  return (
+    <p className="mb-2 flex items-center gap-1 text-caption text-ink-2">
+      Click <LockIcon /> to keep a value in the {platform.secretStore} instead of config.json.
+    </p>
   )
 }
 
@@ -561,16 +667,20 @@ function ValueList({
   placeholder,
   values,
   onChange,
+  note,
 }: {
   label: string
   add: string
   placeholder: string
   values: DraftValue[]
   onChange: (values: DraftValue[]) => void
+  /** A line under the label, before the rows. */
+  note?: ReactNode
 }) {
   return (
     <fieldset className="min-w-0">
       <legend className="mb-1.5 text-small font-medium text-ink-2">{label}</legend>
+      {note}
       {values.length > 0 && (
         <ol className="mb-2 space-y-1.5">
           {values.map((value, i) => (
@@ -612,17 +722,21 @@ function PairList({
   keyPlaceholder,
   rows,
   onChange,
+  note,
 }: {
   label: string
   add: string
   keyPlaceholder: string
   rows: Pair[]
   onChange: (rows: Pair[]) => void
+  /** A line under the label, before the rows. */
+  note?: ReactNode
 }) {
   const update = (i: number, row: Pair) => onChange(rows.map((r, j) => (j === i ? row : r)))
   return (
     <fieldset className="min-w-0">
       <legend className="mb-1.5 text-small font-medium text-ink-2">{label}</legend>
+      {note}
       {rows.length > 0 && (
         <ul className="mb-2 space-y-1.5">
           {rows.map((row, i) => (

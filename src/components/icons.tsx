@@ -7,6 +7,7 @@ import {
   Bot,
   ChevronLeft,
   ChevronRight,
+  ClipboardPaste,
   CodeXml,
   CornerDownRight,
   Folder,
@@ -14,7 +15,10 @@ import {
   FolderSearch,
   Globe,
   Import,
+  Laptop,
   Lock,
+  LockOpen,
+  LogIn,
   type LucideIcon,
   type LucideProps,
   Package,
@@ -22,6 +26,7 @@ import {
   Plug,
   Plus,
   RadioTower,
+  Search,
   SquareTerminal,
   X,
 } from 'lucide-react'
@@ -51,6 +56,13 @@ export const PlugIcon = sized(Plug, 14)
 export const LockIcon = sized(Lock, 12)
 export const CatalogIcon = sized(Package, 16)
 export const ImportIcon = sized(Import, 16)
+export const PasteIcon = sized(ClipboardPaste, 16)
+export const SearchIcon = sized(Search, 14)
+/** The catalog's captions: where a server runs, and what it needs before it works. */
+export const RemoteIcon = sized(Globe, 11)
+export const LocalIcon = sized(Laptop, 11)
+export const SignInIcon = sized(LogIn, 11)
+export const OpenIcon = sized(LockOpen, 11)
 export const CheckIcon = sized(Activity, 16)
 
 const TRANSPORT: Record<McpServer['transport'], LucideIcon> = { stdio: SquareTerminal, http: Globe, sse: RadioTower }

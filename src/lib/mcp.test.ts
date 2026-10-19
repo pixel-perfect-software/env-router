@@ -2,11 +2,17 @@ import { describe, expect, it } from 'vitest'
 import {
   draftFromCatalog,
   draftOf,
+  duplicateDraft,
   freeName,
+  initSlot,
   isPending,
   newSecretId,
+  plainCredentials,
   sameEndpoint,
   serverOf,
+  serverWithInit,
+  suggestName,
+  withInit,
   withoutServer,
   withSecretsLocked,
   withServer,
@@ -126,9 +132,93 @@ describe('imports and the catalog', () => {
     expect(serverOf(draft)).toEqual({ error: 'Enter a value for Authorization, or remove it.' })
   })
 
+  it('locks a token by its shape under a harmless name, and flags plain credentials it leaves alone', () => {
+    const draft = withSecretsLocked(
+      draftOf('n', { transport: 'stdio', command: 'npx', args: [], env: { OPENAPI_MCP_HEADERS: '{"Authorization":"Bearer ntn_abc"}', MODE: 'ro' } }),
+    )
+    expect(draft.env.filter((row) => isPending(row.value)).map((row) => row.key)).toEqual(['OPENAPI_MCP_HEADERS'])
+    const stdio = (args: string[]) => draftOf('s', { transport: 'stdio', command: 'npx', args, env: {} })
+    expect(plainCredentials(stdio(['-y', '@stripe/mcp', '--api-key=sk_live_123']))).toEqual(['argument 3'])
+    expect(plainCredentials(stdio(['srv', '--token', 'abc123']))).toEqual(['argument 3'])
+    expect(plainCredentials(stdio(['srv', 'postgresql://u:pw@host/db']))).toEqual(['argument 2'])
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: a literal reference, as users type it
+    expect(plainCredentials(stdio(['srv', '--api-key=${API_KEY}', '-e', 'GITHUB_TOKEN', '--transport', 'stdio']))).toEqual([])
+    const http = (url: string) => draftOf('h', { transport: 'http', url, headers: {} })
+    expect(plainCredentials(http('https://mcp.x.com/mcp?api_key=abc'))).toEqual(['the URL'])
+    expect(plainCredentials(http('https://huggingface.co/mcp?login'))).toEqual([])
+  })
+
+  it('locks a connection string with a password, whatever its name', () => {
+    const draft = withSecretsLocked(
+      draftOf('pg', {
+        transport: 'stdio',
+        command: 'docker',
+        args: [],
+        env: {
+          DATABASE_URI: 'postgresql://app:hunter2@host.docker.internal:5432/db',
+          HOST_URL: 'https://example.com',
+          NO_PASS: 'redis://localhost:6379',
+        },
+      }),
+    )
+    expect(draft.env.filter((row) => isPending(row.value)).map((row) => row.key)).toEqual(['DATABASE_URI'])
+  })
+
+  it('duplicates a server under a free name, its secrets kept by name but empty', () => {
+    const server: McpServer = {
+      transport: 'stdio',
+      command: 'docker',
+      args: ['run', { secret: 'A1' }],
+      env: { DATABASE_URI: { secret: 'B2' }, MODE: 'ro' },
+    }
+    const copy = duplicateDraft('pg', server, new Set(['pg', 'pg-2']))
+    expect(copy.name).toBe('pg-3')
+    expect(copy.args[0]).toBe('run')
+    expect(copy.env[1]).toEqual({ key: 'MODE', value: 'ro' })
+    for (const value of [copy.args[1], copy.env[0].value]) {
+      expect(isPending(value) && value.value).toBe('')
+      expect(isPending(value) && ['A1', 'B2'].includes(value.secret)).toBe(false)
+    }
+    expect(copy.env[0].key).toBe('DATABASE_URI')
+    expect(serverOf(copy)).toEqual({ error: 'Enter a value for DATABASE_URI, or remove it.' })
+  })
+
+  it('suggests a name for a pasted server from its host, package or image', () => {
+    const stdio = (command: string, args: string[]): McpServer => ({ transport: 'stdio', command, args, env: {} })
+    const http = (url: string): McpServer => ({ transport: 'http', url, headers: {} })
+    expect(suggestName(http('https://mcp.linear.app/mcp'))).toBe('linear')
+    expect(suggestName(http('https://api.githubcopilot.com/mcp/'))).toBe('githubcopilot')
+    expect(suggestName(http('http://127.0.0.1:3845/mcp'))).toBe('server')
+    expect(suggestName(stdio('npx', ['-y', '@upstash/context7-mcp@latest']))).toBe('context7')
+    expect(suggestName(stdio('uvx', ['mcp-server-fetch']))).toBe('fetch')
+    expect(suggestName(stdio('docker', ['run', '--init', '-i', '--rm', '-e', 'DATABASE_URI', 'crystaldba/postgres-mcp']))).toBe('postgres')
+    expect(suggestName(stdio('docker', ['run', '-i', 'ghcr.io/github/github-mcp-server:1.2']))).toBe('github')
+    expect(suggestName(stdio('/usr/local/bin/semgrep', ['mcp']))).toBe('semgrep')
+    expect(suggestName(stdio('docker', ['run', '-i', '-v', '/data:/data', 'mcp/sqlite:latest']))).toBe('sqlite')
+  })
+
   it('finds a free name', () => {
     expect(freeName('gh', new Set(['x']))).toBe('gh')
     expect(freeName('gh', new Set(['gh', 'gh-2']))).toBe('gh-3')
+  })
+})
+
+describe('--init for containers', () => {
+  it('finds where --init goes in docker and podman run commands that lack it', () => {
+    expect(initSlot('docker', ['run', '-i', '--rm', 'image'])).toBe(1)
+    expect(initSlot('/opt/homebrew/bin/podman', ['container', 'run', '-i', 'image'])).toBe(2)
+    expect(initSlot('docker', ['run', '-i', '--init', 'image'])).toBeNull()
+    expect(initSlot('docker', ['run', '--init=false', 'image'])).toBeNull()
+    expect(initSlot('docker', ['exec', '-i', 'box', 'server'])).toBeNull()
+    expect(initSlot('npx', ['run', 'server'])).toBeNull()
+  })
+
+  it('adds it on import, and leaves every other server as it is', () => {
+    const docker: McpServer = { transport: 'stdio', command: 'docker', args: ['run', '-i', { secret: 'AB' }, 'image'], env: {} }
+    expect(serverWithInit(docker)).toEqual({ ...docker, args: ['run', '--init', '-i', { secret: 'AB' }, 'image'] })
+    const npx: McpServer = { transport: 'stdio', command: 'npx', args: ['-y', 'server'], env: {} }
+    expect(serverWithInit(npx)).toBe(npx)
+    expect(withInit(['run', 'image'], 1)).toEqual(['run', '--init', 'image'])
   })
 })
 

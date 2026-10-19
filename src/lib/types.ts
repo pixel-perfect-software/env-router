@@ -73,6 +73,18 @@ export interface ImportCandidate {
   sources: string[]
 }
 
+/** `mcp_import::Pasted`: the servers in text the user pasted, and the names of entries EnvRouter can't use. */
+export interface Pasted {
+  servers: PastedServer[]
+  skipped: string[]
+}
+
+/** `mcp_import::PastedServer`. `name` is null for a lone entry, which the text doesn't name. */
+export interface PastedServer {
+  name: string | null
+  server: McpServer
+}
+
 /** `envrouter_core::config::ConfigState`. Rust writes the current `version` on every save. */
 export interface ConfigState {
   version: number
