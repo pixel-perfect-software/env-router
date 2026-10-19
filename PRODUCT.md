@@ -7,7 +7,7 @@
 web
 
 ## Users
-Developers on a Mac who keep separate coding-agent accounts or configs side by side (work and
+Developers on macOS or Linux (WSL 2 included) who keep separate coding-agent accounts or configs side by side (work and
 personal, or one per client) and switch between them many times a day. Today they get it wrong
 by hand: the wrong account in the wrong repo, or an alias they forget to run. They want the
 right one picked automatically from the folder they're in, and then to forget the tool exists.
@@ -29,26 +29,26 @@ any folder. It's specific to developer CLIs and their account or config separati
 general env-var manager like direnv or mise.
 
 ## Operating Context
-- **A macOS desktop app** (Tauri v2: a native window around a web view; React frontend). It's opened occasionally, not kept running. The real usage happens in the terminal.
+- **A desktop app for macOS and Linux** (Tauri v2: a native window around a web view; React frontend), plus the `envrouter` CLI for machines without a desktop (servers, WSL distros). The app is opened occasionally, not kept running. The real usage happens in the terminal.
 - **Typical session:** first-run setup (create a profile, enable shell integration for the login shell, check a folder), then rare edits when a new client or repo appears, or a diagnosis when a folder doesn't route.
 - **Terms the UI uses:** profile, trigger folder, tool, shell integration (the block added to `.zshrc` and similar files), shim, check a folder, MCP server, server library.
 - **Diagnosis results:** routed (profile, variable, value, real binary); blocked by a shell alias or function; blocked by another copy earlier on PATH; integration off in that shell; not found; tool not installed; shim failed.
 
 ## Capabilities and Constraints
-- Profiles: a name, trigger folders (the native folder picker; a trigger covers its whole subtree), and per-tool settings. The agents offered come from a registry (`src/lib/tools.ts`). An agent qualifies only if one variable separates its whole account, logins included. opencode (logins kept outside its config dir) and Aider (API keys) don't qualify. Codex and Gemini CLI would, and may come back as add-ons; they're left out to keep the app focused. GUI apps such as Cursor can't be routed this way.
+- Profiles: a name, trigger folders (the native folder picker; a trigger covers its whole subtree), and per-tool settings. The agents offered come from a registry (`src/lib/tools.ts`). An agent qualifies only if one variable separates its whole account, logins included. opencode (logins kept outside its config dir) and Aider (API keys) don't qualify. Codex and Gemini CLI would, and may come back as add-ons; they're left out to keep the app focused. An agent's editor extension that runs its own copy of the agent (Claude Code for VS Code, Cursor, Windsurf) is routed through its process-wrapper setting, including over VS Code Remote into WSL; GUI apps without such a setting can't be routed.
 - The most specific trigger's profile wins outright. A profile that doesn't configure a tool leaves it unrouted in its folders.
 - A folder can belong to only one profile. Save errors come back as user-readable strings to show inline.
 - Shell integration for zsh, bash and fish, by adding or removing a marked block in the shell's startup files. The app shows which files it edits.
 - Folder check (real shell, slow, up to ~15s) and instant preview (from the config alone).
-- No OAuth or logins. A new agent config folder starts logged out, and remote MCP servers sign in through the agent (`/mcp`); the user does both from the terminal. The only credentials EnvRouter holds are MCP secret values the user enters, in the macOS Keychain.
+- No OAuth or logins. A new agent config folder starts logged out, and remote MCP servers sign in through the agent (`/mcp`); the user does both from the terminal. The only credentials EnvRouter holds are MCP secret values the user enters, in the platform's secret store: the macOS Keychain, the Linux keyring (Secret Service), or, inside WSL, the Windows Credential Manager.
 - MCP servers reach the agent through the shim at launch, with no background process: the app only needs to run when servers or profiles change.
-- macOS only (11 or later). No paid Apple Developer ID, so it's signed ad hoc and not notarized. Users install the release build through a Homebrew cask (pixel-perfect-software/homebrew-tap), which clears the quarantine flag, or build it from source.
+- macOS 11 or later on Apple Silicon, and Linux (x86_64, aarch64), WSL 2 included; native Windows is planned. No paid Apple Developer ID, so the macOS app is signed ad hoc and not notarized: users install it through a Homebrew cask (pixel-perfect-software/homebrew-tap), which clears the quarantine flag. Linux users install a `.deb` or AppImage from the release; the CLI comes from the same tap as a formula. Building from source works everywhere.
 
 ## Brand Commitments
 Name: EnvRouter. The app icon is "Points": a Finder-blue folder on a dark navy tile whose track
 forks to two accounts and lights the one it uses; the menu bar glyph is that folder with the
 fork cut through it. It says the product's one idea: the folder decides. No established voice
-yet. The user's direction: a quiet, precise, native-feeling Mac utility; the icon should be
+yet. The user's direction: a quiet, precise, native-feeling utility (a Mac utility on macOS; on Linux the same world under the system's own title bar and conventions); the icon should be
 clear and creative, never loud or abstract.
 
 ## Evidence on Hand
