@@ -1,7 +1,7 @@
 [package]
 name = "envrouter-keychain"
 version = "0.1.0"
-description = "EnvRouter's MCP secrets in the macOS Keychain, and the helper binary the shim runs to read them"
+description = "EnvRouter's MCP secrets in the platform's secret store, and the helper binary the shim runs to read them"
 license = "MIT"
 edition = "2021"
 publish = false
@@ -12,8 +12,10 @@ path = "src/main.rs"
 
 [dependencies]
 envrouter-core.workspace = true
-security-framework.workspace = true
 serde_json.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework.workspace = true
 
 [lints]
 workspace = true
