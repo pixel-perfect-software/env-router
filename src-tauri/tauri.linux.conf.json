@@ -1,5 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
+  "mainBinaryName": "envrouter-app",
   "app": {
     "windows": [
       {
@@ -15,7 +16,10 @@
     ]
   },
   "bundle": {
-    "targets": ["deb", "appimage"],
+    "targets": [
+      "deb",
+      "appimage"
+    ],
     "linux": {
       "deb": {
         "section": "devel"

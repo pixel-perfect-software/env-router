@@ -2,6 +2,7 @@
 #
 #   podman compose -f dev/containers/compose.yaml run --rm linux-test
 #   podman compose -f dev/containers/compose.yaml run --rm linux-app
+#   podman compose -f dev/containers/compose.yaml run --rm linux-bundle
 #   podman compose -f dev/containers/compose.yaml run --rm windows-helper-build
 #   podman compose -f dev/containers/compose.yaml run --rm windows-helper-wine
 #
@@ -37,6 +38,21 @@ services:
     labels: { envrouter.purpose: "Linux desktop app build" }
     command: /scripts/linux-app.sh
 
+  # The Linux release build, as release.yml runs it: the .deb (with the Windows helper inside)
+  # and the AppImage, left in the bundles volume.
+  linux-bundle:
+    <<: *common
+    image: envrouter-dev/linux:latest
+    labels: { envrouter.purpose: "Linux release bundles (.deb, AppImage)" }
+    volumes:
+      - ../..:/src:ro
+      - ./scripts:/scripts:ro
+      - target:/target
+      - registry:/usr/local/cargo/registry
+      - rustup:/usr/local/rustup
+      - bundles:/out
+    command: /scripts/linux-bundle.sh
+
   # The Windows secrets helper (Credential Manager), cross-compiled with mingw and linted, natively.
   # It lands in the windows-exe volume for windows-helper-wine.
   windows-helper-build:
@@ -71,3 +87,4 @@ volumes:
   registry:
   rustup:
   windows-exe:
+  bundles:
