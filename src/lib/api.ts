@@ -2,7 +2,7 @@
 // plain string that's written to be shown to the user as is.
 
 import { invoke } from '@tauri-apps/api/core'
-import type { ConfigState, FolderCheck, Preview, SetupStatus, Shell, ShellStatus } from './types'
+import type { ConfigState, FolderCheck, McpServer, Preview, ServerCheck, SetupStatus, Shell, ShellStatus, ToolInfo } from './types'
 
 /** Reads `~/.envrouter/config.json`, creating an empty one on first run. */
 export const getConfig = () => invoke<ConfigState>('get_config')
@@ -24,6 +24,16 @@ export const checkFolder = (shell: Shell, folder: string, tool: string) => invok
 
 /** Instant: which profile the given, possibly unsaved, config picks for `folder`. */
 export const previewFolder = (payload: ConfigState, folder: string, tool: string) => invoke<Preview>('preview_folder', { payload, folder, tool })
+
+/**
+ * Starts `server` (or connects to it) with the login shell's PATH and lists its tools; up to
+ * ~45s for a first `npx` download. `secrets`: values typed but not yet saved, keyed by id.
+ */
+export const checkMcpServer = (name: string, server: McpServer, secrets: Record<string, string>) =>
+  invoke<ServerCheck>('check_mcp_server', { name, server, secrets })
+
+/** Each library server's tools, from its last check that worked, if its definition hasn't changed since. */
+export const getMcpTools = () => invoke<Record<string, ToolInfo[]>>('get_mcp_tools')
 
 /** Opens a file inside the home folder in the default text editor. */
 export const openInEditor = (path: string) => invoke<void>('open_in_editor', { path })

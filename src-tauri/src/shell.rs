@@ -6,6 +6,7 @@ use std::io::{Read, Seek, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -358,6 +359,52 @@ pub enum FolderCheck {
     NotInstalled,
     /// The shim is first on PATH but couldn't report a route.
     ShimFailed { message: String },
+}
+
+/// The PATH a new terminal window gets from the user's login shell, after its startup files.
+/// An app opened from Finder has a bare PATH, so MCP server checks start `npx` and the like
+/// with this one. Asked once per app run; a failure is reported, not cached.
+pub fn login_path(home: &Path) -> Result<String> {
+    static CACHE: Mutex<Option<(PathBuf, String)>> = Mutex::new(None);
+    let mut cache = CACHE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some((cached_home, path)) = cache.as_ref() {
+        if cached_home == home {
+            return Ok(path.clone());
+        }
+    }
+    let shell = Shell::ALL
+        .into_iter()
+        .find(|&s| status(s, home).is_default)
+        .unwrap_or(Shell::Zsh);
+    let binary = shell
+        .binary()
+        .ok_or_else(|| Error::Invalid(format!("{} isn't installed.", shell.name())))?;
+    let print = match shell {
+        Shell::Fish => format!("printf '%s\\n' \"{PATH_MARK}\"(string join : $PATH)"),
+        Shell::Zsh | Shell::Bash => format!("printf '%s\\n' \"{PATH_MARK}$PATH\""),
+    };
+    let mut command = Command::new(binary);
+    command.args(["-l", "-i", "-c", &print]).current_dir(home);
+    fresh_env(&mut command, home);
+    let output = run(command, Duration::from_secs(15))?;
+    let path = output
+        .stdout
+        .lines()
+        .rev()
+        .find_map(|line| line.split_once(PATH_MARK))
+        .map(|(_, path)| path.trim().to_string())
+        .filter(|path| !path.is_empty())
+        .ok_or_else(|| {
+            Error::Command(format!(
+                "{} didn't report its PATH. {}",
+                shell.name(),
+                output.stderr.trim()
+            ))
+        })?;
+    *cache = Some((home.to_path_buf(), path.clone()));
+    Ok(path)
 }
 
 /// Starts the shell the way Terminal does (login, interactive) in `folder`, runs its prompt

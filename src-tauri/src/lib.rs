@@ -1,3 +1,4 @@
+mod mcp_probe;
 mod shell;
 mod shims;
 mod tray;
@@ -5,7 +6,7 @@ mod tray;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use envrouter_core::config::{self, ConfigState};
+use envrouter_core::config::{self, ConfigState, McpServer};
 use envrouter_core::{mcp, paths, secrets, Error, Result};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
@@ -129,6 +130,44 @@ async fn check_folder(
     blocking(move || shell::check_folder(shell, &home, Path::new(&folder), &tool)).await
 }
 
+/// Starts `server` (or connects to it) and lists its tools. `secrets` holds values typed since
+/// the last save; the Keychain supplies the rest. Runs only when the user asks: it runs the
+/// server's own command.
+#[tauri::command]
+async fn check_mcp_server(
+    app: AppHandle,
+    name: String,
+    server: McpServer,
+    secrets: HashMap<String, String>,
+) -> Result<mcp_probe::ServerCheck> {
+    let home = home(&app)?;
+    let path = {
+        let home = home.clone();
+        blocking(move || shell::login_path(&home)).await?
+    };
+    let check = mcp_probe::check(&server, &secrets, &home, &path).await;
+    if check.status == mcp_probe::CheckStatus::Ok && config::is_file_name(&name) {
+        blocking(move || mcp_probe::remember(&home, &name, &server, &check.tools).map(|_| check))
+            .await
+    } else {
+        Ok(check)
+    }
+}
+
+/// The tools of each library server from its last check that worked, if its definition hasn't
+/// changed since. The profile editor offers them for turning off.
+#[tauri::command]
+async fn get_mcp_tools(
+    app: AppHandle,
+) -> Result<std::collections::BTreeMap<String, Vec<mcp_probe::ToolInfo>>> {
+    let home = home(&app)?;
+    blocking(move || {
+        let config = config::load_or_init(&paths::root(&home))?;
+        Ok(mcp_probe::known_tools(&config, &home))
+    })
+    .await
+}
+
 /// Opens a file in the user's default text editor, e.g. the startup file that defines an alias
 /// shadowing the shim. Limited to existing files inside the home folder.
 #[tauri::command]
@@ -202,7 +241,9 @@ pub fn run() {
             set_shell_integration,
             check_folder,
             preview_folder,
-            open_in_editor
+            open_in_editor,
+            check_mcp_server,
+            get_mcp_tools
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

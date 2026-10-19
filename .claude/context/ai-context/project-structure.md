@@ -20,6 +20,7 @@ env-router/
 │   ├── src/lib.rs             # Tauri commands (below) and app setup
 │   ├── src/shims.rs           # installs the shim binary; syncs one symlink per tool
 │   ├── src/shell.rs           # startup-file blocks for zsh/bash/fish, check_folder, preview
+│   ├── src/mcp_probe.rs       # MCP server check (rmcp): tools, needs-login, stderr tail; tool-list cache
 │   ├── src/tray.rs            # menu bar icon and menu; close-to-hide; Dock icon only while the window is open
 │   ├── capabilities/default.json  # core, plus the three dialog/opener calls the window makes; no fs
 │   ├── tauri.conf.json        # id com.tylerrobertson.envrouter, CSP, externalBin, an .app bundle signed ad hoc
@@ -59,6 +60,8 @@ adds a marked block to the end of `~/.zshrc` (or `$ZDOTDIR/.zshrc`), bash's logi
 | `set_shell_integration(shell, enabled)` | Adds or removes the startup-file block |
 | `check_folder(shell, folder, tool)` | Real-shell check, after running the prompt hooks once: routed (with the MCP servers it adds), shadowed by an alias/function, shadowed on PATH (which includes a shell that's off, and says whether a prompt hook did it), not found, tool not installed, or shim failed |
 | `preview_folder(payload, folder, tool)` | Instant profile preview from an unsaved config |
+| `check_mcp_server(name, server, secrets)` | Starts or connects to one MCP server with the login shell's PATH and lists its tools: ok, needs sign-in (401), failed with its stderr tail, timed out, or unsupported (SSE); caches a good list |
+| `get_mcp_tools` | Each library server's cached tool list, while its definition is unchanged |
 | `open_in_editor(path)` | Opens an existing file inside the home folder in the default text editor |
 
 ## Tech stack

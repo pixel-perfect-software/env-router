@@ -9,8 +9,8 @@ import { confirmDelete, confirmDiscard } from '../lib/confirm'
 import { mcpAgentLabels, serverSummary } from '../lib/mcp'
 import { splitLeaf, tildify } from '../lib/paths'
 import { KNOWN_TOOLS } from '../lib/tools'
-import type { McpServer, Profile } from '../lib/types'
-import { Button, CheckBox, CloseIcon, FolderIcon, IconButton, PlusIcon, ProfileDot, TextField } from './ui'
+import type { McpServer, Profile, ToolInfo } from '../lib/types'
+import { Button, CheckBox, ChevronIcon, CloseIcon, FolderIcon, IconButton, PlusIcon, ProfileDot, TextField } from './ui'
 
 interface FolderRow {
   path: string
@@ -23,6 +23,7 @@ export function ProfileInspector({
   color,
   home,
   library,
+  tools,
   onCancel,
   onSave,
   onDelete,
@@ -35,6 +36,8 @@ export function ProfileInspector({
   home: string
   /** The MCP server library to choose from. */
   library: Record<string, McpServer>
+  /** Each server's tools, where a check has listed them. */
+  tools: Record<string, ToolInfo[]>
   onCancel: () => void
   onSave: (profile: Profile) => Promise<void>
   onDelete?: () => Promise<void>
@@ -45,6 +48,9 @@ export function ProfileInspector({
     Object.fromEntries(KNOWN_TOOLS.map((tool) => [tool.command, profile?.tools[tool.command]?.path ?? ''])),
   )
   const [servers, setServers] = useState<Set<string>>(() => new Set(Object.keys(profile?.mcpServers ?? {})))
+  const [disabled, setDisabled] = useState<Record<string, string[]>>(() =>
+    Object.fromEntries(Object.entries(profile?.mcpServers ?? {}).map(([name, using]) => [name, using.disabledTools])),
+  )
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const nameField = useRef<HTMLInputElement>(null)
@@ -65,7 +71,7 @@ export function ProfileInspector({
     folders.length !== (profile?.triggerPaths.length ?? 0) ||
     KNOWN_TOOLS.some((tool) => toolPaths[tool.command] !== (profile?.tools[tool.command]?.path ?? '')) ||
     servers.size !== Object.keys(profile?.mcpServers ?? {}).length ||
-    [...servers].some((name) => !profile?.mcpServers[name])
+    [...servers].some((name) => !profile?.mcpServers[name] || !sameTools(disabled[name] ?? [], profile.mcpServers[name].disabledTools))
 
   /** Escape, the close button and Cancel. Unsaved edits are only dropped once the user says so. */
   const close = async () => {
@@ -119,8 +125,7 @@ export function ProfileInspector({
         name: trimmed,
         triggerPaths: folders.filter((f) => !f.removed).map((f) => f.path),
         tools,
-        // A server kept on keeps the tools it had turned off.
-        mcpServers: Object.fromEntries([...servers].map((name) => [name, profile?.mcpServers[name] ?? { disabledTools: [] }])),
+        mcpServers: Object.fromEntries([...servers].map((name) => [name, { disabledTools: disabled[name] ?? [] }])),
       })
     } catch (err) {
       setError(errorMessage(err))
@@ -286,6 +291,14 @@ export function ProfileInspector({
                             {serverSummary(library[server])}
                           </span>
                         </label>
+                        {on && (
+                          <ToolFilter
+                            server={server}
+                            tools={tools[server]}
+                            off={disabled[server] ?? []}
+                            onChange={(off) => setDisabled((current) => ({ ...current, [server]: off }))}
+                          />
+                        )}
                       </li>
                     )
                   })}
@@ -318,5 +331,104 @@ export function ProfileInspector({
         </footer>
       </form>
     </>
+  )
+}
+
+const sameTools = (a: string[], b: string[]) => a.length === b.length && a.every((tool) => b.includes(tool))
+
+/**
+ * Under a server that's on: which of its tools the agent may use. A deny list, so a tool the
+ * server adds later is on. Without a checked tool list, it says how many are off, if any.
+ */
+function ToolFilter({
+  server,
+  tools,
+  off,
+  onChange,
+}: {
+  server: string
+  tools: ToolInfo[] | undefined
+  off: string[]
+  onChange: (off: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  // Aligned with the server name, past the checkbox.
+  const indent = 'pl-[36px] pr-3'
+  if (!tools) {
+    return (
+      <p
+        className={`${indent} pb-1.5 text-caption text-ink-2 ${off.length ? '' : 'italic'}`}
+        title="Check the server in MCP Servers… to choose its tools."
+      >
+        {off.length ? `${off.length} ${off.length === 1 ? 'tool' : 'tools'} off` : 'All tools'}
+      </p>
+    )
+  }
+  const offHere = tools.filter((t) => off.includes(t.name)).length
+  const summary = offHere === 0 ? `All ${tools.length} tools` : `${tools.length - offHere} of ${tools.length} tools on`
+  const id = `tools-${server}`
+  return (
+    <div className={`${indent} pb-1.5`}>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={id}
+          onClick={() => setOpen((o) => !o)}
+          className="-ml-1 flex items-center gap-1 rounded-control px-1 text-caption text-ink-2 hover:text-ink"
+        >
+          <span className={`transition-transform duration-150 ease-settle ${open ? 'rotate-90' : ''}`}>
+            <ChevronIcon />
+          </span>
+          {summary}
+        </button>
+        {open && (
+          <span className="ml-auto flex gap-3">
+            <Button
+              kind="plain"
+              className="!mx-0 !h-[22px] !px-1 text-small"
+              disabled={offHere === 0}
+              onClick={() => onChange(off.filter((name) => !tools.some((t) => t.name === name)))}
+            >
+              All On
+            </Button>
+            <Button
+              kind="plain"
+              className="!mx-0 !h-[22px] !px-1 text-small"
+              disabled={offHere === tools.length}
+              onClick={() => onChange([...new Set([...off, ...tools.map((t) => t.name)])])}
+            >
+              All Off
+            </Button>
+          </span>
+        )}
+      </div>
+      {open && (
+        <ul id={id} className="mt-1 ml-[5px] space-y-px pl-2.5 hair-l">
+          {tools.map((tool) => {
+            const enabled = !off.includes(tool.name)
+            return (
+              <li key={tool.name}>
+                <label className="flex items-center gap-2 rounded-control px-1 py-[3px] hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)] has-[:focus-visible]:outline-[3px] has-[:focus-visible]:outline-[color-mix(in_srgb,var(--er-accent)_50%,transparent)] has-[:focus-visible]:outline-solid">
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={enabled}
+                    onChange={() => onChange(enabled ? [...off, tool.name] : off.filter((name) => name !== tool.name))}
+                  />
+                  <CheckBox checked={enabled} />
+                  <span className={`shrink-0 font-mono text-caption ${enabled ? 'text-ink' : 'text-ink-2 line-through'}`}>{tool.name}</span>
+                  {tool.description && (
+                    <span className="min-w-0 flex-1 truncate text-caption text-ink-2" title={tool.description}>
+                      {tool.description}
+                    </span>
+                  )}
+                </label>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
   )
 }

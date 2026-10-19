@@ -3,7 +3,7 @@
 // Which profile loads a server is chosen in that profile's editor, not here.
 
 import { useEffect, useRef, useState } from 'react'
-import { errorMessage } from '../lib/api'
+import { checkMcpServer, errorMessage } from '../lib/api'
 import { confirmDeleteServer, confirmDiscardServer } from '../lib/confirm'
 import {
   type DraftValue,
@@ -20,8 +20,22 @@ import {
   TRANSPORTS,
   type Transport,
 } from '../lib/mcp'
-import type { ConfigState, McpServer } from '../lib/types'
-import { BackIcon, Button, ChevronIcon, CloseIcon, IconButton, LockIcon, PlugIcon, PlusIcon, ProfileDot, Segmented, TextField } from './ui'
+import type { ConfigState, McpServer, ServerCheck } from '../lib/types'
+import {
+  BackIcon,
+  Button,
+  ChevronIcon,
+  CloseIcon,
+  IconButton,
+  LockIcon,
+  PlugIcon,
+  PlusIcon,
+  ProfileDot,
+  Segmented,
+  StatusTile,
+  TextField,
+  type Tone,
+} from './ui'
 
 export function ServerLibrary({
   config,
@@ -351,6 +365,8 @@ function ServerEditor({
           </>
         )}
 
+        <CheckSection name={draft.name.trim()} draft={draft} />
+
         {name && (
           <div>
             <h3 className="mb-1.5 text-small font-medium text-ink-2">Used by</h3>
@@ -545,5 +561,83 @@ function PairList({
         {add}
       </Button>
     </fieldset>
+  )
+}
+
+const CHECK_TONE: Record<ServerCheck['status'], Tone> = {
+  ok: 'ok',
+  needsLogin: 'warn',
+  failed: 'problem',
+  timedOut: 'problem',
+  unsupported: 'neutral',
+}
+
+/**
+ * Check Server: starts the server as the form describes it, unsaved edits and typed secrets
+ * included, and shows what it offers or why it didn't answer. Editing the form clears the result.
+ */
+function CheckSection({ name, draft }: { name: string; draft: ServerDraft }) {
+  const [state, setState] = useState<{ key: string; result: ServerCheck | 'running' | { error: string } } | null>(null)
+  const key = JSON.stringify(draft)
+  const current = state?.key === key ? state.result : null
+
+  const run = async () => {
+    const built = serverOf(draft)
+    if ('error' in built) {
+      setState({ key, result: { error: built.error } })
+      return
+    }
+    setState({ key, result: 'running' })
+    try {
+      const result = await checkMcpServer(name, built.server, built.secrets)
+      setState((s) => (s?.key === key ? { key, result } : s))
+    } catch (err) {
+      setState((s) => (s?.key === key ? { key, result: { error: errorMessage(err) } } : s))
+    }
+  }
+
+  const running = current === 'running'
+  const result = current && current !== 'running' && 'status' in current ? current : null
+  const problem = current && current !== 'running' && 'error' in current ? current.error : null
+  const tone: Tone = running ? 'pending' : result ? CHECK_TONE[result.status] : problem ? 'problem' : 'neutral'
+  const headline = running
+    ? 'Starting the server…'
+    : result?.status === 'ok'
+      ? `${result.tools.length} ${result.tools.length === 1 ? 'tool' : 'tools'}`
+      : result?.status === 'needsLogin'
+        ? 'Needs a sign-in'
+        : result?.status === 'unsupported'
+          ? 'Not checked'
+          : result
+            ? "Didn't answer"
+            : problem
+              ? "Can't check yet"
+              : null
+
+  return (
+    <section aria-label="Server check" aria-live="polite">
+      <div className="flex items-center gap-2.5">
+        {headline ? (
+          <>
+            <StatusTile tone={tone} size={28} />
+            <p className="min-w-0 flex-1 truncate font-medium">{headline}</p>
+          </>
+        ) : (
+          <p className="min-w-0 flex-1 text-small text-ink-2 italic">Not checked yet</p>
+        )}
+        <Button onClick={run} disabled={running}>
+          {result || problem ? 'Check Again' : 'Check Server'}
+        </Button>
+      </div>
+      {(result?.message || problem) && <p className="mt-1.5 text-small text-ink-2">{result?.message ?? problem}</p>}
+      {result?.log && (
+        <pre className="mt-2 max-h-[120px] overflow-auto rounded-control bg-card-muted px-2 py-1.5 font-mono text-caption whitespace-pre-wrap text-ink-2 select-text shadow-[inset_0_0_0_1px_var(--er-rule)]">
+          {result.log}
+        </pre>
+      )}
+      {result?.status === 'ok' && result.tools.length > 0 && (
+        <p className="mt-1.5 font-mono text-caption leading-[18px] text-ink-2 select-text">{result.tools.map((t) => t.name).join('  ')}</p>
+      )}
+    </section>
   )
 }

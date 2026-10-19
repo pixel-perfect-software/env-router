@@ -114,3 +114,19 @@ export interface Preview {
   /** The MCP servers the profile hands the tool. */
   mcp: string[]
 }
+
+/** `mcp_probe::ToolInfo`: one tool a server offers. `description` is its first line. */
+export interface ToolInfo {
+  name: string
+  description: string | null
+}
+
+/** `mcp_probe::ServerCheck`: what starting a server and asking for its tools found. */
+export interface ServerCheck {
+  /** needsLogin: the server answered 401, so the agent has to sign in with /mcp. unsupported: an SSE server, which can't be checked here. */
+  status: 'ok' | 'needsLogin' | 'failed' | 'timedOut' | 'unsupported'
+  tools: ToolInfo[]
+  message: string | null
+  /** The last lines a stdio server wrote to stderr, when it failed. */
+  log: string | null
+}

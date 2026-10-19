@@ -8,7 +8,7 @@
 import { emit } from '@tauri-apps/api/event'
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
 import { withAgents } from '../lib/tools'
-import type { ConfigState, FolderCheck, McpServer, Profile, SetupStatus, ShellStatus } from '../lib/types'
+import type { ConfigState, FolderCheck, McpServer, Profile, ServerCheck, SetupStatus, ShellStatus, ToolInfo } from '../lib/types'
 
 const HOME = '/Users/sam'
 const scenario = new URLSearchParams(location.search).get('scenario') ?? 'first-run'
@@ -51,6 +51,29 @@ const library: Record<string, McpServer> = withLibrary
       },
     }
   : {}
+const tool = (name: string, description: string | null = null): ToolInfo => ({ name, description })
+/** What a check lists for each server, as `mcp_probe::check` would. */
+const serverTools: Record<string, ToolInfo[]> = {
+  github: [
+    tool('create_issue', 'Create a new issue in a GitHub repository'),
+    tool('create_pull_request', 'Create a new pull request in a GitHub repository'),
+    tool('delete_repository', 'Delete a repository you own'),
+    tool('fork_repository', 'Fork a GitHub repository to your account'),
+    tool('get_file_contents', 'Get the contents of a file or directory'),
+    tool('list_issues', 'List issues in a repository with filtering options'),
+    tool('merge_pull_request', 'Merge a pull request'),
+    tool('push_files', 'Push multiple files in a single commit'),
+    tool('search_code', 'Search for code across GitHub repositories'),
+  ],
+  playwright: [
+    tool('browser_click', 'Perform click on a web page'),
+    tool('browser_navigate', 'Navigate to a URL'),
+    tool('browser_snapshot', 'Capture accessibility snapshot of the current page'),
+    tool('browser_take_screenshot'),
+  ],
+  sentry: [tool('find_issues', 'Find issues in Sentry'), tool('get_issue_details'), tool('search_events')],
+}
+const checked = new Set(withLibrary ? ['github', 'playwright'] : [])
 const using = (...names: string[]) => (withLibrary ? Object.fromEntries(names.map((n) => [n, { disabledTools: [] }])) : {})
 let config: ConfigState = withAgents({
   version: 2,
@@ -63,7 +86,9 @@ let config: ConfigState = withAgents({
           ...profile('p2', 'Work', ['~/dev/work/*', '~/Documents/Acme'], '~/.claude-work', {
             codex: { envVar: 'CODEX_HOME', path: '~/.codex-work' },
           }),
-          mcpServers: using('github', 'linear', 'sentry', 'postgres'),
+          mcpServers: withLibrary
+            ? { ...using('linear', 'sentry', 'postgres'), github: { disabledTools: ['delete_repository', 'fork_repository'] } }
+            : {},
         },
         profile('p3', 'Northwind', ['~/clients/northwind'], '~/.claude-northwind', {
           copilot: { envVar: 'COPILOT_HOME', path: '~/.copilot-northwind' },
@@ -157,6 +182,36 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       await delay(250)
       config = next
       return null
+    }
+    case 'get_mcp_tools':
+      return Object.fromEntries([...checked].filter((name) => config.mcpServers[name]).map((name) => [name, serverTools[name] ?? []]))
+    case 'check_mcp_server': {
+      await delay(1400)
+      const name = a.name as string
+      const server = a.server as McpServer
+      if (server.transport === 'sse')
+        return {
+          status: 'unsupported',
+          tools: [],
+          message: "SSE servers can't be checked here. The agent connects to them as usual.",
+          log: null,
+        } satisfies ServerCheck
+      if (name === 'linear')
+        return {
+          status: 'needsLogin',
+          tools: [],
+          message: 'The server wants a sign-in. Run the agent in a profile folder and use /mcp to sign in.',
+          log: null,
+        } satisfies ServerCheck
+      if (name === 'postgres')
+        return {
+          status: 'failed',
+          tools: [],
+          message: 'connection closed: initialize response',
+          log: 'Error: connect ECONNREFUSED 127.0.0.1:5432\n    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16)',
+        } satisfies ServerCheck
+      checked.add(name)
+      return { status: 'ok', tools: serverTools[name] ?? [tool('echo', 'Echo the input back')], message: null, log: null } satisfies ServerCheck
     }
     case 'open_in_editor':
       configBroken = false

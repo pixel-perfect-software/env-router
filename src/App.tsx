@@ -10,12 +10,22 @@ import { type DropTarget, Frame, type Slip } from './components/Frame'
 import { ProfileInspector } from './components/ProfileInspector'
 import { ServerLibrary } from './components/ServerLibrary'
 import { profileColors } from './components/ui'
-import { checkFolder, errorMessage, getConfig, getSetupStatus, openInEditor, previewFolder, saveConfig, setShellIntegration } from './lib/api'
+import {
+  checkFolder,
+  errorMessage,
+  getConfig,
+  getMcpTools,
+  getSetupStatus,
+  openInEditor,
+  previewFolder,
+  saveConfig,
+  setShellIntegration,
+} from './lib/api'
 import { confirmDelete } from './lib/confirm'
 import { withoutServer, withServer } from './lib/mcp'
 import { owningTrigger } from './lib/paths'
 import { KNOWN_TOOLS, withAgents } from './lib/tools'
-import type { ConfigState, Profile, SetupStatus, Shell } from './lib/types'
+import type { ConfigState, Profile, SetupStatus, Shell, ToolInfo } from './lib/types'
 import { useFolderDrop } from './lib/useFolderDrop'
 import { type VerdictAction, verdictOf } from './lib/verdict'
 
@@ -80,6 +90,8 @@ export default function App() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | 'new' | null>(null)
   const [library, setLibrary] = useState(false)
+  // Each server's checked tools, read again whenever the profile editor opens.
+  const [mcpTools, setMcpTools] = useState<Record<string, ToolInfo[]>>({})
   const [shellsOpen, setShellsOpen] = useState(false)
   const [check, setCheck] = useState<CheckState | null>(null)
   const [slip, setSlip] = useState<Slip | null>(null)
@@ -130,6 +142,16 @@ export default function App() {
   // coming back reads both again. Not the config while the inspector is open: it saves on top
   // of the config it opened with.
   const inspecting = editing !== null || library
+  useEffect(() => {
+    if (editing === null) return
+    let current = true
+    getMcpTools()
+      .then((tools) => current && setMcpTools(tools))
+      .catch(() => current && setMcpTools({}))
+    return () => {
+      current = false
+    }
+  }, [editing])
   useEffect(() => {
     const onFocus = inspecting ? refreshSetup : load
     window.addEventListener('focus', onFocus)
@@ -414,6 +436,7 @@ export default function App() {
           color={profileColors([...config.profiles.map((p) => p.id), newId]).get(editingId) ?? ''}
           home={home}
           library={config.mcpServers}
+          tools={mcpTools}
           onCancel={() => setEditing(null)}
           onSave={saveProfile}
           onDelete={
