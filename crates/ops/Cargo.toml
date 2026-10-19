@@ -1,0 +1,29 @@
+[package]
+name = "envrouter-ops"
+version = "0.1.0"
+description = "EnvRouter's backend operations (shell integration, shims, editors, MCP import and checks), with no UI, for the app and the CLI"
+license = "MIT"
+edition = "2021"
+publish = false
+
+[dependencies]
+envrouter-core.workspace = true
+envrouter-keychain.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+http = "1"
+jsonc-parser = { version = "0.34", features = ["cst"] }
+rmcp = { version = "3.5", default-features = false, features = [
+  "client",
+  "transport-child-process",
+  "transport-streamable-http-client-reqwest",
+  "reqwest",
+] }
+tokio = { version = "1", features = ["io-util", "process", "time", "macros", "rt"] }
+
+[build-dependencies]
+envrouter-build-support.workspace = true
+
+[lints]
+workspace = true

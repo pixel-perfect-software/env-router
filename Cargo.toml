@@ -1,10 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/keychain", "crates/shim", "src-tauri"]
+members = ["crates/build-support", "crates/core", "crates/keychain", "crates/ops", "crates/shim", "src-tauri"]
 
 [workspace.dependencies]
+envrouter-build-support = { path = "crates/build-support" }
 envrouter-core = { path = "crates/core" }
 envrouter-keychain = { path = "crates/keychain" }
+envrouter-ops = { path = "crates/ops" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 security-framework = "3"
