@@ -1,6 +1,6 @@
-// The MCP server library: a right-side inspector like the profile editor. It opens on the list
-// of servers; picking one (or Add Server…) drills into its form, where Save takes the accent.
-// Which profile loads a server is chosen in that profile's editor, not here.
+// The Servers view: every MCP server in a list on the left, the chosen one's editor beside it.
+// Catalog and Import open in the same place as the editor, so nothing drills more than one level
+// deep. Which profiles load a server is set here (Used by) or in a profile's own editor.
 
 import { useEffect, useRef, useState } from 'react'
 import { checkMcpServer, errorMessage, getMcpTools } from '../lib/api'
@@ -22,52 +22,47 @@ import {
 } from '../lib/mcp'
 import type { ConfigState, McpServer, ServerCheck, ToolInfo } from '../lib/types'
 import { CatalogIcon, CheckIcon, ImportIcon, TransportIcon } from './icons'
+import { ServerMark } from './ServerMark'
 import { CatalogView, ImportView } from './ServerSources'
-import {
-  BackIcon,
-  Button,
-  ChevronIcon,
-  CloseIcon,
-  IconButton,
-  LockIcon,
-  PlusIcon,
-  ProfileDot,
-  Segmented,
-  StatusTile,
-  TextField,
-  type Tone,
-} from './ui'
+import { Button, CloseIcon, IconButton, LockIcon, PlusIcon, ProfileDot, Segmented, StatusTile, TextField, type Tone } from './ui'
 
-type View =
-  | { kind: 'list' }
-  /** `name` null: a new server, blank or from `template`. */
-  | { kind: 'edit'; name: string | null; template?: ServerDraft }
-  | { kind: 'catalog' }
-  | { kind: 'import' }
+/** What the detail side shows. `name` null: a new server, blank or from `template`. */
+export type Detail = { kind: 'none' } | { kind: 'edit'; name: string | null; template?: ServerDraft } | { kind: 'catalog' } | { kind: 'import' }
 
-export function ServerLibrary({
+/** A profile as the Used by toggles show it. */
+interface ProfileChip {
+  id: string
+  name: string
+  color: string
+}
+
+export function ServersView({
   config,
   home,
   colors,
+  detail,
+  onDetail,
   onSave,
   onImport,
   onDelete,
-  onClose,
 }: {
   config: ConfigState
   home: string
-  /** Profile colours, so the list shows who uses each server. */
+  /** Profile colours, so rows and toggles show who uses each server. */
   colors: Map<string, string>
-  onSave: (previous: string | null, name: string, server: McpServer, secrets: Record<string, string>) => Promise<void>
+  detail: Detail
+  onDetail: (detail: Detail) => void
+  onSave: (previous: string | null, name: string, server: McpServer, secrets: Record<string, string>, usedBy: string[]) => Promise<void>
   onImport: (servers: [string, McpServer][], secrets: Record<string, string>) => Promise<void>
   onDelete: (name: string) => Promise<void>
-  onClose: () => void
 }) {
-  const [view, setView] = useState<View>({ kind: 'list' })
   const [tools, setTools] = useState<Record<string, ToolInfo[]>>({})
-  // Read again each time the list shows, so a check just run in the editor counts.
+  // Unsaved edits in the editor; switching to another server asks before dropping them.
+  const dirty = useRef(false)
+  // Read again after every change of detail, so a check just run counts in the list.
+  const detailKey = detail.kind === 'edit' ? `edit:${detail.name}` : detail.kind
   useEffect(() => {
-    if (view.kind !== 'list') return
+    void detailKey
     let current = true
     getMcpTools()
       .then((found) => current && setTools(found))
@@ -75,173 +70,70 @@ export function ServerLibrary({
     return () => {
       current = false
     }
-  }, [view.kind])
+  }, [detailKey])
   const names = Object.keys(config.mcpServers).sort((a, b) => a.localeCompare(b))
-  // The server last opened, so going back to the list returns focus to its row.
-  const [lastOpened, setLastOpened] = useState<string | null>(null)
-  const toList = () => setView({ kind: 'list' })
+  const profiles: ProfileChip[] = config.profiles.map((p) => ({ id: p.id, name: p.name, color: colors.get(p.id) ?? '' }))
+
+  const go = async (next: Detail) => {
+    if (dirty.current && !(await confirmDiscardServer(detail.kind === 'edit' ? detail.name : null))) return
+    dirty.current = false
+    onDetail(next)
+  }
+  const selected = detail.kind === 'edit' ? detail.name : null
 
   return (
-    <>
-      <div aria-hidden="true" className="absolute inset-0 z-30 animate-[er-fade_160ms_ease-out] bg-black/15 dark:bg-black/35" />
-      <div
-        data-inspector
-        className="absolute inset-y-0 right-0 z-40 flex w-[min(440px,calc(100%-40px))] animate-[er-slide_220ms_var(--ease-settle)] flex-col bg-raised shadow-raised"
-      >
-        {view.kind === 'list' && (
-          <ServerList
-            config={config}
-            names={names}
-            colors={colors}
-            tools={tools}
-            focusName={lastOpened}
-            onOpen={(name) => {
-              setLastOpened(name)
-              setView({ kind: 'edit', name })
-            }}
-            onAdd={() => setView({ kind: 'edit', name: null })}
-            onCatalog={() => setView({ kind: 'catalog' })}
-            onImport={() => setView({ kind: 'import' })}
-            onClose={onClose}
-          />
-        )}
-        {view.kind === 'catalog' && (
-          <CatalogView
-            home={home}
-            taken={names}
-            onBack={toList}
-            onClose={onClose}
-            onPick={(template) => setView({ kind: 'edit', name: null, template })}
-          />
-        )}
-        {view.kind === 'import' && (
-          <ImportView
-            config={config}
-            home={home}
-            onBack={toList}
-            onClose={onClose}
-            onImport={async (servers, secrets) => {
-              await onImport(servers, secrets)
-              toList()
-            }}
-          />
-        )}
-        {view.kind === 'edit' && (
-          <ServerEditor
-            key={view.name ?? `new-${view.template?.name ?? ''}`}
-            name={view.name}
-            server={view.name ? config.mcpServers[view.name] : undefined}
-            template={view.template}
-            taken={names.filter((n) => n !== view.name)}
-            usedBy={view.name ? profilesUsing(config, view.name).map((p) => ({ name: p.name, color: colors.get(p.id) ?? '' })) : []}
-            onBack={view.template ? () => setView({ kind: 'catalog' }) : toList}
-            onClose={onClose}
-            onSave={async (name, server, secrets) => {
-              await onSave(view.name, name, server, secrets)
-              setLastOpened(name)
-              toList()
-            }}
-            onDelete={
-              view.name
-                ? async () => {
-                    if (view.name) await onDelete(view.name)
-                    toList()
-                  }
-                : undefined
-            }
-          />
-        )}
-      </div>
-    </>
-  )
-}
-
-function ServerList({
-  config,
-  names,
-  colors,
-  focusName,
-  tools,
-  onOpen,
-  onAdd,
-  onCatalog,
-  onImport,
-  onClose,
-}: {
-  config: ConfigState
-  names: string[]
-  colors: Map<string, string>
-  /** The server whose editor was just left, to focus its row. */
-  focusName: string | null
-  /** Tool lists from good checks, for a count beside each server. */
-  tools: Record<string, ToolInfo[]>
-  onOpen: (name: string) => void
-  onAdd: () => void
-  onCatalog: () => void
-  onImport: () => void
-  onClose: () => void
-}) {
-  const first = useRef<HTMLButtonElement>(null)
-  const returnTo = useRef<HTMLButtonElement>(null)
-  // Back from a server's editor, focus lands on that server again; otherwise on the first.
-  useEffect(() => (returnTo.current ?? first.current)?.focus(), [])
-  return (
-    <section
-      aria-label="MCP servers"
-      className="flex min-h-0 flex-1 animate-[er-fade_140ms_ease-out] flex-col"
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') onClose()
-      }}
-    >
-      <header className="flex items-center gap-2.5 px-5 pt-5 pb-3">
-        <h2 className="min-w-0 flex-1 truncate text-title font-semibold">MCP Servers</h2>
-        <IconButton label="Close" onClick={onClose}>
-          <CloseIcon />
-        </IconButton>
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-        <div className="rounded-card bg-card shadow-card">
+    <div className="flex min-h-0 flex-1 gap-3 px-4 pt-1 pb-4">
+      <aside aria-label="MCP servers" className="flex w-[232px] shrink-0 flex-col rounded-card bg-card shadow-card min-[820px]:w-[264px]">
+        <header className="flex items-center gap-1 py-2 pr-2 pl-3.5 hair-b">
+          <h2 className="min-w-0 flex-1 truncate text-title font-semibold">
+            Servers <span className="font-normal text-ink-2">{names.length}</span>
+          </h2>
+          <IconButton label="Add Server" onClick={() => go({ kind: 'edit', name: null })}>
+            <PlusIcon />
+          </IconButton>
+          <IconButton label="Add from Catalog" aria-pressed={detail.kind === 'catalog'} onClick={() => go({ kind: 'catalog' })}>
+            <CatalogIcon />
+          </IconButton>
+          <IconButton label="Import from Your Agents" aria-pressed={detail.kind === 'import'} onClick={() => go({ kind: 'import' })}>
+            <ImportIcon />
+          </IconButton>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
           {names.length === 0 ? (
-            <p className="px-3 py-2.5 text-small text-ink-2 italic">No servers yet</p>
+            <p className="px-2 py-2 text-small text-ink-2 italic">No servers yet</p>
           ) : (
-            <ul>
-              {names.map((name, i) => {
+            <ul className="space-y-px">
+              {names.map((name) => {
                 const server = config.mcpServers[name]
                 const users = profilesUsing(config, name)
+                const isSelected = name === selected
                 return (
-                  <li key={name} className="[&+&]:hair-t">
+                  <li key={name}>
                     <button
-                      ref={name === focusName ? returnTo : i === 0 ? first : undefined}
                       type="button"
-                      onClick={() => onOpen(name)}
-                      className="group/row flex w-full items-center gap-2.5 rounded-control px-3 py-2 text-left hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)] focus-visible:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)]"
+                      aria-current={isSelected ? 'true' : undefined}
+                      onClick={() => go({ kind: 'edit', name })}
+                      className={`flex w-full items-center gap-2.5 rounded-[7px] px-2 py-1.5 text-left ${
+                        isSelected ? 'bg-tint' : 'hover:bg-[color-mix(in_srgb,var(--er-ink)_5%,transparent)]'
+                      }`}
                     >
-                      <span className="text-ink-2">
-                        <TransportIcon transport={server.transport} />
-                      </span>
+                      <ServerMark name={name} server={server} size={28} />
                       <span className="min-w-0 flex-1">
-                        <span className="flex items-baseline gap-2">
-                          <span className="truncate font-mono text-small text-ink">{name}</span>
-                          <span className="shrink-0 text-caption text-ink-2">
-                            {TRANSPORTS.find(([t]) => t === server.transport)?.[1]}
-                            {tools[name] && ` · ${tools[name].length} ${tools[name].length === 1 ? 'tool' : 'tools'}`}
-                          </span>
-                        </span>
-                        <span className="block truncate font-mono text-caption text-ink-2" title={serverSummary(server)}>
-                          {serverSummary(server)}
+                        <span className={`block truncate font-mono text-small ${isSelected ? 'text-accent' : 'text-ink'}`}>{name}</span>
+                        <span className="flex items-center gap-1 text-caption text-ink-2">
+                          <TransportIcon transport={server.transport} size={11} />
+                          {TRANSPORTS.find(([t]) => t === server.transport)?.[1]}
+                          {tools[name] && ` · ${tools[name].length} ${tools[name].length === 1 ? 'tool' : 'tools'}`}
                         </span>
                       </span>
                       {users.length > 0 && (
-                        <span className="flex shrink-0 items-center -space-x-0.5" title={`Used by ${users.map((p) => p.name).join(', ')}`}>
+                        <span className="flex shrink-0 items-center gap-0.5" title={`Used by ${users.map((p) => p.name).join(', ')}`}>
                           {users.slice(0, 4).map((p) => (
-                            <ProfileDot key={p.id} color={colors.get(p.id) ?? ''} className="size-2 ring-2 ring-card" />
+                            <ProfileDot key={p.id} color={colors.get(p.id) ?? ''} className="size-2" />
                           ))}
                           <span className="sr-only">Used by {users.map((p) => p.name).join(', ')}</span>
                         </span>
                       )}
-                      <span className="text-ink-2 opacity-60 group-hover/row:opacity-100">
-                        <ChevronIcon />
-                      </span>
                     </button>
                   </li>
                 )
@@ -249,25 +141,88 @@ function ServerList({
             </ul>
           )}
         </div>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <Button onClick={onAdd}>
-            <PlusIcon />
-            Add Server…
-          </Button>
-          <Button onClick={onCatalog}>
+      </aside>
+
+      <section aria-label="Server details" className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-card bg-card shadow-card">
+        {detail.kind === 'none' && <NoServer empty={names.length === 0} onPick={(next) => go(next)} />}
+        {detail.kind === 'catalog' && (
+          <CatalogView
+            home={home}
+            taken={names}
+            onBack={() => onDetail({ kind: 'none' })}
+            onPick={(template) => onDetail({ kind: 'edit', name: null, template })}
+          />
+        )}
+        {detail.kind === 'import' && (
+          <ImportView
+            config={config}
+            home={home}
+            onBack={() => onDetail({ kind: 'none' })}
+            onImport={async (servers, secrets) => {
+              await onImport(servers, secrets)
+              onDetail(servers.length === 1 ? { kind: 'edit', name: servers[0][0] } : { kind: 'none' })
+            }}
+          />
+        )}
+        {detail.kind === 'edit' && (
+          <ServerEditor
+            key={detail.name ?? `new-${detail.template?.name ?? ''}`}
+            name={detail.name}
+            server={detail.name ? config.mcpServers[detail.name] : undefined}
+            template={detail.template}
+            taken={names.filter((n) => n !== detail.name)}
+            profiles={profiles}
+            initialUsedBy={detail.name ? profilesUsing(config, detail.name).map((p) => p.id) : []}
+            onDirty={(value) => {
+              dirty.current = value
+            }}
+            onCancel={() => {
+              dirty.current = false
+              onDetail(detail.name ? { kind: 'edit', name: detail.name } : { kind: 'none' })
+            }}
+            onSave={async (name, server, secrets, usedBy) => {
+              await onSave(detail.name, name, server, secrets, usedBy)
+              dirty.current = false
+              onDetail({ kind: 'edit', name })
+            }}
+            onDelete={
+              detail.name
+                ? async () => {
+                    if (detail.name) await onDelete(detail.name)
+                    dirty.current = false
+                    onDetail({ kind: 'none' })
+                  }
+                : undefined
+            }
+          />
+        )}
+      </section>
+    </div>
+  )
+}
+
+/** The detail side with nothing chosen: the three ways a server gets here. */
+function NoServer({ empty, onPick }: { empty: boolean; onPick: (detail: Detail) => void }) {
+  return (
+    <div className="grid flex-1 place-items-center p-6">
+      <div className="flex max-w-[300px] flex-col items-center gap-3 text-center">
+        <p className="text-small text-ink-2">{empty ? 'Add the MCP servers your agents should load.' : 'Choose a server, or add another.'}</p>
+        <div className="flex flex-col gap-2">
+          <Button onClick={() => onPick({ kind: 'catalog' })}>
             <CatalogIcon />
-            From Catalog…
+            Add from Catalog…
           </Button>
-          <Button onClick={onImport}>
+          <Button onClick={() => onPick({ kind: 'import' })}>
             <ImportIcon />
-            Import…
+            Import from Your Agents…
+          </Button>
+          <Button onClick={() => onPick({ kind: 'edit', name: null })}>
+            <PlusIcon />
+            Add by Hand…
           </Button>
         </div>
       </div>
-      <footer className="flex items-center justify-end gap-2 bg-card-muted px-5 py-3 hair-t">
-        <Button onClick={onClose}>Done</Button>
-      </footer>
-    </section>
+    </div>
   )
 }
 
@@ -276,9 +231,10 @@ function ServerEditor({
   server,
   template,
   taken,
-  usedBy,
-  onBack,
-  onClose,
+  profiles,
+  initialUsedBy,
+  onDirty,
+  onCancel,
   onSave,
   onDelete,
 }: {
@@ -289,39 +245,33 @@ function ServerEditor({
   template?: ServerDraft
   /** Other servers' names, which this one can't take. */
   taken: string[]
-  usedBy: { name: string; color: string }[]
-  onBack: () => void
-  onClose: () => void
-  onSave: (name: string, server: McpServer, secrets: Record<string, string>) => Promise<void>
+  profiles: ProfileChip[]
+  /** Ids of the profiles that load this server now. */
+  initialUsedBy: string[]
+  onDirty: (dirty: boolean) => void
+  onCancel: () => void
+  onSave: (name: string, server: McpServer, secrets: Record<string, string>, usedBy: string[]) => Promise<void>
   onDelete?: () => Promise<void>
 }) {
   const initial = useRef(template ?? draftOf(name ?? '', server))
   const [draft, setDraft] = useState<ServerDraft>(initial.current)
+  const [usedBy, setUsedBy] = useState<string[]>(initialUsedBy)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const nameField = useRef<HTMLInputElement>(null)
-  const asking = useRef(false)
-  const dirty = JSON.stringify(draft) !== JSON.stringify(initial.current)
+  const dirty =
+    JSON.stringify(draft) !== JSON.stringify(initial.current) ||
+    usedBy.length !== initialUsedBy.length ||
+    usedBy.some((id) => !initialUsedBy.includes(id))
+  useEffect(() => onDirty(dirty), [dirty, onDirty])
 
   useEffect(() => {
-    nameField.current?.focus()
-    if (name) nameField.current?.select()
+    // A new server starts at its name; an existing one keeps focus in the list it was picked from.
+    if (!name) nameField.current?.focus()
   }, [name])
 
   const set = <K extends keyof ServerDraft>(key: K, value: ServerDraft[K]) => setDraft((d) => ({ ...d, [key]: value }))
-
-  /** Back, close and Escape all leave the form; unsaved edits only go once the user says so. */
-  const leave = async (then: () => void) => {
-    if (saving || asking.current) return
-    if (dirty) {
-      asking.current = true
-      const discard = await confirmDiscardServer(name).finally(() => {
-        asking.current = false
-      })
-      if (!discard) return
-    }
-    then()
-  }
+  const preview = serverOf(draft)
 
   const save = async () => {
     const trimmed = draft.name.trim()
@@ -345,7 +295,7 @@ function ServerEditor({
     setSaving(true)
     setError(null)
     try {
-      await onSave(trimmed, built.server, built.secrets)
+      await onSave(trimmed, built.server, built.secrets, usedBy)
     } catch (err) {
       setError(errorMessage(err))
       setSaving(false)
@@ -357,7 +307,7 @@ function ServerEditor({
     if (
       !(await confirmDeleteServer(
         name,
-        usedBy.map((p) => p.name),
+        profiles.filter((p) => initialUsedBy.includes(p.id)).map((p) => p.name),
       ))
     )
       return
@@ -374,27 +324,25 @@ function ServerEditor({
   return (
     <form
       aria-label={name ? `Edit ${name}` : 'New MCP server'}
-      className="flex min-h-0 flex-1 animate-[er-fade_140ms_ease-out] flex-col"
+      className="flex min-h-0 flex-1 animate-[er-fade_160ms_var(--ease-settle)] flex-col"
       onSubmit={(e) => {
         e.preventDefault()
         save()
       }}
-      onKeyDown={(e) => {
-        // Back to the list, as from Catalog and Import; Escape there closes the panel.
-        if (e.key === 'Escape') leave(onBack)
-      }}
     >
-      <header className="flex items-center gap-1.5 pt-5 pr-5 pb-3 pl-3">
-        <IconButton label="All servers" onClick={() => leave(onBack)} disabled={saving}>
-          <BackIcon />
-        </IconButton>
-        <h2 className="min-w-0 flex-1 truncate text-title font-semibold">{name ?? 'New Server'}</h2>
-        <IconButton label="Close" onClick={() => leave(onClose)} disabled={saving}>
-          <CloseIcon />
-        </IconButton>
+      <header className="flex items-center gap-3 px-5 pt-4 pb-3 hair-b">
+        {'server' in preview ? (
+          <ServerMark name={draft.name || name || '?'} server={preview.server} size={36} />
+        ) : (
+          <ServerMark name={draft.name || name || '?'} server={server ?? { transport: 'stdio', command: '', args: [], env: {} }} size={36} />
+        )}
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate font-mono text-title font-semibold">{name ?? (draft.name.trim() || 'New Server')}</h2>
+          <p className="truncate font-mono text-caption text-ink-2">{'server' in preview ? serverSummary(preview.server) : 'Not set up yet'}</p>
+        </div>
       </header>
 
-      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 pb-5">
+      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 pt-4 pb-5">
         <div>
           <label htmlFor="server-name" className="mb-1.5 block text-small font-medium text-ink-2">
             Name
@@ -470,23 +418,38 @@ function ServerEditor({
 
         <CheckSection name={draft.name.trim()} draft={draft} />
 
-        {name && (
-          <div>
-            <h3 className="mb-1.5 text-small font-medium text-ink-2">Used by</h3>
-            {usedBy.length === 0 ? (
-              <p className="text-small text-ink-2 italic">No profile loads it yet</p>
-            ) : (
-              <ul className="flex flex-wrap gap-x-3 gap-y-1 text-small">
-                {usedBy.map((p) => (
-                  <li key={p.name} className="flex items-center gap-1.5">
-                    <ProfileDot color={p.color} className="size-2" />
+        <fieldset className="min-w-0">
+          <legend className="mb-1.5 text-small font-medium text-ink-2">Used by</legend>
+          {profiles.length === 0 ? (
+            <p className="text-small text-ink-2 italic">No profiles yet</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {profiles.map((p) => {
+                const on = usedBy.includes(p.id)
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setUsedBy((ids) => (on ? ids.filter((id) => id !== p.id) : [...ids, p.id]))}
+                    className={`flex h-[28px] items-center gap-1.5 rounded-full pr-3 pl-2.5 text-small transition-[background-color,box-shadow] duration-150 ease-settle ${
+                      on
+                        ? 'text-ink'
+                        : 'text-ink-2 shadow-[inset_0_0_0_1px_var(--er-rule)] hover:bg-[color-mix(in_srgb,var(--er-ink)_5%,transparent)] hover:text-ink'
+                    }`}
+                    style={
+                      on ? { background: `color-mix(in srgb, ${p.color} 16%, var(--er-card))`, boxShadow: `inset 0 0 0 1.5px ${p.color}` } : undefined
+                    }
+                  >
+                    <ProfileDot color={p.color} className={`size-2 ${on ? '' : 'opacity-70'}`} />
                     {p.name}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          <p className="mt-1.5 text-caption text-ink-2">The agents load it in these profiles' folders.</p>
+        </fieldset>
       </div>
 
       <footer className="flex items-center gap-2 bg-card-muted px-5 py-3 hair-t">
@@ -498,8 +461,8 @@ function ServerEditor({
         <p role="alert" className="min-w-0 flex-1 text-small text-problem">
           {error}
         </p>
-        <Button onClick={() => leave(onBack)} disabled={saving}>
-          Cancel
+        <Button onClick={onCancel} disabled={saving || (!dirty && Boolean(name))}>
+          {name ? 'Revert' : 'Cancel'}
         </Button>
         <Button kind="primary" type="submit" disabled={saving}>
           {saving ? 'Saving…' : 'Save'}
@@ -530,7 +493,7 @@ function ValueField({
 }) {
   if (!isPending(value) && typeof value !== 'string') {
     return (
-      <span className="flex h-[28px] min-w-0 flex-1 items-center gap-1.5 rounded-control bg-card-muted pr-1 pl-2 text-small text-ink-2 shadow-[inset_0_0_0_1px_var(--er-rule)]">
+      <span className="flex h-[28px] min-w-0 flex-1 items-center gap-1.5 rounded-control bg-well pr-1 pl-2 text-small text-ink-2">
         <LockIcon />
         <span className="flex-1 italic">In Keychain</span>
         <Button

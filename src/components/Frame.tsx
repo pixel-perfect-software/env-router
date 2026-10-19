@@ -46,6 +46,7 @@ export function Frame({
   dropTarget,
   onEdit,
   onContextMenu,
+  onOpenServer,
 }: {
   profiles: Profile[]
   home: string
@@ -55,6 +56,8 @@ export function Frame({
   dropTarget: DropTarget
   onEdit: (id: string | 'new') => void
   onContextMenu: (profile: Profile, folder: string | null, event: MouseEvent) => void
+  /** A server name in a card's footer opens that server in the Servers view. */
+  onOpenServer: (name: string) => void
 }) {
   const colors = profileColors(profiles.map((p) => p.id))
   return (
@@ -72,6 +75,7 @@ export function Frame({
           targeted={dropTarget?.profileId === profile.id}
           onEdit={() => onEdit(profile.id)}
           onContextMenu={(folder, event) => onContextMenu(profile, folder, event)}
+          onOpenServer={onOpenServer}
         />
       ))}
       <NewProfileCard first={profiles.length === 0} selected={editing === 'new'} onNew={() => onEdit('new')} />
@@ -91,6 +95,7 @@ function ProfileCard({
   targeted,
   onEdit,
   onContextMenu,
+  onOpenServer,
 }: {
   profile: Profile
   color: string
@@ -102,6 +107,7 @@ function ProfileCard({
   targeted: boolean
   onEdit: () => void
   onContextMenu: (folder: string | null, event: MouseEvent) => void
+  onOpenServer: (name: string) => void
 }) {
   // Other profiles' triggers inside each of this profile's triggers.
   const carveOuts = (raw: string) => {
@@ -134,7 +140,11 @@ function ProfileCard({
       className={`${CARD} ${targeted ? TARGETED : ''} ${selected ? SELECTED : ''}`}
     >
       {/* biome-ignore lint/a11y/noStaticElementInteractions: a pointer shortcut; the name button and pencil are the keyboard routes */}
-      <header onDoubleClick={onEdit} className="flex items-center gap-2 py-2.5 pr-2 pl-3.5">
+      <header
+        onDoubleClick={onEdit}
+        className="flex items-center gap-2 rounded-t-card py-2.5 pr-2 pl-3.5"
+        style={{ background: `color-mix(in srgb, ${color} var(--er-wash), transparent)` }}
+      >
         <ProfileDot color={color} />
         <h2 className="min-w-0 flex-1 truncate text-title font-semibold">
           <button type="button" onClick={onEdit} className="max-w-full truncate text-left">
@@ -194,8 +204,34 @@ function ProfileCard({
                 <PlugIcon />
                 <span className="sr-only">MCP servers</span>
               </dt>
-              <dd className="truncate font-mono text-ink select-text">
-                {servers.length > 3 ? `${servers.slice(0, 2).join(', ')} +${servers.length - 2}` : servers.join(', ')}
+              {/* Each name opens its server; past three, "+N" opens the next one in the list. */}
+              <dd className="truncate font-mono text-ink">
+                {(servers.length > 3 ? servers.slice(0, 2) : servers).map((name, i) => (
+                  <span key={name}>
+                    {i > 0 && ', '}
+                    <button
+                      type="button"
+                      onClick={() => onOpenServer(name)}
+                      title={`Open ${name} in Servers`}
+                      className="rounded-[3px] decoration-ink-3 underline-offset-2 hover:text-accent hover:underline"
+                    >
+                      {name}
+                    </button>
+                  </span>
+                ))}
+                {servers.length > 3 && (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      onClick={() => onOpenServer(servers[2])}
+                      title={servers.slice(2).join(', ')}
+                      className="rounded-[3px] text-ink-2 hover:text-accent"
+                    >
+                      +{servers.length - 2}
+                    </button>
+                  </>
+                )}
               </dd>
             </div>
           )}

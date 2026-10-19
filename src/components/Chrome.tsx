@@ -8,7 +8,7 @@ import { errorMessage } from '../lib/api'
 import { tildify } from '../lib/paths'
 import type { SetupStatus, Shell, ShellStatus } from '../lib/types'
 import { FolderCheckIcon, PlugIcon, ShellIcon } from './icons'
-import { Button, CloseIcon, IconButton, StatusTile, Switch, type Tone } from './ui'
+import { Button, CloseIcon, FolderIcon, IconButton, Segmented, StatusTile, Switch, type Tone } from './ui'
 
 export function TitleBand({
   setup,
@@ -16,7 +16,8 @@ export function TitleBand({
   primary,
   shellsOpen,
   onToggleShells,
-  onOpenServers,
+  view,
+  onView,
   onCheckFolder,
 }: {
   setup: SetupStatus | null
@@ -26,7 +27,9 @@ export function TitleBand({
   primary: boolean
   shellsOpen: boolean
   onToggleShells: () => void
-  onOpenServers: () => void
+  /** The window's two places: the profile map and the MCP server workbench. */
+  view: 'profiles' | 'servers'
+  onView: (view: 'profiles' | 'servers') => void
   onCheckFolder: () => void
 }) {
   const shells = setup?.shells.filter((s) => s.available) ?? []
@@ -34,10 +37,21 @@ export function TitleBand({
     <div data-tauri-drag-region className="flex h-[52px] shrink-0 items-center gap-3 pr-4 pl-[86px]">
       <div data-tauri-drag-region className="flex items-center gap-2">
         <img data-tauri-drag-region src={appIcon} alt="" width={18} height={18} draggable={false} />
-        <h1 data-tauri-drag-region className="text-title font-semibold">
+        {/* A narrow window keeps the icon; the name stays for screen readers. */}
+        <h1 data-tauri-drag-region className="text-title font-semibold max-[760px]:sr-only">
           EnvRouter
         </h1>
       </div>
+      <Segmented
+        label="View"
+        size="toolbar"
+        options={[
+          ['profiles', 'Profiles', <FolderIcon key="p" />],
+          ['servers', 'Servers', <PlugIcon key="s" />],
+        ]}
+        value={view}
+        onChange={onView}
+      />
       <div data-tauri-drag-region className="ml-auto flex items-center gap-2">
         {shells.length > 0 && (
           <>
@@ -73,10 +87,6 @@ export function TitleBand({
             </Button>
           </>
         )}
-        <Button aria-haspopup="dialog" onClick={onOpenServers} title="MCP Servers…">
-          <PlugIcon width={16} height={16} />
-          <span className="max-[760px]:sr-only">MCP Servers…</span>
-        </Button>
         <Button kind={primary ? 'primary' : 'push'} onClick={onCheckFolder} title="Check Folder… (⌘O)">
           <FolderCheckIcon />
           Check Folder…

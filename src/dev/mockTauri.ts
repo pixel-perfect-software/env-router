@@ -11,6 +11,11 @@ import { withAgents } from '../lib/tools'
 import type { ConfigState, FolderCheck, ImportCandidate, McpServer, Profile, ServerCheck, SetupStatus, ShellStatus, ToolInfo } from '../lib/types'
 
 const HOME = '/Users/sam'
+
+// Prototype comparison: `?off=tint,wash,logos` turns those parts of the new look off.
+for (const part of new URLSearchParams(location.search).get('off')?.split(',') ?? []) {
+  if (['tint', 'wash', 'logos'].includes(part)) document.documentElement.setAttribute(`data-no-${part}`, '')
+}
 const scenario = new URLSearchParams(location.search).get('scenario') ?? 'first-run'
 
 const shell = (name: ShellStatus['shell'], files: string[], available: boolean, installed: boolean, isDefault = false): ShellStatus => ({

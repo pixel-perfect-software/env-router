@@ -1,6 +1,6 @@
-// Two more ways into the library, as views of its inspector: the catalog of well-known servers
-// (a pick opens the editor, prefilled) and importing what the agents already define in their
-// own files. Imports copy; the source files are never changed.
+// Two more ways into the library, shown beside the server list: the catalog of well-known
+// servers (a pick opens the editor, prefilled) and importing what the agents already define in
+// their own files. Imports copy; the source files are never changed.
 
 import { useEffect, useRef, useState } from 'react'
 import { errorMessage, importCandidates } from '../lib/api'
@@ -10,22 +10,20 @@ import { tildify } from '../lib/paths'
 import { withAgents } from '../lib/tools'
 import type { ConfigState, ImportCandidate, McpServer } from '../lib/types'
 import { TransportIcon } from './icons'
-import { BackIcon, Button, CheckBox, ChevronIcon, CloseIcon, IconButton, LockIcon, Mark } from './ui'
+import { ServerMark } from './ServerMark'
+import { Button, CheckBox, ChevronIcon, CloseIcon, IconButton, LockIcon, Mark } from './ui'
 
 /**
- * The view's title bar. Its back button takes focus when the view opens: the button that
- * opened the view is gone, and without this focus would fall out of the panel.
+ * The view's title bar. Its close button takes focus when the view opens: the button that
+ * opened it may be gone, and focus would otherwise fall out of the view.
  */
-function Header({ title, onBack, onClose, disabled }: { title: string; onBack: () => void; onClose: () => void; disabled?: boolean }) {
-  const back = useRef<HTMLButtonElement>(null)
-  useEffect(() => back.current?.focus(), [])
+function Header({ title, onClose, disabled }: { title: string; onClose: () => void; disabled?: boolean }) {
+  const close = useRef<HTMLButtonElement>(null)
+  useEffect(() => close.current?.focus(), [])
   return (
-    <header className="flex items-center gap-1.5 pt-5 pr-5 pb-3 pl-3">
-      <IconButton ref={back} label="All servers" onClick={onBack} disabled={disabled}>
-        <BackIcon />
-      </IconButton>
+    <header className="flex items-center gap-1.5 px-5 pt-4 pb-3">
       <h2 className="min-w-0 flex-1 truncate text-title font-semibold">{title}</h2>
-      <IconButton label="Close" onClick={onClose} disabled={disabled}>
+      <IconButton ref={close} label={`Close ${title}`} onClick={onClose} disabled={disabled}>
         <CloseIcon />
       </IconButton>
     </header>
@@ -38,26 +36,24 @@ export function CatalogView({
   home,
   taken,
   onBack,
-  onClose,
   onPick,
 }: {
   home: string
   taken: string[]
   onBack: () => void
-  onClose: () => void
   onPick: (draft: ServerDraft) => void
 }) {
   const names = new Set(taken)
   return (
     <section
       aria-label="Server catalog"
-      className="flex min-h-0 flex-1 animate-[er-fade_140ms_ease-out] flex-col"
+      className="flex min-h-0 flex-1 animate-[er-fade_160ms_var(--ease-settle)] flex-col"
       onKeyDown={(e) => {
         if (e.key === 'Escape') onBack()
       }}
     >
-      <Header title="Catalog" onBack={onBack} onClose={onClose} />
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
+      <Header title="Catalog" onClose={onBack} />
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-0.5 pb-5">
         <ul className="rounded-card bg-card shadow-card">
           {catalog(home).map((entry) => {
             const added = names.has(entry.name)
@@ -68,13 +64,14 @@ export function CatalogView({
                   onClick={() => onPick(draftFromCatalog(freeName(entry.name, names), entry.server, entry.secrets ?? {}))}
                   className="group/row flex w-full items-start gap-2.5 rounded-control px-3 py-2 text-left hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)]"
                 >
-                  <span className="mt-[2px] text-ink-2">
-                    <TransportIcon transport={entry.server.transport} />
-                  </span>
+                  <ServerMark name={entry.name} server={entry.server} size={28} />
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-baseline gap-2">
+                    <span className="flex items-center gap-2">
                       <span className="font-medium">{entry.label}</span>
-                      <span className="text-caption text-ink-2">{TRANSPORT_LABEL[entry.server.transport]}</span>
+                      <span className="flex items-center gap-1 text-caption text-ink-2">
+                        <TransportIcon transport={entry.server.transport} size={11} />
+                        {TRANSPORT_LABEL[entry.server.transport]}
+                      </span>
                       {entry.secrets && (
                         <span className="self-center text-ink-2" title="Takes a secret, kept in the Keychain">
                           <LockIcon />
@@ -125,13 +122,11 @@ export function ImportView({
   config,
   home,
   onBack,
-  onClose,
   onImport,
 }: {
   config: ConfigState
   home: string
   onBack: () => void
-  onClose: () => void
   onImport: (servers: [string, McpServer][], secrets: Record<string, string>) => Promise<void>
 }) {
   const [rows, setRows] = useState<Row[] | null>(null)
@@ -188,13 +183,13 @@ export function ImportView({
   return (
     <section
       aria-label="Import servers"
-      className="flex min-h-0 flex-1 animate-[er-fade_140ms_ease-out] flex-col"
+      className="flex min-h-0 flex-1 animate-[er-fade_160ms_var(--ease-settle)] flex-col"
       onKeyDown={(e) => {
         if (e.key === 'Escape' && !saving) onBack()
       }}
     >
-      <Header title="Import Servers" onBack={onBack} onClose={onClose} disabled={saving} />
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
+      <Header title="Import from Your Agents" onClose={onBack} disabled={saving} />
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-0.5 pb-5">
         {rows === null ? (
           !error && (
             <p className="flex items-center gap-2 text-small text-ink-2">
@@ -209,7 +204,7 @@ export function ImportView({
             {rows.map((row, i) => (
               <li key={`${row.candidate.name}-${row.candidate.sources.join()}`} className="[&+&]:hair-t">
                 <label
-                  className={`relative flex w-full items-start gap-2.5 rounded-control px-3 py-2 has-[:focus-visible]:outline-[3px] has-[:focus-visible]:outline-[color-mix(in_srgb,var(--er-accent)_50%,transparent)] has-[:focus-visible]:outline-solid ${
+                  className={`relative flex w-full items-start gap-2.5 rounded-control px-3 py-2 focus-within-ring ${
                     row.present ? 'opacity-60' : 'hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)]'
                   }`}
                 >
@@ -223,20 +218,24 @@ export function ImportView({
                       {row.present ? (
                         <span className="text-caption text-ink-2">In the library</span>
                       ) : (
-                        row.as !== row.candidate.name && <span className="text-caption text-ink-2">{row.candidate.name} is taken</span>
+                        row.as !== row.candidate.name && (
+                          <span className="text-caption text-ink-2">
+                            <span className="font-mono">{row.candidate.name}</span> is taken
+                          </span>
+                        )
                       )}
                     </span>
                     <span className="block truncate font-mono text-caption text-ink-2" title={serverSummary(row.candidate.server)}>
                       {serverSummary(row.candidate.server)}
                     </span>
                     <span className="block truncate text-caption text-ink-2" title={row.candidate.sources.join('\n')}>
-                      from {tildify(row.candidate.sources[0], home)}
+                      from <span className="font-mono">{tildify(row.candidate.sources[0], home)}</span>
                       {row.candidate.sources.length > 1 && ` and ${row.candidate.sources.length - 1} more`}
                     </span>
                     {row.locked.length > 0 && !row.present && (
                       <span className="mt-0.5 flex items-center gap-1 text-caption text-ink-2">
                         <LockIcon />
-                        {row.locked.join(', ')} {row.locked.length === 1 ? 'goes' : 'go'} to the Keychain
+                        <span className="font-mono">{row.locked.join(', ')}</span> {row.locked.length === 1 ? 'goes' : 'go'} to the Keychain
                       </span>
                     )}
                   </span>

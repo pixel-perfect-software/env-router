@@ -167,3 +167,21 @@ export function withoutServer(config: ConfigState, name: string): ConfigState {
   })
   return { ...config, mcpServers, profiles }
 }
+
+/**
+ * `config` with exactly `profileIds` loading the server: each profile switched on keeps the tools
+ * it had turned off, one switched on afresh starts with all of them.
+ */
+export function withUsedBy(config: ConfigState, name: string, profileIds: string[]): ConfigState {
+  const profiles = config.profiles.map((p) => {
+    const using = p.mcpServers[name]
+    const wanted = profileIds.includes(p.id)
+    if (wanted && !using) return { ...p, mcpServers: { ...p.mcpServers, [name]: { disabledTools: [] } } }
+    if (!wanted && using) {
+      const { [name]: _, ...rest } = p.mcpServers
+      return { ...p, mcpServers: rest }
+    }
+    return p
+  })
+  return { ...config, profiles }
+}

@@ -7,49 +7,92 @@
  */
 :root {
   color-scheme: light dark;
-  --er-window: #eeeef1;
+  /* Neutrals lean a few percent toward the app icon's signal-box navy, so the window belongs to its mark. */
+  --er-window: #eceef3;
   --er-card: #ffffff;
-  --er-card-muted: #f6f6f8;
+  --er-card-muted: #f5f6f9;
   --er-raised: #ffffff;
   --er-field: #ffffff;
   --er-button: #ffffff;
-  --er-border: rgb(0 0 0 / 0.09);
-  --er-rule: #e6e6ea;
-  --er-ink: #1d1d1f;
-  --er-ink-2: #66666c;
-  --er-ink-3: #9a9aa0;
+  --er-border: rgb(16 24 48 / 0.1);
+  --er-rule: #e3e6ec;
+  /* A field's edge at 3:1 against the field and the panel around it (WCAG 1.4.11). */
+  --er-field-edge: #8e939d;
+  /* The segmented control's track, and a sealed value's well (a Keychain secret). */
+  --er-track: rgb(16 24 48 / 0.07);
+  --er-well: #f1f3f7;
+  --er-ink: #1b1d22;
+  --er-ink-2: #61656f;
+  --er-ink-3: #959aa5;
   --er-accent: #0a64d8;
   --er-on-accent: #ffffff;
   --er-ok: #24a148;
   --er-warn: #c47f00;
-  --er-problem: #d4372c;
-  --er-shadow-card: 0 1px 2px rgb(0 0 0 / 0.05), 0 0 0 0.5px var(--er-border);
-  --er-shadow-raised: 0 10px 30px -6px rgb(0 0 0 / 0.18), 0 2px 6px rgb(0 0 0 / 0.06), 0 0 0 0.5px var(--er-border);
+  --er-problem: #c9332a;
+  --er-shadow-card: 0 1px 2px rgb(16 24 48 / 0.06), 0 0 0 0.5px var(--er-border);
+  --er-shadow-raised: 0 10px 30px -6px rgb(16 24 48 / 0.2), 0 2px 6px rgb(16 24 48 / 0.06), 0 0 0 0.5px var(--er-border);
   --er-tint: color-mix(in srgb, var(--er-accent) 9%, var(--er-card));
+  /* How strongly a profile's colour washes its card header. */
+  --er-wash: 7%;
   --hair: 1px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
+    /* Navy graphite rather than neutral grey, after the icon's plate. */
+    --er-window: #14161b;
+    --er-card: #20232a;
+    --er-card-muted: #1a1d23;
+    --er-raised: #272b33;
+    --er-field: #171a1f;
+    --er-button: #3a3f4a;
+    --er-border: rgb(255 255 255 / 0.09);
+    --er-rule: #30343c;
+    --er-field-edge: #747a86;
+    --er-track: rgb(0 0 0 / 0.32);
+    --er-well: #31353e;
+    --er-ink: #eef0f4;
+    --er-ink-2: #a0a5b0;
+    --er-ink-3: #6c717c;
+    --er-accent: #3d8af7;
+    --er-ok: #3ec46d;
+    --er-warn: #e5a83a;
+    --er-problem: #ff6b61;
+    --er-shadow-card: 0 1px 2px rgb(0 0 0 / 0.35), 0 0 0 0.5px var(--er-border);
+    --er-shadow-raised: 0 12px 32px -6px rgb(0 0 0 / 0.6), 0 0 0 0.5px var(--er-border);
+    --er-tint: color-mix(in srgb, var(--er-accent) 18%, var(--er-card));
+    --er-wash: 12%;
+  }
+}
+
+/* Prototype switches for comparing with the committed look (dev mock only, `?off=tint,wash,logos`). */
+:root[data-no-tint] {
+  --er-window: #eeeef1;
+  --er-card-muted: #f6f6f8;
+  --er-border: rgb(0 0 0 / 0.09);
+  --er-rule: #e6e6ea;
+  --er-ink: #1d1d1f;
+  --er-ink-2: #66666c;
+  --er-ink-3: #9a9aa0;
+  --er-well: #f6f6f8;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-no-tint] {
     --er-window: #18181a;
     --er-card: #252527;
     --er-card-muted: #1f1f21;
     --er-raised: #2c2c2f;
     --er-field: #1c1c1e;
     --er-button: #3a3a3d;
-    --er-border: rgb(255 255 255 / 0.09);
     --er-rule: #343437;
     --er-ink: #f2f2f4;
     --er-ink-2: #a3a3a9;
     --er-ink-3: #6f6f75;
-    --er-accent: #3d8af7;
-    --er-ok: #3ec46d;
-    --er-warn: #e5a83a;
-    --er-problem: #ff6b61;
-    --er-shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 0 0 0.5px var(--er-border);
-    --er-shadow-raised: 0 12px 32px -6px rgb(0 0 0 / 0.55), 0 0 0 0.5px var(--er-border);
-    --er-tint: color-mix(in srgb, var(--er-accent) 18%, var(--er-card));
+    --er-well: #37373b;
   }
+}
+:root[data-no-wash] {
+  --er-wash: 0%;
 }
 
 @supports (color: AccentColor) {
@@ -85,6 +128,9 @@
   --color-field: var(--er-field);
   --color-button: var(--er-button);
   --color-rule: var(--er-rule);
+  --color-field-edge: var(--er-field-edge);
+  --color-track: var(--er-track);
+  --color-well: var(--er-well);
   --color-ink: var(--er-ink);
   --color-ink-2: var(--er-ink-2);
   --color-ink-3: var(--er-ink-3);
@@ -112,6 +158,14 @@
 }
 @utility hair-l {
   border-left: var(--hair) solid var(--er-rule);
+}
+
+/* A row that is the label of a hidden native control shows that control's focus ring. */
+@utility focus-within-ring {
+  &:has(:focus-visible) {
+    outline: 2px solid var(--er-accent);
+    outline-offset: 2px;
+  }
 }
 
 @layer base {
@@ -151,9 +205,10 @@
     caret-color: var(--er-accent);
   }
 
+  /* Solid accent, so the ring holds 3:1 on every surface (WCAG 1.4.11). */
   :focus-visible {
-    outline: 3px solid color-mix(in srgb, var(--er-accent) 50%, transparent);
-    outline-offset: 1px;
+    outline: 2px solid var(--er-accent);
+    outline-offset: 2px;
     border-radius: 6px;
   }
 
@@ -180,6 +235,12 @@
     animation-duration: 1ms !important;
     /* biome-ignore lint/complexity/noImportantStyles: as above */
     transition-duration: 1ms !important;
+  }
+  /* A pulse at 1ms is a strobe; a pending mark holds still instead. */
+  [class*="er-pending"] {
+    /* biome-ignore lint/complexity/noImportantStyles: beats the component's own animation */
+    animation: none !important;
+    opacity: 0.6;
   }
 }
 

@@ -10,7 +10,8 @@ import { mcpAgentLabels, serverSummary } from '../lib/mcp'
 import { splitLeaf, tildify } from '../lib/paths'
 import { KNOWN_TOOLS } from '../lib/tools'
 import type { McpServer, Profile, ToolInfo } from '../lib/types'
-import { AgentMark, TransportIcon } from './icons'
+import { AgentMark } from './icons'
+import { ServerMark } from './ServerMark'
 import { Button, CheckBox, ChevronIcon, CloseIcon, FolderIcon, IconButton, PlusIcon, ProfileDot, TextField } from './ui'
 
 interface FolderRow {
@@ -266,7 +267,7 @@ export function ProfileInspector({
             <legend className="mb-1.5 text-small font-medium text-ink-2">MCP servers</legend>
             <div className="rounded-card bg-card shadow-card">
               {libraryNames.length === 0 ? (
-                <p className="px-3 py-2.5 text-small text-ink-2 italic">The server library is empty. Add servers with MCP Servers…</p>
+                <p className="px-3 py-2.5 text-small text-ink-2 italic">No servers yet. Add them in Servers (⌘2).</p>
               ) : (
                 <ul>
                   {libraryNames.map((server) => {
@@ -274,7 +275,7 @@ export function ProfileInspector({
                     return (
                       <li key={server} className="[&+&]:hair-t">
                         {/* A real checkbox, hidden, so the whole row is its label; the drawn box shows its state and focus. */}
-                        <label className="relative flex w-full items-center gap-2.5 rounded-control px-3 py-1.5 hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)] has-[:focus-visible]:outline-[3px] has-[:focus-visible]:outline-offset-1 has-[:focus-visible]:outline-[color-mix(in_srgb,var(--er-accent)_50%,transparent)] has-[:focus-visible]:outline-solid">
+                        <label className="relative flex w-full items-center gap-2.5 rounded-control px-3 py-1.5 hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)] focus-within-ring">
                           <input
                             type="checkbox"
                             className="sr-only"
@@ -289,10 +290,8 @@ export function ProfileInspector({
                             }
                           />
                           <CheckBox checked={on} />
+                          <ServerMark name={server} server={library[server]} size={20} />
                           <span className={`shrink-0 font-mono text-small ${on ? 'text-ink' : 'text-ink-2'}`}>{server}</span>
-                          <span className="shrink-0 text-ink-2">
-                            <TransportIcon transport={library[server].transport} size={12} />
-                          </span>
                           <span className="min-w-0 flex-1 truncate font-mono text-caption text-ink-2" title={serverSummary(library[server])}>
                             {serverSummary(library[server])}
                           </span>
@@ -358,7 +357,7 @@ function ToolFilter({
   onChange: (off: string[]) => void
 }) {
   const [open, setOpen] = useState(false)
-  // Aligned with the server name, past the checkbox.
+  // Aligned with the server's mark, past the checkbox.
   const indent = 'pl-[36px] pr-3'
   if (!tools) {
     return (
@@ -415,7 +414,7 @@ function ToolFilter({
             const enabled = !off.includes(tool.name)
             return (
               <li key={tool.name}>
-                <label className="relative flex min-h-[28px] items-center gap-2 rounded-control px-1 hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)] has-[:focus-visible]:outline-[3px] has-[:focus-visible]:outline-[color-mix(in_srgb,var(--er-accent)_50%,transparent)] has-[:focus-visible]:outline-solid">
+                <label className="relative flex min-h-[28px] items-center gap-2 rounded-control px-1 hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)] focus-within-ring">
                   <input
                     type="checkbox"
                     className="sr-only"

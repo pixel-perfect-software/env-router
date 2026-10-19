@@ -109,15 +109,18 @@ export function Segmented<T extends string>({
   options,
   value,
   onChange,
+  size = 'small',
 }: {
   label: string
+  /** `toolbar`: the titlebar's view switch, at push-button height. */
+  size?: 'small' | 'toolbar'
   /** Value, label, and an optional leading icon. */
   options: [T, string, ReactNode?][]
   value: T
   onChange: (value: T) => void
 }) {
   return (
-    <fieldset className="flex w-fit shrink-0 rounded-[7px] bg-[color-mix(in_srgb,var(--er-ink)_7%,transparent)] p-[2px]">
+    <fieldset className="flex w-fit shrink-0 rounded-[7px] bg-track p-[2px]">
       <legend className="sr-only">{label}</legend>
       {options.map(([option, text, icon]) => (
         <button
@@ -125,7 +128,7 @@ export function Segmented<T extends string>({
           type="button"
           aria-pressed={option === value}
           onClick={() => onChange(option)}
-          className={`flex h-[22px] items-center gap-1.5 rounded-[5px] px-2.5 text-small whitespace-nowrap ${
+          className={`flex items-center gap-1.5 rounded-[5px] whitespace-nowrap ${size === 'toolbar' ? 'h-[24px] px-3 text-body' : 'h-[22px] px-2.5 text-small'} ${
             option === value ? 'bg-button text-ink shadow-[0_0.5px_1.5px_rgb(0_0_0/0.18)]' : 'text-ink-2 hover:text-ink'
           }`}
         >
@@ -147,7 +150,7 @@ export const TextField = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLIn
       spellCheck={false}
       autoCorrect="off"
       autoCapitalize="off"
-      className={`h-[28px] min-w-0 rounded-control bg-field px-2 text-ink select-text shadow-[inset_0_0_0_1px_var(--er-rule)] placeholder:text-ink-2 placeholder:italic focus:shadow-[inset_0_0_0_1.5px_var(--er-accent)] focus:outline-none ${
+      className={`h-[28px] min-w-0 rounded-control bg-field px-2 text-ink select-text shadow-[inset_0_0_0_1px_var(--er-field-edge)] placeholder:text-ink-2 placeholder:italic focus:shadow-[inset_0_0_0_1.5px_var(--er-accent)] focus:outline-none ${
         mono ? 'font-mono text-small' : 'text-body'
       } ${className}`}
       {...props}

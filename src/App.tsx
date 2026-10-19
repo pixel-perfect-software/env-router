@@ -8,7 +8,7 @@ import { type Health, HealthLine, ShellsPopover, TitleBand } from './components/
 import { type CheckState, Docket } from './components/Docket'
 import { type DropTarget, Frame, type Slip } from './components/Frame'
 import { ProfileInspector } from './components/ProfileInspector'
-import { ServerLibrary } from './components/ServerLibrary'
+import { type Detail, ServersView } from './components/ServerLibrary'
 import { profileColors } from './components/ui'
 import {
   checkFolder,
@@ -22,7 +22,7 @@ import {
   setShellIntegration,
 } from './lib/api'
 import { confirmDelete } from './lib/confirm'
-import { withoutServer, withServer } from './lib/mcp'
+import { withoutServer, withServer, withUsedBy } from './lib/mcp'
 import { owningTrigger } from './lib/paths'
 import { KNOWN_TOOLS, withAgents } from './lib/tools'
 import type { ConfigState, Profile, SetupStatus, Shell, ToolInfo } from './lib/types'
@@ -89,7 +89,11 @@ export default function App() {
   // A failed one-off action (turning on a shell, reinstalling). Cleared by the next success.
   const [actionError, setActionError] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | 'new' | null>(null)
-  const [library, setLibrary] = useState(false)
+  // The window's two places. A dev-only `?view=servers` opens on the second, for review.
+  const [view, setViewState] = useState<'profiles' | 'servers'>(() =>
+    import.meta.env.DEV && new URLSearchParams(location.search).get('view') === 'servers' ? 'servers' : 'profiles',
+  )
+  const [serverDetail, setServerDetail] = useState<Detail>({ kind: 'none' })
   // Each server's checked tools, read again whenever the profile editor opens.
   const [mcpTools, setMcpTools] = useState<Record<string, ToolInfo[]>>({})
   const [shellsOpen, setShellsOpen] = useState(false)
@@ -141,7 +145,7 @@ export default function App() {
   // config.json and the startup files can change from a terminal while the window is open, so
   // coming back reads both again. Not the config while the inspector is open: it saves on top
   // of the config it opened with.
-  const inspecting = editing !== null || library
+  const inspecting = editing !== null
   // Closing a panel puts focus back where it was before the panel opened (the pencil, the
   // titlebar button, a card), whichever way it was opened: button, shortcut or menu.
   const lastOutside = useRef<HTMLElement | null>(null)
@@ -229,9 +233,22 @@ export default function App() {
     }
   }
 
+  const setView = (next: 'profiles' | 'servers') => {
+    setShellsOpen(false)
+    setViewState(next)
+  }
+  /** Opens a server in the Servers view, from a card's footer. */
+  const openServer = (name: string) => {
+    setServerDetail({ kind: 'edit', name })
+    setView('servers')
+  }
+
+  // A check's answer files into the Profiles map, so checking from Servers goes there.
   const pickAndCheck = async () => {
     const picked = await open({ directory: true, defaultPath: home || undefined, title: 'Check Folder' })
-    if (typeof picked === 'string') runCheck(picked, defaultShell(), null)
+    if (typeof picked !== 'string') return
+    setView('profiles')
+    runCheck(picked, defaultShell(), null)
   }
   // The menu bar's "Check Folder…" and keyboard shortcuts reach the latest handlers through a ref.
   // While the inspector is open a check stands down, as it does for a folder dropped on the window.
@@ -240,7 +257,12 @@ export default function App() {
       if (!inspecting) pickAndCheck()
     },
     newProfile: () => {
-      if (config && !library) setEditing((e) => e ?? 'new')
+      if (!config) return
+      setView('profiles')
+      setEditing((e) => e ?? 'new')
+    },
+    view: (next: 'profiles' | 'servers') => {
+      if (!inspecting) setView(next)
     },
   }
   const actions = useRef(shortcuts)
@@ -256,6 +278,9 @@ export default function App() {
       } else if (e.key === 'o') {
         e.preventDefault()
         actions.current.checkFolder()
+      } else if (e.key === '1' || e.key === '2') {
+        e.preventDefault()
+        actions.current.view(e.key === '1' ? 'profiles' : 'servers')
       }
     }
     window.addEventListener('keydown', onKey)
@@ -266,7 +291,9 @@ export default function App() {
   }, [])
 
   const hovering = useFolderDrop(({ path, origin }) => {
-    if (!inspecting) runCheck(path, defaultShell(), origin)
+    if (inspecting) return
+    setView('profiles')
+    runCheck(path, defaultShell(), origin)
   })
 
   // While a folder is dragged over the window, light up the slot it would file into.
@@ -400,56 +427,81 @@ export default function App() {
         <TitleBand
           setup={setup}
           blockedShell={blocked?.shell ?? null}
-          primary={!inspecting && !bannerHasPrimary(health) && !docketHasAction}
+          primary={view === 'profiles' && !inspecting && !bannerHasPrimary(health) && !docketHasAction}
           shellsOpen={shellsOpen}
           onToggleShells={() => setShellsOpen((o) => !o)}
-          onOpenServers={() => {
-            setShellsOpen(false)
-            setLibrary(true)
-          }}
+          view={view}
+          onView={setView}
           onCheckFolder={pickAndCheck}
         />
-        <HealthLine
-          health={health}
-          onNewProfile={() => setEditing('new')}
-          onEnableShell={enableShell}
-          onCheckFolder={pickAndCheck}
-          onReinstall={() => config && commit(config).catch((err) => setActionError(errorMessage(err)))}
-          onRecheck={(folder, shell, tool) => runCheck(folder, shell, null, tool)}
-          onOpenConfig={() => openInEditor(`${home}/.envrouter/config.json`).catch((err) => setLoadError(errorMessage(err)))}
-          onDismissError={() => setActionError(null)}
-        />
+        {/* On Servers, the banner only shows when routing needs attention. */}
+        {(view === 'profiles' || !['ok', 'loading', 'setup'].includes(health.kind)) && (
+          <HealthLine
+            health={health}
+            onNewProfile={() => setEditing('new')}
+            onEnableShell={enableShell}
+            onCheckFolder={pickAndCheck}
+            onReinstall={() => config && commit(config).catch((err) => setActionError(errorMessage(err)))}
+            onRecheck={(folder, shell, tool) => runCheck(folder, shell, null, tool)}
+            onOpenConfig={() => openInEditor(`${home}/.envrouter/config.json`).catch((err) => setLoadError(errorMessage(err)))}
+            onDismissError={() => setActionError(null)}
+          />
+        )}
         {shellsOpen && setup && <ShellsPopover setup={setup} home={home} onSet={setShell} onClose={closeShells} />}
         {/* Soft edges where cards scroll under the banner and the floating check card. */}
-        <main className="min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_10px,black_calc(100%-18px),transparent)]">
-          {config && (
-            <Frame
-              profiles={config.profiles}
+        {view === 'servers' && config && (
+          <ServersView
+            config={config}
+            home={home}
+            colors={profileColors(config.profiles.map((p) => p.id))}
+            detail={serverDetail}
+            onDetail={setServerDetail}
+            onSave={(previous, name, server, secrets, usedBy) =>
+              commit(withUsedBy(withServer(config, previous, name, server), name, usedBy), secrets)
+            }
+            onImport={(servers, secrets) =>
+              commit(
+                servers.reduce((next, [name, server]) => withServer(next, null, name, server), config),
+                secrets,
+              )
+            }
+            onDelete={(name) => commit(withoutServer(config, name))}
+          />
+        )}
+        {view === 'profiles' && (
+          <>
+            <main className="min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_10px,black_calc(100%-18px),transparent)]">
+              {config && (
+                <Frame
+                  profiles={config.profiles}
+                  home={home}
+                  editing={editing}
+                  slip={slip}
+                  dropTarget={dropTarget}
+                  onEdit={setEditing}
+                  onContextMenu={showSlotMenu}
+                  onOpenServer={openServer}
+                />
+              )}
+            </main>
+            <Docket
+              check={check}
+              shells={setup?.shells ?? []}
               home={home}
-              editing={editing}
-              slip={slip}
-              dropTarget={dropTarget}
-              onEdit={setEditing}
-              onContextMenu={showSlotMenu}
+              routedTools={routedTools}
+              shimsDir={setup?.shimsDir ?? `${home}/.envrouter/shims`}
+              hovering={hovering}
+              onRecheck={(shell, tool) => check && runCheck(check.folder, shell, null, tool)}
+              onAction={runAction}
+              primary={!inspecting && !bannerHasPrimary(health)}
+              onDismiss={() => {
+                checkKey.current++
+                setCheck(null)
+                setSlip(null)
+              }}
             />
-          )}
-        </main>
-        <Docket
-          check={check}
-          shells={setup?.shells ?? []}
-          home={home}
-          routedTools={routedTools}
-          shimsDir={setup?.shimsDir ?? `${home}/.envrouter/shims`}
-          hovering={hovering}
-          onRecheck={(shell, tool) => check && runCheck(check.folder, shell, null, tool)}
-          onAction={runAction}
-          primary={!inspecting && !bannerHasPrimary(health)}
-          onDismiss={() => {
-            checkKey.current++
-            setCheck(null)
-            setSlip(null)
-          }}
-        />
+          </>
+        )}
       </div>
       {config && editingId !== null && (
         <ProfileInspector
@@ -470,22 +522,6 @@ export default function App() {
                   return profile ? deleteProfile(profile) : Promise.resolve()
                 }
           }
-        />
-      )}
-      {config && library && (
-        <ServerLibrary
-          config={config}
-          home={home}
-          colors={profileColors(config.profiles.map((p) => p.id))}
-          onSave={(previous, name, server, secrets) => commit(withServer(config, previous, name, server), secrets)}
-          onImport={(servers, secrets) =>
-            commit(
-              servers.reduce((next, [name, server]) => withServer(next, null, name, server), config),
-              secrets,
-            )
-          }
-          onDelete={(name) => commit(withoutServer(config, name))}
-          onClose={() => setLibrary(false)}
         />
       )}
     </div>
