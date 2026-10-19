@@ -85,8 +85,15 @@ impl Fixture {
     }
 }
 
+/// Writes a script that's run straight away. The bytes go to a side file and `cp` copies them into
+/// place, so this process never holds the script open for writing: on Linux, a test thread that
+/// forks meanwhile would inherit that handle, and running the script would fail with "Text file
+/// busy" until the fork execs.
 fn write_executable(path: &Path, contents: &str) {
-    fs::write(path, contents).unwrap();
+    let source = path.with_extension("src");
+    fs::write(&source, contents).unwrap();
+    let copied = Command::new("cp").arg(&source).arg(path).status().unwrap();
+    assert!(copied.success());
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
 }
 

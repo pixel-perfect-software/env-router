@@ -996,8 +996,20 @@ mod tests {
         let home = fs::canonicalize(root.path()).unwrap();
         fs::create_dir_all(home.join("work/app")).unwrap();
         fs::create_dir_all(home.join("bin")).unwrap();
+        // Copied into place by `cp`, so no fork of this process can hold it open for writing
+        // when it runs (Linux refuses that with "Text file busy").
         let real = home.join("bin/claude");
-        fs::write(&real, "#!/bin/sh\necho REAL CLAUDE RAN\n").unwrap();
+        fs::write(
+            home.join("bin/claude.src"),
+            "#!/bin/sh\necho REAL CLAUDE RAN\n",
+        )
+        .unwrap();
+        let copied = std::process::Command::new("cp")
+            .arg(home.join("bin/claude.src"))
+            .arg(&real)
+            .status()
+            .unwrap();
+        assert!(copied.success());
         fs::set_permissions(&real, fs::Permissions::from_mode(0o755)).unwrap();
 
         let config = config();
