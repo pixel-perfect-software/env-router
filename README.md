@@ -46,8 +46,10 @@ selection of MCP servers from a library you keep in the app:
   settings and history stay separate. The deepest matching folder picks the profile.
 - 🔌 **Per-folder MCP servers.** Keep one server library and choose which profiles load each
   server. Turn off individual tools per profile once a check has listed them.
-- 📥 **Import and catalog.** Bring in the servers your agents already define (EnvRouter only reads
-  their files), pick from a short catalog of well-known servers, or add one by hand.
+- 📥 **Import, paste and catalog.** Bring in the servers your agents already define (EnvRouter only
+  reads their files), paste a server's JSON straight from its README, search a catalog of 50-odd
+  vendors' own servers (hosted or local, and what each needs to sign in), or add one by hand.
+  Duplicate a server or a profile to start from one you have.
 - 🔑 **Secrets in your system's store.** API keys and tokens you enter go to the macOS Keychain,
   the Linux keyring, or, inside WSL, the Windows Credential Manager. Never `config.json`, a
   rendered file or a command line.
@@ -177,7 +179,7 @@ and then `target/release/envrouter install`. The first build takes a few minutes
    Claude.
 
 To give a profile MCP servers, switch to **MCP Servers** (⌘2; Ctrl+2), add servers from the
-catalog, by import or by hand, and choose the profiles that use each one, either with the
+catalog, by import, by pasting their JSON or by hand, and choose the profiles that use each one, either with the
 server's **Used by** toggles or from the profile's own checklist. **Check Server** starts a
 server and lists its tools, so a profile can turn individual tools off. Remote servers that need
 a login sign in through the agent (`/mcp` in Claude Code), not through EnvRouter.

@@ -30,6 +30,8 @@ export function ProfileInspector({
   onCancel,
   onSave,
   onDelete,
+  onDuplicate,
+  template,
 }: {
   /** The profile's id, or the one a new profile will be saved with. */
   id: string
@@ -44,16 +46,22 @@ export function ProfileInspector({
   onCancel: () => void
   onSave: (profile: Profile) => Promise<void>
   onDelete?: () => Promise<void>
+  /** Opens a new profile copied from this one. */
+  onDuplicate?: () => void
+  /** A new profile's starting point, when it's a copy of another. */
+  template?: Profile
 }) {
   const platform = usePlatform()
-  const [name, setName] = useState(profile?.name ?? '')
-  const [folders, setFolders] = useState<FolderRow[]>(() => (profile?.triggerPaths ?? []).map((path) => ({ path, removed: false })))
+  // What the form starts from, and what counts as unchanged.
+  const base = profile ?? template
+  const [name, setName] = useState(base?.name ?? '')
+  const [folders, setFolders] = useState<FolderRow[]>(() => (base?.triggerPaths ?? []).map((path) => ({ path, removed: false })))
   const [toolPaths, setToolPaths] = useState<Record<string, string>>(() =>
-    Object.fromEntries(KNOWN_TOOLS.map((tool) => [tool.command, profile?.tools[tool.command]?.path ?? ''])),
+    Object.fromEntries(KNOWN_TOOLS.map((tool) => [tool.command, base?.tools[tool.command]?.path ?? ''])),
   )
-  const [servers, setServers] = useState<Set<string>>(() => new Set(Object.keys(profile?.mcpServers ?? {})))
+  const [servers, setServers] = useState<Set<string>>(() => new Set(Object.keys(base?.mcpServers ?? {})))
   const [disabled, setDisabled] = useState<Record<string, string[]>>(() =>
-    Object.fromEntries(Object.entries(profile?.mcpServers ?? {}).map(([name, using]) => [name, using.disabledTools])),
+    Object.fromEntries(Object.entries(base?.mcpServers ?? {}).map(([name, using]) => [name, using.disabledTools])),
   )
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -64,18 +72,18 @@ export function ProfileInspector({
 
   useEffect(() => {
     nameField.current?.focus()
-    if (profile) nameField.current?.select()
-  }, [profile])
+    if (base) nameField.current?.select()
+  }, [base])
 
   // Rows keep their order and removals stay struck through, so any change shows up as a
   // struck row or a different count. Undoing an edit makes the form clean again.
   const dirty =
-    name !== (profile?.name ?? '') ||
+    name !== (base?.name ?? '') ||
     folders.some((f) => f.removed) ||
-    folders.length !== (profile?.triggerPaths.length ?? 0) ||
-    KNOWN_TOOLS.some((tool) => toolPaths[tool.command] !== (profile?.tools[tool.command]?.path ?? '')) ||
-    servers.size !== Object.keys(profile?.mcpServers ?? {}).length ||
-    [...servers].some((name) => !profile?.mcpServers[name] || !sameTools(disabled[name] ?? [], profile.mcpServers[name].disabledTools))
+    folders.length !== (base?.triggerPaths.length ?? 0) ||
+    KNOWN_TOOLS.some((tool) => toolPaths[tool.command] !== (base?.tools[tool.command]?.path ?? '')) ||
+    servers.size !== Object.keys(base?.mcpServers ?? {}).length ||
+    [...servers].some((name) => !base?.mcpServers[name] || !sameTools(disabled[name] ?? [], base.mcpServers[name].disabledTools))
 
   /** Escape, the close button and Cancel. Unsaved edits are only dropped once the user says so. */
   const close = async () => {
@@ -115,7 +123,7 @@ export function ProfileInspector({
       return
     }
     // Tools the window doesn't offer (from a newer app or a hand edit) pass through untouched.
-    const tools = { ...profile?.tools }
+    const tools = { ...base?.tools }
     for (const tool of KNOWN_TOOLS) {
       const path = toolPaths[tool.command].trim()
       if (path) tools[tool.command] = { envVar: tool.envVar, path }
@@ -135,6 +143,19 @@ export function ProfileInspector({
       setError(errorMessage(err))
       setSaving(false)
     }
+  }
+
+  /** Unsaved edits are only dropped once the user says so, as when closing. */
+  const duplicate = async () => {
+    if (!onDuplicate || saving || asking.current) return
+    if (dirty) {
+      asking.current = true
+      const discard = await confirmDiscard(profile?.name).finally(() => {
+        asking.current = false
+      })
+      if (!discard) return
+    }
+    onDuplicate()
   }
 
   const remove = async () => {
@@ -324,6 +345,11 @@ export function ProfileInspector({
           {onDelete && (
             <Button onClick={remove} disabled={saving}>
               Delete…
+            </Button>
+          )}
+          {onDuplicate && (
+            <Button onClick={duplicate} disabled={saving}>
+              Duplicate
             </Button>
           )}
           <p role="alert" className="min-w-0 flex-1 text-small text-problem">

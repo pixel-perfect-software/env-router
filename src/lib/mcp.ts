@@ -117,17 +117,97 @@ export function serverOf(draft: ServerDraft): { server: McpServer; secrets: Reco
   return { server: { transport: draft.transport, url: draft.url.trim(), headers }, secrets }
 }
 
+/** A URL that carries a password, as a database connection string does: `postgres://user:pass@host`. */
+const URL_WITH_PASSWORD = /^[a-z][a-z0-9+.-]*:\/\/[^\s/:@]*:[^\s/@]+@/i
+
+/** Prefixes vendors give their tokens, and an Authorization scheme with its credential. */
+const TOKEN_SHAPE =
+  /^(sk[-_]|pk_live_|rk_live_|ghp_|gho_|ghs_|github_pat_|glpat-|xox[abpr]-|AKIA[0-9A-Z]{12}|AIza|pplx-|fc-|ntn_|hf_)|\b(Bearer|Basic) \S/
+
+/** A word in an option's name that says its value is a credential: `--api-key`, `--auth-token`. */
+const CREDENTIAL_WORD = /key|token|secret|passw(or)?d|auth|credential/i
+
+/** Whether a value itself looks like a credential, whatever it's called. */
+export const looksLikeCredential = (value: string) => URL_WITH_PASSWORD.test(value.trim()) || TOKEN_SHAPE.test(value.trim())
+
+const isReference = (value: string) => /^\$\{[^}]+\}$/.test(value.trim())
+
 /**
- * A draft whose credential-looking values (by name, as `SECRET_NAME` decides) are headed for
- * the Keychain. Imports use it: a token found in a plain file shouldn't stay plain. A value
- * that's only a `${VAR}` reference stays as it is.
+ * Where a draft holds what looks like a credential in plain text that saving won't lock: an
+ * argument (by its option's name or its own shape) or the URL (a password, or a key in the query).
+ * Arguments aren't locked for the user, since Copilot doesn't expand a stored secret there.
+ * Named for the editor and the import review: `argument 3`, `the URL`.
+ */
+export function plainCredentials(draft: ServerDraft): string[] {
+  if (draft.transport !== 'stdio') {
+    const url = draft.url.trim()
+    const inQuery = /[?&][\w-]*(key|token|secret|password|auth)[\w-]*=[^&\s]/i.test(url)
+    return url && (URL_WITH_PASSWORD.test(url) || /^[a-z]+:\/\/[^/@\s]+@/i.test(url) || inQuery) ? ['the URL'] : []
+  }
+  return draft.args.flatMap((arg, i) => {
+    if (typeof arg !== 'string' || !arg.trim() || isReference(arg)) return []
+    const option = arg.match(/^--?([\w-]+)=(.+)$/)
+    const previous = draft.args[i - 1]
+    const afterOption = typeof previous === 'string' && /^--?[\w-]+$/.test(previous) && CREDENTIAL_WORD.test(previous)
+    const plain = (option && CREDENTIAL_WORD.test(option[1]) && !isReference(option[2])) || looksLikeCredential(option?.[2] ?? arg) || afterOption
+    return plain ? [`argument ${i + 1}`] : []
+  })
+}
+
+/** The warning for `plainCredentials`, as one line: "Argument 3 looks like a credential…". */
+export function plainNote(where: string[]): string {
+  const list = where.length > 1 ? `${where.slice(0, -1).join(', ')} and ${where[where.length - 1]}` : where[0]
+  const first = list.charAt(0).toUpperCase() + list.slice(1)
+  const fix = where.includes('the URL')
+    ? 'use a header if the server takes one'
+    : 'pass it in an env var if the server takes one, or lock it (Claude Code only)'
+  return `${first} ${where.length > 1 ? 'look' : 'looks'} like a credential and would be saved as plain text: ${fix}.`
+}
+
+/** `text` made into a name agents accept: other characters become `-`. */
+export const asServerName = (text: string) =>
+  text
+    .replace(/[^A-Za-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64) || 'server'
+
+/**
+ * A draft whose credential-looking env and header values are headed for the Keychain: by name,
+ * as `SECRET_NAME` decides, or by shape (a URL with a password, a vendor's token prefix, a
+ * `Bearer` credential). Imports and pastes use it: a token found in a plain file shouldn't stay
+ * plain. A value that's only a `${VAR}` reference stays as it is. Arguments stay too: Copilot
+ * doesn't expand a stored secret there, so `plainCredentials` flags them instead.
  */
 export function withSecretsLocked(draft: ServerDraft): ServerDraft {
   const lock = (row: Pair): Pair =>
-    typeof row.value === 'string' && row.value && SECRET_NAME.test(row.key) && !/^\$\{[^}]+\}$/.test(row.value.trim())
+    typeof row.value === 'string' && row.value && (SECRET_NAME.test(row.key) || looksLikeCredential(row.value)) && !isReference(row.value)
       ? { ...row, value: { secret: newSecretId(), value: row.value } }
       : row
   return { ...draft, env: draft.env.map(lock), headers: draft.headers.map(lock) }
+}
+
+/**
+ * Where `--init` goes in a `docker run` or `podman run` command that doesn't have it (right after
+ * `run`), or null. Without it the server is the container's first process, which ignores the
+ * SIGTERM an agent stops it with, so the container keeps running after every session.
+ */
+export function initSlot(command: string, args: DraftValue[]): number | null {
+  if (!/(^|\/)(docker|podman)$/.test(command.trim())) return null
+  const words = args.map((arg) => (typeof arg === 'string' ? arg.trim() : ''))
+  const run = words[0] === 'run' ? 1 : words[0] === 'container' && words[1] === 'run' ? 2 : null
+  // Any --init counts, --init=false too: that one is a choice.
+  if (run === null || words.some((word) => word === '--init' || word.startsWith('--init='))) return null
+  return run
+}
+
+/** `args` with `--init` at `slot`. */
+export const withInit = <T extends DraftValue>(args: T[], slot: number): (T | string)[] => [...args.slice(0, slot), '--init', ...args.slice(slot)]
+
+/** The server with `--init` added, where `initSlot` says it's missing; otherwise the server itself. */
+export function serverWithInit(server: McpServer): McpServer {
+  if (server.transport !== 'stdio') return server
+  const slot = initSlot(server.command, server.args)
+  return slot === null ? server : { ...server, args: withInit(server.args, slot) }
 }
 
 /** A new server's draft from a catalog entry: its secret fields empty, headed for the Keychain, with a hint. */
@@ -135,6 +215,82 @@ export function draftFromCatalog(name: string, server: McpServer, secrets: Recor
   const draft = draftOf(name, server)
   const seal = (row: Pair): Pair => (row.key in secrets ? { key: row.key, value: { secret: newSecretId(), value: '' }, hint: secrets[row.key] } : row)
   return { ...draft, env: draft.env.map(seal), headers: draft.headers.map(seal) }
+}
+
+/**
+ * A new server's draft copied from a saved one, under a free name. A stored secret never comes
+ * back to the window, so each keeps its place and name but starts empty, headed for the Keychain.
+ */
+export function duplicateDraft(name: string, server: McpServer, taken: Set<string>): ServerDraft {
+  const draft = draftOf(freeName(name, taken), server)
+  const empty = (value: DraftValue): DraftValue => (typeof value === 'string' ? value : { secret: newSecretId(), value: '' })
+  // Not "Saved to the Keychain", the usual placeholder: nothing is saved yet.
+  const emptyRow = (row: Pair): Pair => (typeof row.value === 'string' ? row : { ...row, value: empty(row.value), hint: 'Enter a value' })
+  return { ...draft, args: draft.args.map(empty), env: draft.env.map(emptyRow), headers: draft.headers.map(emptyRow) }
+}
+
+/** Words in a command line that never name the server. */
+const NOT_A_NAME = new Set(['run', 'exec', 'start', 'mcp', 'server', 'container', 'stdio', 'dlx', 'x'])
+
+/** `docker run` and `podman run` options that take the next word as their value. */
+const VALUE_OPTIONS = new Set([
+  '-e',
+  '--env',
+  '-v',
+  '--volume',
+  '--mount',
+  '-p',
+  '--publish',
+  '--name',
+  '--label',
+  '-l',
+  '--network',
+  '-w',
+  '--workdir',
+  '--entrypoint',
+  '-u',
+  '--user',
+  '--platform',
+])
+
+/**
+ * A name for a server pasted without one: the host's own label for a URL (`mcp.linear.app` is
+ * `linear`), or the package or image it runs, without scope, version or MCP affixes
+ * (`@upstash/context7-mcp@latest` is `context7`). `server` when nothing fits.
+ */
+export function suggestName(server: McpServer): string {
+  const clean = (text: string) => {
+    const name = text
+      .toLowerCase()
+      .replace(/^(mcp-server-|server-|mcp-)/, '')
+      .replace(/(-mcp-server|-mcp|-server)$/, '')
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+    return SERVER_NAME.test(name) ? name : null
+  }
+  if (server.transport !== 'stdio') {
+    try {
+      const host = new URL(server.url).hostname
+      // An address or localhost names nothing.
+      if (/^[\d.]+$|^\[|^localhost$/.test(host)) return 'server'
+      const labels = host.split('.')
+      const own = (labels.length > 1 ? labels.slice(0, -1) : labels).filter((l) => !['mcp', 'www', 'api'].includes(l))
+      return clean(own[own.length - 1] ?? '') ?? 'server'
+    } catch {
+      return 'server'
+    }
+  }
+  // The value after an option like `-v` or `-e` is a path or a variable, never the server.
+  const words = server.args.filter(
+    (a, i): a is string => typeof a === 'string' && !a.startsWith('-') && !NOT_A_NAME.has(a) && !VALUE_OPTIONS.has(String(server.args[i - 1] ?? '')),
+  )
+  // A package or image says so with a scope, a path or a version; otherwise the first plain word.
+  const pick = words.find((w) => /[/@:]|==/.test(w)) ?? words[0]
+  const base = pick
+    ?.replace(/(@[^@/]+|==.*|:[^/]+)$/, '')
+    .split('/')
+    .pop()
+  return (base && clean(base)) ?? clean(server.command.split('/').pop() ?? '') ?? 'server'
 }
 
 /** A name not yet `taken`: the name itself, else `name-2`, `name-3`… */
