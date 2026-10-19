@@ -41,6 +41,11 @@ pub fn install_binary(home: &Path, source: &Path) -> Result<bool> {
     install_file(&paths::shim_binary(home), source)
 }
 
+/// Installs the CLI at [`paths::cli_binary`], the same way.
+pub fn install_cli(home: &Path, source: &Path) -> Result<bool> {
+    install_file(&paths::cli_binary(home), source)
+}
+
 fn install_file(dest: &Path, source: &Path) -> Result<bool> {
     let dest = dest.to_path_buf();
     let bytes = fs::read(source).map_err(|source_err| Error::Io {

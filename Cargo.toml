@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/build-support", "crates/core", "crates/keychain", "crates/ops", "crates/shim", "src-tauri"]
+members = ["crates/build-support", "crates/cli", "crates/core", "crates/keychain", "crates/ops", "crates/shim", "src-tauri"]
 
 [workspace.dependencies]
 envrouter-build-support = { path = "crates/build-support" }

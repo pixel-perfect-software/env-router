@@ -1,16 +1,19 @@
 mod tray;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
-use envrouter_core::config::{self, ConfigState, McpServer};
-use envrouter_core::{mcp, paths, Error, Result};
-use serde::Serialize;
+use envrouter_core::config::{self, ConfigState, IdeHook, McpServer};
+use envrouter_core::{paths, Error, Result};
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 
-use envrouter_ops::editors::{self, Editor, EditorStatus, IdeHook};
+use envrouter_ops::commands::{self, SetupStatus};
+use envrouter_ops::editors::{Editor, EditorStatus};
 use envrouter_ops::shell::{self, FolderCheck, Preview, Shell, ShellStatus};
 use envrouter_ops::{mcp_import, mcp_probe, shims};
+
+// Each command is a wrapper over `envrouter_ops::commands`, which the CLI's `rpc` mode calls by
+// the same names. Only the window's own concerns live here: the tray and the async runtime.
 
 fn home(app: &AppHandle) -> Result<PathBuf> {
     app.path().home_dir().map_err(|_| Error::NoHome)
@@ -28,12 +31,9 @@ async fn blocking<T: Send + 'static>(
 #[tauri::command]
 async fn get_config(app: AppHandle) -> Result<ConfigState> {
     let home = home(&app)?;
-    blocking(move || config::load_or_init(&paths::root(&home))).await
+    blocking(move || commands::get_config(&home)).await
 }
 
-/// Validates and saves the config, then renders each profile's MCP files and updates the
-/// shims to match. `secrets` holds values typed since the last save, keyed by the ids the
-/// config refers to them by; they go to the Keychain before the config names them.
 #[tauri::command]
 async fn save_config(
     app: AppHandle,
@@ -42,107 +42,40 @@ async fn save_config(
 ) -> Result<()> {
     let home = home(&app)?;
     blocking(move || {
-        config::validate(&payload, &home)?;
-        let referenced = config::secret_ids(&payload);
-        if secrets.keys().any(|id| !referenced.contains(id.as_str())) {
-            return Err(Error::Invalid(
-                "A new secret isn't used by any server. Save the server again.".into(),
-            ));
-        }
-        let fresh_shim = shims::install_bundled(&home)?;
-        // Only inside home: a typo'd absolute path shouldn't create folders elsewhere.
-        for dir in config::tool_dirs(&payload, &home) {
-            if dir.starts_with(&home) && !dir.exists() {
-                std::fs::create_dir_all(&dir).map_err(|source| Error::Io { path: dir, source })?;
-            }
-        }
-        // The Keychain is read only when this save adds a secret or stops using one.
-        let root = paths::root(&home);
-        let dropped = config::load(&root).ok().flatten().is_some_and(|previous| {
-            config::secret_ids(&previous)
-                .iter()
-                .any(|id| !referenced.contains(id))
-        });
-        if !secrets.is_empty() || dropped {
-            envrouter_keychain::update(&home, &secrets, &referenced)?;
-        }
-        config::save(&root, &payload)?;
-        mcp::sync(&payload, &home)?;
-        shims::sync(&home, &payload)?;
-        if fresh_shim && !referenced.is_empty() {
-            shims::ask_keychain_access(&home);
-        }
+        commands::save_config(&home, &payload, &secrets)?;
         tray::refresh(&app);
         Ok(())
     })
     .await
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SetupStatus {
-    shim_installed: bool,
-    shims_dir: String,
-    shells: Vec<ShellStatus>,
-}
-
 #[tauri::command]
 async fn get_setup_status(app: AppHandle) -> Result<SetupStatus> {
     let home = home(&app)?;
-    blocking(move || {
-        Ok(SetupStatus {
-            shim_installed: shims::is_installed(
-                &home,
-                &shims::bundled()?,
-                &shims::bundled_keychain()?,
-            ),
-            shims_dir: paths::shims(&home).display().to_string(),
-            shells: Shell::ALL
-                .iter()
-                .map(|&s| shell::status(s, &home))
-                .collect(),
-        })
-    })
-    .await
+    blocking(move || commands::setup_status(&home)).await
 }
 
 #[tauri::command]
 async fn set_shell_integration(app: AppHandle, shell: Shell, enabled: bool) -> Result<ShellStatus> {
     let home = home(&app)?;
     blocking(move || {
-        if enabled {
-            shims::install_bundled(&home)?;
-        }
-        let status = shell::set_integration(shell, &home, enabled)?;
+        let status = commands::set_shell_integration(&home, shell, enabled)?;
         tray::refresh(&app);
         Ok(status)
     })
     .await
 }
 
-/// Each editor's state for each agent hook, keyed by the agent's command. The hooks come from
-/// `tools.ts`, so nothing here knows an agent's settings.
+/// The hooks come from `tools.ts`, so the window shows them before the config has them.
 #[tauri::command]
 async fn get_editor_status(
     app: AppHandle,
-    hooks: std::collections::BTreeMap<String, IdeHook>,
+    hooks: BTreeMap<String, IdeHook>,
 ) -> Result<Vec<EditorStatus>> {
     let home = home(&app)?;
-    blocking(move || {
-        Ok(Editor::ALL
-            .iter()
-            .flat_map(|&editor| {
-                hooks
-                    .iter()
-                    .map(move |(command, hook)| (editor, command, hook))
-            })
-            .map(|(editor, command, hook)| editors::status(editor, &home, command, hook))
-            .collect())
-    })
-    .await
+    blocking(move || Ok(commands::editor_status(&home, &hooks))).await
 }
 
-/// Points an agent's editor extension at the shim, or stops it, in the editor's user settings.
 #[tauri::command]
 async fn set_editor_integration(
     app: AppHandle,
@@ -152,17 +85,10 @@ async fn set_editor_integration(
     enabled: bool,
 ) -> Result<EditorStatus> {
     let home = home(&app)?;
-    blocking(move || {
-        if enabled {
-            shims::install_bundled(&home)?;
-        }
-        editors::set_integration(editor, &home, &command, &hook, enabled)
-    })
-    .await
+    blocking(move || commands::set_editor_integration(&home, editor, &command, &hook, enabled))
+        .await
 }
 
-/// Opens `shell` the way a new Terminal window would, in `folder`, and reports what
-/// running `tool` there would do. Never runs the tool itself.
 #[tauri::command]
 async fn check_folder(
     app: AppHandle,
@@ -171,12 +97,10 @@ async fn check_folder(
     tool: String,
 ) -> Result<FolderCheck> {
     let home = home(&app)?;
-    blocking(move || shell::check_folder(shell, &home, Path::new(&folder), &tool)).await
+    blocking(move || commands::check_folder(&home, shell, Path::new(&folder), &tool)).await
 }
 
-/// Starts `server` (or connects to it) and lists its tools. `secrets` holds values typed since
-/// the last save; the Keychain supplies the rest. Runs only when the user asks: it runs the
-/// server's own command.
+/// Runs only when the user asks: it runs the server's own command.
 #[tauri::command]
 async fn check_mcp_server(
     app: AppHandle,
@@ -189,71 +113,30 @@ async fn check_mcp_server(
         let home = home.clone();
         blocking(move || shell::login_path(&home)).await?
     };
-    let check = mcp_probe::check(&server, &secrets, &home, &path).await;
-    if check.status == mcp_probe::CheckStatus::Ok && config::is_file_name(&name) {
-        blocking(move || mcp_probe::remember(&home, &name, &server, &check.tools).map(|_| check))
-            .await
-    } else {
-        Ok(check)
-    }
+    commands::check_mcp_server(&home, &path, &name, &server, &secrets).await
 }
 
-/// The tools of each library server from its last check that worked, if its definition hasn't
-/// changed since. The profile editor offers them for turning off.
 #[tauri::command]
-async fn get_mcp_tools(
-    app: AppHandle,
-) -> Result<std::collections::BTreeMap<String, Vec<mcp_probe::ToolInfo>>> {
+async fn get_mcp_tools(app: AppHandle) -> Result<BTreeMap<String, Vec<mcp_probe::ToolInfo>>> {
     let home = home(&app)?;
-    blocking(move || {
-        let config = config::load_or_init(&paths::root(&home))?;
-        Ok(mcp_probe::known_tools(&config, &home))
-    })
-    .await
+    blocking(move || commands::mcp_tools(&home)).await
 }
 
-/// MCP servers the agents already define in their own files, for the library to import. Only
-/// reads them.
 #[tauri::command]
 async fn import_candidates(
     app: AppHandle,
     payload: ConfigState,
 ) -> Result<Vec<mcp_import::ImportCandidate>> {
     let home = home(&app)?;
-    blocking(move || Ok(mcp_import::candidates(&payload, &home))).await
+    blocking(move || Ok(commands::import_candidates(&home, &payload))).await
 }
 
-/// Opens a file in the user's default text editor, e.g. the startup file that defines an alias
-/// shadowing the shim. Limited to existing files inside the home folder.
 #[tauri::command]
 async fn open_in_editor(app: AppHandle, path: String) -> Result<()> {
     let home = home(&app)?;
-    blocking(move || {
-        let file = std::fs::canonicalize(&path).map_err(|source| Error::Io {
-            path: PathBuf::from(&path),
-            source,
-        })?;
-        let home = std::fs::canonicalize(&home).unwrap_or(home);
-        if !file.is_file() || !file.starts_with(&home) {
-            return Err(Error::Invalid(format!(
-                "{path} isn't a file in your home folder."
-            )));
-        }
-        let status = std::process::Command::new("/usr/bin/open")
-            .arg("-t")
-            .arg(&file)
-            .status()
-            .map_err(|err| Error::Command(format!("couldn't run open: {err}")))?;
-        if status.success() {
-            Ok(())
-        } else {
-            Err(Error::Command(format!("couldn't open {}", file.display())))
-        }
-    })
-    .await
+    blocking(move || commands::open_in_editor(&home, &path)).await
 }
 
-/// What the given, possibly unsaved, config would route for `tool` in `folder`.
 #[tauri::command]
 async fn preview_folder(
     app: AppHandle,
@@ -262,7 +145,12 @@ async fn preview_folder(
     tool: String,
 ) -> Result<Preview> {
     let home = home(&app)?;
-    Ok(shell::preview(&payload, &home, Path::new(&folder), &tool))
+    Ok(commands::preview_folder(
+        &home,
+        &payload,
+        Path::new(&folder),
+        &tool,
+    ))
 }
 
 pub fn run() {

@@ -62,6 +62,8 @@ export interface McpFiles {
 export interface AgentDef {
   mcp: McpInjection | null
   mcpFiles: McpFiles | null
+  /** Added in config version 3, so the CLI can route an editor extension without the window. */
+  ide: IdeHook | null
 }
 
 /** `mcp_import::ImportCandidate`: a server the agents already define, the same in every file listed. */
@@ -119,7 +121,7 @@ export type Editor =
   | 'remoteCursor'
   | 'remoteWindsurf'
 
-/** `editors::IdeHook`: how an agent's editor extension, which runs its own copy of the agent, can be told to run through the shim. */
+/** `envrouter_core::config::IdeHook`: how an agent's editor extension, which runs its own copy of the agent, can be told to run through the shim. */
 export interface IdeHook {
   /** The extension's process-wrapper setting: the editor runs `<wrapper> <its binary> <args>`. */
   setting: string

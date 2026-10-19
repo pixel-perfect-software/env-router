@@ -88,7 +88,7 @@ const serverTools: Record<string, ToolInfo[]> = {
 const checked = new Set(withLibrary ? ['github', 'playwright'] : [])
 const using = (...names: string[]) => (withLibrary ? Object.fromEntries(names.map((n) => [n, { disabledTools: [] }])) : {})
 let config: ConfigState = withAgents({
-  version: 2,
+  version: 3,
   mcpServers: library,
   agents: {},
   profiles: populated

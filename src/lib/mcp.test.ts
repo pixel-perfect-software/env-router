@@ -17,7 +17,7 @@ import type { ConfigState, McpServer } from './types'
 const github: McpServer = { transport: 'stdio', command: 'npx', args: ['-y', 'gh'], env: { GITHUB_TOKEN: { secret: 'AA11' } } }
 
 const config = (): ConfigState => ({
-  version: 2,
+  version: 3,
   agents: {},
   mcpServers: { github },
   profiles: [

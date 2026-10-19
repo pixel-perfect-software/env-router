@@ -18,7 +18,10 @@ const CONFIG_FILE: &str = "config.json";
 /// 2 added the MCP server library (`mcpServers`), each profile's selection from it, and the
 /// agents' MCP descriptors (`agents`). Every new field defaults to empty, so a version 1 file
 /// reads as a version 2 one with no servers.
-pub const CONFIG_VERSION: u32 = 2;
+///
+/// 3 added each agent's editor hook (`agents.*.ide`), so the CLI can route an editor extension
+/// without the window. It defaults to none, so a version 2 file reads as is.
+pub const CONFIG_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -121,6 +124,22 @@ pub struct AgentDef {
     /// Where the agent keeps MCP servers of its own, so the window can offer to import them.
     #[serde(default)]
     pub mcp_files: Option<McpFiles>,
+    /// How the agent's editor extension can be told to run through the shim. Added in version
+    /// 3; older configs have none until the window saves.
+    #[serde(default)]
+    pub ide: Option<IdeHook>,
+}
+
+/// An editor extension that runs its own copy of the agent but takes a process-wrapper
+/// setting: the editor then runs `<wrapper> <its binary> <args>`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IdeHook {
+    /// The extension's process-wrapper setting, e.g. `claudeCode.claudeProcessWrapper`.
+    pub setting: String,
+    /// The extension's id, e.g. `anthropic.claude-code`. Installed copies are folders named
+    /// `<id>-<version>[-<platform>]`.
+    pub extension: String,
 }
 
 /// Where an agent keeps its own MCP config, in its `mcp` dialect.
@@ -734,6 +753,27 @@ mod tests {
         assert!(config.profiles[0].mcp_servers.is_empty());
         save(dir.path(), &config).unwrap();
         assert_eq!(load(dir.path()).unwrap().unwrap().version, CONFIG_VERSION);
+    }
+
+    #[test]
+    fn load_reads_a_version_2_file_as_one_without_editor_hooks() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join(CONFIG_FILE),
+            r#"{ "version": 2, "profiles": [], "agents": { "claude": { "mcp": null } } }"#,
+        )
+        .unwrap();
+        let config = load(dir.path()).unwrap().unwrap();
+        assert_eq!(config.agents["claude"].ide, None);
+        let hook = IdeHook {
+            setting: "claudeCode.claudeProcessWrapper".into(),
+            extension: "anthropic.claude-code".into(),
+        };
+        let json = serde_json::to_value(&hook).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({ "setting": "claudeCode.claudeProcessWrapper", "extension": "anthropic.claude-code" })
+        );
     }
 
     #[test]
