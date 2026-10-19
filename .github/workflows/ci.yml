@@ -57,8 +57,8 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y zsh fish gnome-keyring dbus
       - run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --locked -p envrouter-core -p envrouter-shim -p envrouter-keychain -p envrouter-ops --all-targets -- -D warnings
-      - run: cargo test --locked -p envrouter-core -p envrouter-shim -p envrouter-keychain -p envrouter-ops
+      - run: cargo clippy --locked -p envrouter-core -p envrouter-shim -p envrouter-keychain -p envrouter-ops -p envrouter-cli --all-targets -- -D warnings
+      - run: cargo test --locked -p envrouter-core -p envrouter-shim -p envrouter-keychain -p envrouter-ops -p envrouter-cli
       # The secret store's round trip, through a GNOME Keyring started in a private D-Bus session.
       - run: >-
           dbus-run-session -- sh -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null

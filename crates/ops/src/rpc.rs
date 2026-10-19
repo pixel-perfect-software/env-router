@@ -226,6 +226,14 @@ mod tests {
         );
         assert_eq!(preview["ok"]["profile"], Value::Null);
 
+        let setup = answer(home, r#"{"id": 3, "command": "get_setup_status"}"#);
+        let platform = setup["ok"]["platform"].as_str().unwrap();
+        assert!(
+            ["macos", "linux", "wsl", "windows"].contains(&platform),
+            "{setup}"
+        );
+        assert!(setup["ok"]["secretStore"].is_string(), "{setup}");
+
         let unknown = answer(home, r#"{"id": 8, "command": "open_in_editor"}"#);
         assert_eq!(
             unknown,
