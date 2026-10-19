@@ -125,6 +125,10 @@ async fn dispatch(home: &Path, command: &str, args: Value) -> Result<Value> {
             let Payload { payload } = parse(args)?;
             to_value(commands::import_candidates(home, &payload))
         }
+        "parse_mcp_json" => {
+            let Text { text } = parse(args)?;
+            to_value(commands::parse_mcp_json(&text)?)
+        }
         other => Err(Error::Invalid(format!("unknown command {other:?}"))),
     }
 }
@@ -190,6 +194,11 @@ struct Payload {
     payload: ConfigState,
 }
 
+#[derive(Deserialize)]
+struct Text {
+    text: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,6 +242,29 @@ mod tests {
             "{setup}"
         );
         assert!(setup["ok"]["secretStore"].is_string(), "{setup}");
+
+        // The shape `Pasted` has in src/lib/types.ts.
+        let pasted = answer(
+            home,
+            &json!({
+                "id": 5,
+                "command": "parse_mcp_json",
+                "args": { "text": r#"{ "mcpServers": { "lin": { "url": "https://l/mcp" } } }"# },
+            })
+            .to_string(),
+        );
+        assert_eq!(
+            pasted["ok"],
+            json!({
+                "servers": [{ "name": "lin", "server": { "transport": "http", "url": "https://l/mcp", "headers": {} } }],
+                "skipped": [],
+            })
+        );
+        let unreadable = answer(
+            home,
+            r#"{"id": 6, "command": "parse_mcp_json", "args": {"text": " "}}"#,
+        );
+        assert_eq!(unreadable["error"], "Paste a server's JSON first.");
 
         let unknown = answer(home, r#"{"id": 8, "command": "open_in_editor"}"#);
         assert_eq!(
