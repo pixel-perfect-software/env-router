@@ -152,11 +152,8 @@ pub fn render(config: &ConfigState, home: &Path) -> Vec<(PathBuf, String)> {
                 let contents = server_file(injection.dialect, name, server);
                 files.push((file.clone(), pretty(&contents)));
                 let mut args = vec![format!("{}{}", injection.config_arg, file.display())];
-                if let (Some(deny_arg), Some(tools)) = (
-                    &injection.deny_arg,
-                    denied_tools(injection.dialect, name, using),
-                ) {
-                    args.push(format!("{deny_arg}{}", tools.join(",")));
+                if let Some(deny_arg) = &injection.deny_arg {
+                    args.extend(deny_args(injection.dialect, deny_arg, name, using));
                 }
                 launch.servers.push(LaunchServer {
                     name: name.clone(),
@@ -251,26 +248,32 @@ fn server_file(dialect: McpDialect, name: &str, server: &McpServer) -> Value {
         }
     };
     if dialect == McpDialect::Copilot {
-        // Required. Copilot can't turn tools off by flag, so they're all on for now.
+        // Required. Tools are turned off by flag (`deny_args`), so the list stays open.
         entry["tools"] = json!(["*"]);
     }
     json!({ "mcpServers": { name: entry } })
 }
 
-/// The names `dialect` gives a server's turned-off tools, if it can turn tools off.
-fn denied_tools(dialect: McpDialect, server: &str, using: &McpUse) -> Option<Vec<String>> {
-    if using.disabled_tools.is_empty() {
-        return None;
+/// The arguments that turn off a server's disabled tools, each in the `--flag=value` form:
+/// Claude takes one comma-separated list of `mcp__<server>__<tool>`, Copilot one
+/// `<server>(<tool>)` pattern per argument.
+fn deny_args(dialect: McpDialect, deny_arg: &str, server: &str, using: &McpUse) -> Vec<String> {
+    let tools = &using.disabled_tools;
+    if tools.is_empty() {
+        return Vec::new();
     }
     match dialect {
-        McpDialect::Claude => Some(
-            using
-                .disabled_tools
+        McpDialect::Claude => {
+            let names: Vec<String> = tools
                 .iter()
                 .map(|tool| format!("mcp__{server}__{tool}"))
-                .collect(),
-        ),
-        McpDialect::Copilot => None,
+                .collect();
+            vec![format!("{deny_arg}{}", names.join(","))]
+        }
+        McpDialect::Copilot => tools
+            .iter()
+            .map(|tool| format!("{deny_arg}{server}({tool})"))
+            .collect(),
     }
 }
 
@@ -300,7 +303,7 @@ mod tests {
             mcp: Some(McpInjection {
                 dialect: McpDialect::Copilot,
                 config_arg: "--additional-mcp-config=@".into(),
-                deny_arg: None,
+                deny_arg: Some("--deny-tool=".into()),
                 skip_any_args: Vec::new(),
             }),
             ..Default::default()
@@ -431,7 +434,7 @@ mod tests {
     }
 
     #[test]
-    fn copilot_files_name_stdio_local_and_list_every_tool() {
+    fn copilot_files_name_stdio_local_and_deny_tools_one_by_one() {
         let mut config = config();
         config.agents = BTreeMap::from([("copilot".into(), copilot())]);
         let files = rendered(&config);
@@ -441,8 +444,15 @@ mod tests {
         assert_eq!(entry["type"], "local");
         assert_eq!(entry["tools"], json!(["*"]));
         let launch: Launch = serde_json::from_str(&files["work/copilot/launch.json"]).unwrap();
-        assert_eq!(launch.servers[0].args.len(), 1);
-        assert!(launch.servers[0].args[0].starts_with("--additional-mcp-config=@/"));
+        let args = &launch.servers[0].args;
+        assert!(args[0].starts_with("--additional-mcp-config=@/"));
+        assert_eq!(
+            args[1..],
+            [
+                "--deny-tool=github(delete_repo)",
+                "--deny-tool=github(fork)"
+            ]
+        );
     }
 
     #[test]

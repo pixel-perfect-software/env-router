@@ -145,8 +145,8 @@ pub struct McpInjection {
     /// hold an `=`: Claude's flags take several values, so `--mcp-config <file>` as two
     /// arguments would swallow whatever the user typed next, a subcommand or a prompt.
     pub config_arg: String,
-    /// Followed by the comma-separated tools to turn off, e.g. `--disallowedTools=`. `None`:
-    /// the agent can't turn tools off by flag.
+    /// Followed by the tools to turn off, in the dialect's form, e.g. `--disallowedTools=`.
+    /// `None`: the agent can't turn tools off by flag.
     #[serde(default)]
     pub deny_arg: Option<String>,
     /// Any of these among the user's own arguments turns injection off for that run.

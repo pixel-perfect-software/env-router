@@ -17,7 +17,7 @@ EnvRouter sets a per-agent environment variable based on the folder a command ru
 Code (`CLAUDE_CONFIG_DIR`), Codex (`CODEX_HOME`), Copilot CLI (`COPILOT_HOME`) and Gemini CLI
 (`GEMINI_CLI_HOME`). Users define **profiles**, each mapping **trigger folders** to a config
 folder per agent. Success means typing `claude` or `codex` anywhere uses the right account, with no
-aliases, wrappers or reloading. The same profiles also choose which **MCP servers** an agent loads in their folders, from a
+aliases, wrappers or reloading. The same profiles also choose which **MCP servers** an agent (Claude Code and Copilot CLI today) loads in their folders, from a
 server library the user keeps in the app, so the right tools come with the right account. The
 user opens the app to set up or change profiles and servers, and to find out why a folder isn't
 routing as expected.

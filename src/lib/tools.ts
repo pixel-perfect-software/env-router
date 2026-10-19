@@ -32,7 +32,16 @@ export const KNOWN_TOOLS: KnownTool[] = [
   },
   // Codex refuses a CODEX_HOME that doesn't exist; saving creates it.
   { command: 'codex', label: 'Codex', envVar: 'CODEX_HOME', defaultPath: '~/.codex' },
-  { command: 'copilot', label: 'Copilot CLI', envVar: 'COPILOT_HOME', defaultPath: '~/.copilot' },
+  {
+    command: 'copilot',
+    label: 'Copilot CLI',
+    envVar: 'COPILOT_HOME',
+    defaultPath: '~/.copilot',
+    // Verified on 1.0.98: `@` takes a file and the flag adds to the user's own servers; a tool is
+    // turned off with `--deny-tool=server(tool)`, one per argument.
+    mcp: { dialect: 'copilot', configArg: '--additional-mcp-config=@', denyArg: '--deny-tool=', skipAnyArgs: [] },
+    mcpFiles: { userFile: 'mcp-config.json', defaultDir: '~/.copilot', projectFile: '.mcp.json' },
+  },
   {
     command: 'gemini',
     label: 'Gemini CLI',

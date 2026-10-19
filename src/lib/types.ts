@@ -43,7 +43,7 @@ export interface McpInjection {
   dialect: McpDialect
   /** Followed by a rendered file's path, as one argument: `--mcp-config=`. Never two arguments, since Claude's flags take several values. */
   configArg: string
-  /** Followed by the comma-separated tools to turn off, e.g. `--disallowedTools=`. */
+  /** Followed by the tools to turn off, in the dialect's form, e.g. `--disallowedTools=`. */
   denyArg: string | null
   /** Any of these among the user's arguments turns injection off for that run. */
   skipAnyArgs: string[]
