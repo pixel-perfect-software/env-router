@@ -17,5 +17,12 @@ serde_json.workspace = true
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework.workspace = true
 
+# Pure Rust D-Bus and crypto: no OpenSSL or async runtime in the helper the shim runs.
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+secret-service = { version = "5.2", default-features = false, features = ["rt-async-io-crypto-rust"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
 [lints]
 workspace = true

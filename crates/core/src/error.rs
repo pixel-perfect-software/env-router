@@ -20,9 +20,10 @@ pub enum Error {
     /// A helper process (a shell, the shim) failed or timed out.
     #[error("{0}")]
     Command(String),
-    /// The Keychain refused or failed. The message is macOS's own.
-    #[error("the Keychain said: {0}")]
-    Keychain(String),
+    /// The platform's secret store (the Keychain, a keyring) refused or failed. Each store
+    /// words its own message, naming itself.
+    #[error("{0}")]
+    SecretStore(String),
 }
 
 // Tauri commands reject with this, so the frontend receives the message string.
