@@ -120,6 +120,8 @@ function ProfileCard({
     )
   }
 
+  const servers = Object.keys(profile.mcpServers).sort((a, b) => a.localeCompare(b))
+
   return (
     <section
       aria-label={`Profile ${profile.name}`}
@@ -182,6 +184,12 @@ function ProfileCard({
               <code className="min-w-0 truncate font-mono text-ink select-text">{tildify(path, home)}</code>
             </p>
           ))
+        )}
+        {servers.length > 0 && (
+          <p className="flex min-w-0 items-baseline gap-2 text-small" title={servers.join(', ')}>
+            <span className="shrink-0 text-ink-2">MCP</span>
+            <code className="min-w-0 truncate font-mono text-ink select-text">{servers.join(', ')}</code>
+          </p>
         )}
       </footer>
     </section>

@@ -11,10 +11,13 @@ related_targets: ["src-tauri/src/tray.rs"]
 Operate. EnvRouter's only window, plus its menu bar menu. Opened occasionally to set up, to edit profiles, and to diagnose a folder.
 
 ## Audience, job, constraints
-Mac developers with separate coding-agent accounts. Jobs, by frequency: first-run setup (profile, then shell, then check); "why didn't this folder route?"; adding a folder or profile. Health first. Avoid: a web-app look, help paragraphs, toy personality, hidden mechanics (always show which files are edited, which path wins, the real binary). Light and dark follow the system. Menu bar icon plus a window; closing the window keeps the app in the menu bar.
+Mac developers with separate coding-agent accounts and per-project MCP servers. Two jobs share one rule (the folder decides): which account an agent uses, and which MCP servers it loads. Jobs, by frequency: first-run setup (profile, then shell, then check); "why didn't this folder route?"; adding a folder or profile. Health first. Avoid: a web-app look, help paragraphs, toy personality, hidden mechanics (always show which files are edited, which path wins, the real binary). Light and dark follow the system. Menu bar icon plus a window; closing the window keeps the app in the menu bar.
 
 ## Chosen direction
 The Sorting Frame (roll, seed 9c112fdb), code-led. On 2026-10-05 the user overrode the original "no cards, hairline grid" rendering: "make the UI feel more like a modern app UI… it's hard to tell between surfaces." The topology stays (one container per profile, folders filed inside, carve-outs, Everywhere else, a check docket); the materials are now layered modern-Mac cards.
+
+## MCP servers (2026-10-19)
+A server library in a second right-side inspector (MCP Servers… in the titlebar), a checklist per profile in the profile inspector, an `MCP` line in the card footer, and an `mcp` value in the check result. Per-server tool filtering, Keychain secret entry, a server health check, import and a catalog land in later phases of the same plan.
 
 ## Unresolved
 App icon and tray glyph are decided (see the src-tauri-icons brief); the titlebar shows the icon's small cut before the app name. Agents offered: Claude Code, Codex, Copilot CLI, Gemini CLI (src/lib/tools.ts); saving creates missing agent folders inside home. opencode and Aider are excluded because their variables don't separate logins.

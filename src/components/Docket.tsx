@@ -5,7 +5,7 @@ import { tildify } from '../lib/paths'
 import { toolLabel } from '../lib/tools'
 import type { FolderCheck, Preview, Shell, ShellStatus } from '../lib/types'
 import { type VerdictAction, verdictOf } from '../lib/verdict'
-import { Button, CloseIcon, DropIcon, IconButton, StatusTile } from './ui'
+import { Button, CloseIcon, DropIcon, IconButton, Segmented, StatusTile } from './ui'
 
 export interface CheckState {
   key: number
@@ -164,35 +164,4 @@ function actionLabel(action: VerdictAction, shell: Shell, home: string) {
     case 'reinstall':
       return 'Reinstall Shim'
   }
-}
-
-function Segmented<T extends string>({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string
-  options: [T, string][]
-  value: T
-  onChange: (value: T) => void
-}) {
-  return (
-    <fieldset className="flex shrink-0 rounded-[7px] bg-[color-mix(in_srgb,var(--er-ink)_7%,transparent)] p-[2px]">
-      <legend className="sr-only">{label}</legend>
-      {options.map(([option, text]) => (
-        <button
-          key={option}
-          type="button"
-          aria-pressed={option === value}
-          onClick={() => onChange(option)}
-          className={`h-[22px] rounded-[5px] px-2.5 text-small whitespace-nowrap ${
-            option === value ? 'bg-button text-ink shadow-[0_0.5px_1.5px_rgb(0_0_0/0.18)]' : 'text-ink-2 hover:text-ink'
-          }`}
-        >
-          {text}
-        </button>
-      ))}
-    </fieldset>
-  )
 }

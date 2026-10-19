@@ -367,7 +367,7 @@ Native push buttons, small and tactile.
 - **Login shell:** an accent-tinted pill with accent caption text, beside the default shell's name in the shells popover. It's the only chip.
 
 ### Cards / Containers
-- **Profile card:** card surface, 10px, card shadow, 176px minimum. Header: profile dot, name (title), pencil icon button; when the profile is in the inspector the pencil becomes an accent "Editing" label and the card takes the selection outline. Body: folder rows (folder icon, mono path, parent secondary and leaf primary), each followed by its carve-outs. Footer under a hairline: agent name in secondary ink, config path in mono.
+- **Profile card:** card surface, 10px, card shadow, 176px minimum. Header: profile dot, name (title), pencil icon button; when the profile is in the inspector the pencil becomes an accent "Editing" label and the card takes the selection outline. Body: folder rows (folder icon, mono path, parent secondary and leaf primary), each followed by its carve-outs. Footer under a hairline: agent name in secondary ink, config path in mono, then, when the profile loads MCP servers, an `MCP` line with their names in mono.
 - **Carve-out:** small secondary text indented 13px with a hairline left rule: branch icon, relative path in mono, then the owning profile's dot and name aligned right.
 - **New Profile:** a flat placeholder (inset 1.5px rule ring, no fill) with a 36px card-surface plus disc, label and ⌘N hint. Hover fills it with card surface and turns it accent; while creating, it shows the accent tint with a 2px accent ring.
 - **Everywhere else:** muted card with an inset rule ring and no shadow, an empty circle dot, and title in secondary ink. It always sits last.
@@ -382,7 +382,7 @@ Native push buttons, small and tactile.
 - **Segmented:** a 7% ink track with 2px padding; the selected segment is a button-surface chip with a contact shadow, the others secondary ink.
 
 ### Navigation
-There is no navigation. The titlebar holds the app icon (the small cut at 18px, 8px before the name) and the app name, shell status (a green dot when on, an empty tertiary ring when off, a red cross when blocked, each with a hidden text state), Shells…, and Check Folder… (⌘O).
+There is no navigation. The titlebar holds the app icon (the small cut at 18px, 8px before the name) and the app name, shell status (a green dot when on, an empty tertiary ring when off, a red cross when blocked, each with a hidden text state), Shells…, MCP Servers…, and Check Folder… (⌘O).
 
 ### Status Tile
 The shared status mark for the banner (32px) and the check result (28px): an 8px-rounded tile washed with 14% of the status colour, holding a 1.8px stroke glyph whose shape states the result. Check is ok, bang is warn, cross is problem, dash is neutral (no profile owns the folder), and a dashed circle pulsing at 1.1s is pending. A new verdict stamps in (scale 1.35 to 1, 180ms).
@@ -392,13 +392,18 @@ The floating check result along the bottom, one complete state at a time, never 
 - **Idle:** a dashed drop zone (1.5px dashed, tertiary ink at 45%) with the drop icon and a one-line instruction in secondary ink.
 - **Hovering a drag:** accent tint, accent text and a 1.5px accent ring: "Release to check" plus the path.
 - **Result:** raised surface, rises in over 180ms: status tile, headline and folder path, then a note and `label value` pairs in mono, then the verdict's single action, Agent and Shell segmented controls, and Dismiss.
-- **Copy:** from `src/lib/verdict.ts`. One terse headline ("Routed to Work", "Another claude comes first on PATH"), an optional plain sentence that says what to change, the values behind it (`sets`, `via`, `runs`, `instead of`, `defined in`), and at most one fixing action labelled as a verb ("Turn On zsh", "Open ~/.zshrc", "Reinstall Shim").
+- **Copy:** from `src/lib/verdict.ts`. One terse headline ("Routed to Work", "Another claude comes first on PATH"), an optional plain sentence that says what to change, the values behind it (`sets`, `via`, `mcp`, `runs`, `instead of`, `defined in`), and at most one fixing action labelled as a verb ("Turn On zsh", "Open ~/.zshrc", "Reinstall Shim").
 
 ### Slip
 The signature interaction. A checked folder becomes a slip filed in the owning card (or Everywhere else): accent-tinted row with a 40% accent inset ring, a state mark (filled accent dot when routed, red cross on a problem) and the mono path. It animates from the drop point into its slot over 300ms on the settle curve, the card it will land in lights up with the drop-target outline before release, and then the status tile stamps.
 
 ### Profile Inspector
-The only profile editor: a raised panel sliding in from the right (220ms), over a scrim that keeps the grid visible. Header: profile dot (12px), name, close. Body: Name field (32px, title size), Trigger folders as a card list with remove buttons that strike rows through (Undo) until saved, Add Folder…, then one mono path field per agent with its variable name and Choose…. Footer on muted card: Delete…, inline error, Cancel, and Save as the accent button. Escape cancels.
+The only profile editor: a raised panel sliding in from the right (220ms), over a scrim that keeps the grid visible. Header: profile dot (12px), name, close. Body: Name field (32px, title size), Trigger folders as a card list with remove buttons that strike rows through (Undo) until saved, Add Folder…, then one mono path field per agent with its variable name and Choose…, then MCP servers: the library as a card checklist (each row a hidden native checkbox labelled by the whole row, a drawn 14px box, the name in mono and its command or URL in mono caption) with a caption naming the agents that load them. Footer on muted card: Delete…, inline error, Cancel, and Save as the accent button. Escape cancels.
+
+### MCP Server Library
+The second inspector, opened by MCP Servers… in the titlebar; it slides in exactly like the profile inspector, and only one of the two is open at a time. It opens on the list: a card of rows (plug icon, server name in mono, transport in caption, the command or URL in mono caption, the dots of the profiles that load it, a chevron), then Add Server…, and a muted footer with Done. Picking a row drills into its form in place: a back button, Name (mono, with a one-line caption on the allowed characters), Connects with (a segmented control: Command, HTTP, SSE), then Command plus one mono field per argument and name/value rows for Environment, or URL plus Headers. A value held in the Keychain renders as a muted read-only well with a lock and "In Keychain". Used by lists the profiles that load it. Footer: Delete…, inline error, Cancel (back to the list), Save as the accent button.
+
+**The Library Is Not the Router Rule.** The library only defines servers. Which folders load a server is chosen in a profile's inspector, so the folder rule stays in one place.
 
 ### Shells Popover
 A raised panel under the titlebar that opens with a 4px drop (140ms): one row per shell with its name, login-shell chip, startup files in mono, and a switch; unavailable shells show "Not installed" at 60% opacity. A hairline footer states what the app edits, or the error.

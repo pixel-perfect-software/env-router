@@ -1,13 +1,14 @@
 // Development only: lets the frontend run in a plain browser for design review, with the
 // Tauri commands answered from memory. main.tsx loads it only when `import.meta.env.DEV` and no
 // Tauri runtime is present, so it never ships. Pick a state with `?scenario=`:
-// first-run (default), populated, shadowed, or broken (config.json can't be read until
+// first-run (default), populated, mcp (populated, with an MCP server library), shadowed, or broken (config.json can't be read until
 // "Open config.json" is clicked, which stands in for fixing it). `window.__mockDrop(path, x, y)`
 // simulates a Finder drop.
 
 import { emit } from '@tauri-apps/api/event'
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
-import type { ConfigState, FolderCheck, Profile, SetupStatus, ShellStatus } from '../lib/types'
+import { withAgents } from '../lib/tools'
+import type { ConfigState, FolderCheck, McpServer, Profile, SetupStatus, ShellStatus } from '../lib/types'
 
 const HOME = '/Users/sam'
 const scenario = new URLSearchParams(location.search).get('scenario') ?? 'first-run'
@@ -25,23 +26,52 @@ const profile = (id: string, name: string, triggerPaths: string[], configDir?: s
   name,
   triggerPaths,
   tools: { ...(configDir ? { claude: { envVar: 'CLAUDE_CONFIG_DIR', path: configDir } } : {}), ...extra },
+  mcpServers: {},
 })
 
 const populated = scenario !== 'first-run'
 let configBroken = scenario === 'broken'
-let config: ConfigState = {
-  version: 1,
+const withLibrary = scenario === 'mcp'
+const library: Record<string, McpServer> = withLibrary
+  ? {
+      github: {
+        transport: 'stdio',
+        command: 'npx',
+        args: ['-y', '@modelcontextprotocol/server-github'],
+        env: { GITHUB_PERSONAL_ACCESS_TOKEN: { secret: '7F3A09C2' } },
+      },
+      playwright: { transport: 'stdio', command: 'npx', args: ['@playwright/mcp@latest'], env: {} },
+      linear: { transport: 'http', url: 'https://mcp.linear.app/mcp', headers: {} },
+      sentry: { transport: 'http', url: 'https://mcp.sentry.dev/mcp', headers: {} },
+      postgres: {
+        transport: 'stdio',
+        command: 'npx',
+        args: ['-y', '@modelcontextprotocol/server-postgres', 'postgresql://localhost/acme_dev'],
+        env: {},
+      },
+    }
+  : {}
+const using = (...names: string[]) => (withLibrary ? Object.fromEntries(names.map((n) => [n, { disabledTools: [] }])) : {})
+let config: ConfigState = withAgents({
+  version: 2,
+  mcpServers: library,
+  agents: {},
   profiles: populated
     ? [
-        profile('p1', 'Personal', ['~/dev', '~/notes'], '~/.claude-personal'),
-        profile('p2', 'Work', ['~/dev/work/*', '~/Documents/Acme'], '~/.claude-work', { codex: { envVar: 'CODEX_HOME', path: '~/.codex-work' } }),
+        { ...profile('p1', 'Personal', ['~/dev', '~/notes'], '~/.claude-personal'), mcpServers: using('playwright') },
+        {
+          ...profile('p2', 'Work', ['~/dev/work/*', '~/Documents/Acme'], '~/.claude-work', {
+            codex: { envVar: 'CODEX_HOME', path: '~/.codex-work' },
+          }),
+          mcpServers: using('github', 'linear', 'sentry', 'postgres'),
+        },
         profile('p3', 'Northwind', ['~/clients/northwind'], '~/.claude-northwind', {
           copilot: { envVar: 'COPILOT_HOME', path: '~/.copilot-northwind' },
         }),
-        profile('p4', 'Scratch', ['~/dev/scratch']),
+        { ...profile('p4', 'Scratch', ['~/dev/scratch']), mcpServers: using('playwright') },
       ]
     : [],
-}
+})
 const setup: SetupStatus = {
   shimInstalled: true,
   shimsDir: `${HOME}/.envrouter/shims`,
@@ -82,6 +112,10 @@ const setTool = (p: Profile | null, tool: string) => {
   return settings?.path.trim() ? settings : undefined
 }
 
+/** `mcp::servers_for`: the library servers a profile hands a tool that takes them. */
+const mcpFor = (cfg: ConfigState, p: Profile | null, tool: string) =>
+  p && cfg.agents[tool]?.mcp ? Object.keys(p.mcpServers).filter((name) => cfg.mcpServers[name]) : []
+
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const respond = async (cmd: string, args: unknown): Promise<unknown> => {
@@ -106,6 +140,8 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       const next = a.payload as ConfigState
       const seen = new Map<string, Profile>()
       for (const p of next.profiles) {
+        for (const server of Object.keys(p.mcpServers))
+          if (!next.mcpServers[server]) throw `Profile "${p.name}" uses the MCP server "${server}", which isn't in the server list.`
         for (const [name, tool] of Object.entries(p.tools)) {
           const path = tool.path.trim()
           if (path && !/^(~$|~\/|\/)/.test(path))
@@ -135,9 +171,16 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       return s
     }
     case 'preview_folder': {
-      const p = owner(a.payload as ConfigState, a.folder as string)
+      const payload = a.payload as ConfigState
+      const p = owner(payload, a.folder as string)
       const tool = setTool(p, a.tool as string)
-      return { profileId: p?.id ?? null, profile: p?.name ?? null, envVar: tool ? tool.envVar : null, value: tool ? expand(tool.path) : null }
+      return {
+        profileId: p?.id ?? null,
+        profile: p?.name ?? null,
+        envVar: tool ? tool.envVar : null,
+        value: tool ? expand(tool.path) : null,
+        mcp: mcpFor(payload, p, a.tool as string),
+      }
     }
     case 'check_folder': {
       await delay(1100)
@@ -146,7 +189,7 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       if (scenario === 'shadowed') return { status: 'shadowedByShell', kind: 'function', origin: `${HOME}/.zshrc` } satisfies FolderCheck
       // With the shell off, or no profile setting the tool (so no shim for it), the real backend
       // finds the tool itself on PATH, not nothing.
-      const shimmed = config.profiles.some((p) => setTool(p, a.tool as string))
+      const shimmed = config.profiles.some((p) => setTool(p, a.tool as string) || mcpFor(config, p, a.tool as string).length > 0)
       if (!s?.installed || !shimmed)
         return { status: 'shadowedOnPath', path: `${HOME}/.local/bin/${a.tool as string}`, byPromptHook: false } satisfies FolderCheck
       const p = owner(config, a.folder as string)
@@ -156,6 +199,7 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
         profile: p?.name ?? null,
         envVar: tool ? tool.envVar : null,
         value: tool ? expand(tool.path) : null,
+        mcp: mcpFor(config, p, a.tool as string),
         real: `${HOME}/.local/bin/${a.tool as string}`,
       } satisfies FolderCheck
     }

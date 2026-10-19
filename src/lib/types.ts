@@ -15,12 +15,53 @@ export interface Profile {
   triggerPaths: string[]
   /** Keyed by the command the shim stands in for, e.g. `claude`. */
   tools: Record<string, ToolConfig>
+  /** Library servers this profile's folders get, keyed by server name. Every agent with an MCP descriptor gets them. */
+  mcpServers: Record<string, McpUse>
+}
+
+/** `envrouter_core::config::McpUse` */
+export interface McpUse {
+  /** Tools the agent is told not to use. A deny list, so tools a server adds later are on. */
+  disabledTools: string[]
+}
+
+/** `envrouter_core::config::McpValue`: a plain string, or the id of a secret kept in the Keychain. */
+export type McpValue = string | { secret: string }
+
+/** `envrouter_core::config::McpServer`: one server in the library, in no particular agent's format. */
+export type McpServer =
+  | { transport: 'stdio'; command: string; args: McpValue[]; env: Record<string, McpValue> }
+  /** Streamable HTTP. */
+  | { transport: 'http'; url: string; headers: Record<string, McpValue> }
+  | { transport: 'sse'; url: string; headers: Record<string, McpValue> }
+
+/** `envrouter_core::config::McpDialect`: an MCP config file format, named after the agent that defined it. */
+export type McpDialect = 'claude' | 'copilot'
+
+/** `envrouter_core::config::McpInjection`: how the shim hands an agent its servers at launch. */
+export interface McpInjection {
+  dialect: McpDialect
+  /** Followed by a rendered file's path, as one argument: `--mcp-config=`. Never two arguments, since Claude's flags take several values. */
+  configArg: string
+  /** Followed by the comma-separated tools to turn off, e.g. `--disallowedTools=`. */
+  denyArg: string | null
+  /** Any of these among the user's arguments turns injection off for that run. */
+  skipAnyArgs: string[]
+}
+
+/** `envrouter_core::config::AgentDef`. The window writes these from `tools.ts` on every save. */
+export interface AgentDef {
+  mcp: McpInjection | null
 }
 
 /** `envrouter_core::config::ConfigState`. Rust writes the current `version` on every save. */
 export interface ConfigState {
   version: number
   profiles: Profile[]
+  /** The server library, keyed by the name agents see. */
+  mcpServers: Record<string, McpServer>
+  /** Keyed by command, like `Profile.tools`. */
+  agents: Record<string, AgentDef>
 }
 
 /** `shell::Shell` */
@@ -48,8 +89,8 @@ export interface SetupStatus {
 
 /** `shell::FolderCheck`: what running a tool in a folder does in a new terminal window. */
 export type FolderCheck =
-  /** The shim runs. `profile` is null when no profile owns the folder. */
-  | { status: 'routed'; profile: string | null; envVar: string | null; value: string | null; real: string }
+  /** The shim runs. `profile` is null when no profile owns the folder. `mcp`: the servers it adds, if every secret they need is readable. */
+  | { status: 'routed'; profile: string | null; envVar: string | null; value: string | null; mcp: string[]; real: string }
   /** An alias or function with the tool's name runs before PATH is searched. `origin`: the file defining it, when the shell can say. */
   | { status: 'shadowedByShell'; kind: string; origin: string | null }
   /**
@@ -70,4 +111,6 @@ export interface Preview {
   profile: string | null
   envVar: string | null
   value: string | null
+  /** The MCP servers the profile hands the tool. */
+  mcp: string[]
 }

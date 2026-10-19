@@ -70,6 +70,67 @@ export function Switch({
   )
 }
 
+/** A checkbox's box, for a row that is itself the `role="checkbox"` control: accent-filled with a drawn check when on. */
+export function CheckBox({ checked }: { checked: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`grid size-[14px] shrink-0 place-items-center rounded-[4px] transition-colors duration-100 ${
+        checked
+          ? 'bg-accent text-on-accent shadow-[0_0.5px_1px_rgb(0_0_0/0.2)]'
+          : 'bg-field shadow-[inset_0_0_0_1px_var(--er-rule),0_0.5px_1px_rgb(0_0_0/0.06)]'
+      }`}
+    >
+      {checked && (
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 10 10"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M2.2 5.2l1.9 1.9 3.8-4.2" />
+        </svg>
+      )}
+    </span>
+  )
+}
+
+/** A segmented control: a 7% ink track, the chosen segment raised on it. */
+export function Segmented<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string
+  options: [T, string][]
+  value: T
+  onChange: (value: T) => void
+}) {
+  return (
+    <fieldset className="flex w-fit shrink-0 rounded-[7px] bg-[color-mix(in_srgb,var(--er-ink)_7%,transparent)] p-[2px]">
+      <legend className="sr-only">{label}</legend>
+      {options.map(([option, text]) => (
+        <button
+          key={option}
+          type="button"
+          aria-pressed={option === value}
+          onClick={() => onChange(option)}
+          className={`h-[22px] rounded-[5px] px-2.5 text-small whitespace-nowrap ${
+            option === value ? 'bg-button text-ink shadow-[0_0.5px_1.5px_rgb(0_0_0/0.18)]' : 'text-ink-2 hover:text-ink'
+          }`}
+        >
+          {text}
+        </button>
+      ))}
+    </fieldset>
+  )
+}
+
 export const TextField = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { mono?: boolean }>(function TextField(
   { mono, className = '', ...props },
   ref,
@@ -170,6 +231,33 @@ export const DropIcon = () => (
 export const BranchIcon = () => (
   <Icon width="12" height="12">
     <path d="M4 2.5v5.5h8M9.5 5.5L12 8l-2.5 2.5" />
+  </Icon>
+)
+
+export const BackIcon = () => (
+  <Icon>
+    <path d="M10 3.5L5.5 8l4.5 4.5" />
+  </Icon>
+)
+
+export const ChevronIcon = () => (
+  <Icon width="12" height="12">
+    <path d="M6 3.5L10.5 8 6 12.5" />
+  </Icon>
+)
+
+/** A server plug: the mark for an MCP server row. */
+export const PlugIcon = () => (
+  <Icon width="14" height="14" strokeWidth="1.4">
+    <path d="M5.5 2v3M10.5 2v3M3.5 5h9v2.5a4.5 4.5 0 0 1-9 0zM8 12v2" />
+  </Icon>
+)
+
+/** A secret held in the Keychain. */
+export const LockIcon = () => (
+  <Icon width="12" height="12" strokeWidth="1.4">
+    <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
+    <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
   </Icon>
 )
 

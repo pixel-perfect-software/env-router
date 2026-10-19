@@ -15,6 +15,7 @@ export function TitleBand({
   primary,
   shellsOpen,
   onToggleShells,
+  onOpenServers,
   onCheckFolder,
 }: {
   setup: SetupStatus | null
@@ -24,6 +25,7 @@ export function TitleBand({
   primary: boolean
   shellsOpen: boolean
   onToggleShells: () => void
+  onOpenServers: () => void
   onCheckFolder: () => void
 }) {
   const shells = setup?.shells.filter((s) => s.available) ?? []
@@ -67,6 +69,9 @@ export function TitleBand({
             </Button>
           </>
         )}
+        <Button aria-haspopup="dialog" onClick={onOpenServers}>
+          MCP Servers…
+        </Button>
         <Button kind={primary ? 'primary' : 'push'} onClick={onCheckFolder} title="Check Folder… (⌘O)">
           Check Folder…
         </Button>

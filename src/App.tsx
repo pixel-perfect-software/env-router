@@ -8,11 +8,13 @@ import { type Health, HealthLine, ShellsPopover, TitleBand } from './components/
 import { type CheckState, Docket } from './components/Docket'
 import { type DropTarget, Frame, type Slip } from './components/Frame'
 import { ProfileInspector } from './components/ProfileInspector'
+import { ServerLibrary } from './components/ServerLibrary'
 import { profileColors } from './components/ui'
 import { checkFolder, errorMessage, getConfig, getSetupStatus, openInEditor, previewFolder, saveConfig, setShellIntegration } from './lib/api'
 import { confirmDelete } from './lib/confirm'
+import { withoutServer, withServer } from './lib/mcp'
 import { owningTrigger } from './lib/paths'
-import { KNOWN_TOOLS } from './lib/tools'
+import { KNOWN_TOOLS, withAgents } from './lib/tools'
 import type { ConfigState, Profile, SetupStatus, Shell } from './lib/types'
 import { useFolderDrop } from './lib/useFolderDrop'
 import { type VerdictAction, verdictOf } from './lib/verdict'
@@ -77,6 +79,7 @@ export default function App() {
   // A failed one-off action (turning on a shell, reinstalling). Cleared by the next success.
   const [actionError, setActionError] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | 'new' | null>(null)
+  const [library, setLibrary] = useState(false)
   const [shellsOpen, setShellsOpen] = useState(false)
   const [check, setCheck] = useState<CheckState | null>(null)
   const [slip, setSlip] = useState<Slip | null>(null)
@@ -126,7 +129,7 @@ export default function App() {
   // config.json and the startup files can change from a terminal while the window is open, so
   // coming back reads both again. Not the config while the inspector is open: it saves on top
   // of the config it opened with.
-  const inspecting = editing !== null
+  const inspecting = editing !== null || library
   useEffect(() => {
     const onFocus = inspecting ? refreshSetup : load
     window.addEventListener('focus', onFocus)
@@ -138,7 +141,10 @@ export default function App() {
     return (available.find((s) => s.isDefault) ?? available[0])?.shell ?? 'zsh'
   }
   /** Agents at least one profile sets, in registry order. Checks offer these. */
-  const routedTools = KNOWN_TOOLS.map((t) => t.command).filter((command) => config?.profiles.some((p) => p.tools[command]?.path.trim()))
+  // A profile's MCP servers give an agent a shim too, as `config::tool_names` decides.
+  const routedTools = KNOWN_TOOLS.filter((tool) =>
+    config?.profiles.some((p) => p.tools[tool.command]?.path.trim() || (tool.mcp && Object.keys(p.mcpServers).length > 0)),
+  ).map((t) => t.command)
   const defaultTool = () => (check && routedTools.includes(check.tool) ? check.tool : (routedTools[0] ?? KNOWN_TOOLS[0].command))
 
   const runCheck = async (folder: string, shell: Shell, origin: { x: number; y: number } | null, tool = defaultTool()) => {
@@ -186,10 +192,10 @@ export default function App() {
   // While the inspector is open a check stands down, as it does for a folder dropped on the window.
   const shortcuts = {
     checkFolder: () => {
-      if (editing === null) pickAndCheck()
+      if (!inspecting) pickAndCheck()
     },
     newProfile: () => {
-      if (config) setEditing((e) => e ?? 'new')
+      if (config && !library) setEditing((e) => e ?? 'new')
     },
   }
   const actions = useRef(shortcuts)
@@ -215,12 +221,12 @@ export default function App() {
   }, [])
 
   const hovering = useFolderDrop(({ path, origin }) => {
-    if (editing === null) runCheck(path, defaultShell(), origin)
+    if (!inspecting) runCheck(path, defaultShell(), origin)
   })
 
   // While a folder is dragged over the window, light up the slot it would file into.
   useEffect(() => {
-    if (!hovering || !config || editing !== null) {
+    if (!hovering || !config || inspecting) {
       setDropTarget(null)
       return
     }
@@ -231,9 +237,10 @@ export default function App() {
     return () => {
       current = false
     }
-  }, [hovering, config, editing])
+  }, [hovering, config, inspecting])
 
-  const commit = async (next: ConfigState) => {
+  const commit = async (edited: ConfigState) => {
+    const next = withAgents(edited)
     await saveConfig(next)
     configSeq.current++
     setActionError(null)
@@ -348,9 +355,13 @@ export default function App() {
         <TitleBand
           setup={setup}
           blockedShell={blocked?.shell ?? null}
-          primary={editing === null && !bannerHasPrimary(health) && !docketHasAction}
+          primary={!inspecting && !bannerHasPrimary(health) && !docketHasAction}
           shellsOpen={shellsOpen}
           onToggleShells={() => setShellsOpen((o) => !o)}
+          onOpenServers={() => {
+            setShellsOpen(false)
+            setLibrary(true)
+          }}
           onCheckFolder={pickAndCheck}
         />
         <HealthLine
@@ -387,7 +398,7 @@ export default function App() {
           hovering={hovering}
           onRecheck={(shell, tool) => check && runCheck(check.folder, shell, null, tool)}
           onAction={runAction}
-          primary={editing === null && !bannerHasPrimary(health)}
+          primary={!inspecting && !bannerHasPrimary(health)}
           onDismiss={() => {
             checkKey.current++
             setCheck(null)
@@ -402,6 +413,7 @@ export default function App() {
           profile={config.profiles.find((p) => p.id === editing)}
           color={profileColors([...config.profiles.map((p) => p.id), newId]).get(editingId) ?? ''}
           home={home}
+          library={config.mcpServers}
           onCancel={() => setEditing(null)}
           onSave={saveProfile}
           onDelete={
@@ -412,6 +424,15 @@ export default function App() {
                   return profile ? deleteProfile(profile) : Promise.resolve()
                 }
           }
+        />
+      )}
+      {config && library && (
+        <ServerLibrary
+          config={config}
+          colors={profileColors(config.profiles.map((p) => p.id))}
+          onSave={(previous, name, server) => commit(withServer(config, previous, name, server))}
+          onDelete={(name) => commit(withoutServer(config, name))}
+          onClose={() => setLibrary(false)}
         />
       )}
     </div>

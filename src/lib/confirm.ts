@@ -18,3 +18,24 @@ export const confirmDelete = (profile: Profile) =>
     okLabel: 'Delete',
     cancelLabel: 'Cancel',
   })
+
+/** The native confirmation before the server editor closes with unsaved edits. */
+export const confirmDiscardServer = (serverName: string | null) =>
+  ask("Your changes haven't been saved.", {
+    title: serverName ? `Discard changes to “${serverName}”?` : 'Discard this new server?',
+    kind: 'warning',
+    okLabel: 'Discard',
+    cancelLabel: 'Keep Editing',
+  })
+
+/** The native confirmation before a library server is deleted. */
+export const confirmDeleteServer = (serverName: string, usedBy: string[]) =>
+  ask(
+    usedBy.length > 0 ? `${usedBy.join(', ')} will stop loading it in new terminals.` : 'No profile uses it, so nothing changes in your terminals.',
+    {
+      title: `Delete the MCP server “${serverName}”?`,
+      kind: 'warning',
+      okLabel: 'Delete',
+      cancelLabel: 'Cancel',
+    },
+  )

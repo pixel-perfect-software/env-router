@@ -6,10 +6,11 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { useEffect, useRef, useState } from 'react'
 import { errorMessage } from '../lib/api'
 import { confirmDelete, confirmDiscard } from '../lib/confirm'
+import { mcpAgentLabels, serverSummary } from '../lib/mcp'
 import { splitLeaf, tildify } from '../lib/paths'
 import { KNOWN_TOOLS } from '../lib/tools'
-import type { Profile } from '../lib/types'
-import { Button, CloseIcon, FolderIcon, IconButton, PlusIcon, ProfileDot, TextField } from './ui'
+import type { McpServer, Profile } from '../lib/types'
+import { Button, CheckBox, CloseIcon, FolderIcon, IconButton, PlusIcon, ProfileDot, TextField } from './ui'
 
 interface FolderRow {
   path: string
@@ -21,6 +22,7 @@ export function ProfileInspector({
   profile,
   color,
   home,
+  library,
   onCancel,
   onSave,
   onDelete,
@@ -31,6 +33,8 @@ export function ProfileInspector({
   /** The profile's colour dot; a new profile shows the colour it will get. */
   color: string
   home: string
+  /** The MCP server library to choose from. */
+  library: Record<string, McpServer>
   onCancel: () => void
   onSave: (profile: Profile) => Promise<void>
   onDelete?: () => Promise<void>
@@ -40,10 +44,13 @@ export function ProfileInspector({
   const [toolPaths, setToolPaths] = useState<Record<string, string>>(() =>
     Object.fromEntries(KNOWN_TOOLS.map((tool) => [tool.command, profile?.tools[tool.command]?.path ?? ''])),
   )
+  const [servers, setServers] = useState<Set<string>>(() => new Set(Object.keys(profile?.mcpServers ?? {})))
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const nameField = useRef<HTMLInputElement>(null)
   const asking = useRef(false)
+  const libraryNames = Object.keys(library).sort((a, b) => a.localeCompare(b))
+  const mcpAgents = mcpAgentLabels()
 
   useEffect(() => {
     nameField.current?.focus()
@@ -56,7 +63,9 @@ export function ProfileInspector({
     name !== (profile?.name ?? '') ||
     folders.some((f) => f.removed) ||
     folders.length !== (profile?.triggerPaths.length ?? 0) ||
-    KNOWN_TOOLS.some((tool) => toolPaths[tool.command] !== (profile?.tools[tool.command]?.path ?? ''))
+    KNOWN_TOOLS.some((tool) => toolPaths[tool.command] !== (profile?.tools[tool.command]?.path ?? '')) ||
+    servers.size !== Object.keys(profile?.mcpServers ?? {}).length ||
+    [...servers].some((name) => !profile?.mcpServers[name])
 
   /** Escape, the close button and Cancel. Unsaved edits are only dropped once the user says so. */
   const close = async () => {
@@ -110,6 +119,8 @@ export function ProfileInspector({
         name: trimmed,
         triggerPaths: folders.filter((f) => !f.removed).map((f) => f.path),
         tools,
+        // A server kept on keeps the tools it had turned off.
+        mcpServers: Object.fromEntries([...servers].map((name) => [name, profile?.mcpServers[name] ?? { disabledTools: [] }])),
       })
     } catch (err) {
       setError(errorMessage(err))
@@ -241,6 +252,51 @@ export function ProfileInspector({
               ))}
             </ul>
             <p className="mt-3 text-caption text-ink-2">A new folder starts logged out: run the agent there once and sign in.</p>
+          </fieldset>
+
+          <fieldset className="min-w-0">
+            <legend className="mb-1.5 text-small font-medium text-ink-2">MCP servers</legend>
+            <div className="rounded-card bg-card shadow-card">
+              {libraryNames.length === 0 ? (
+                <p className="px-3 py-2.5 text-small text-ink-2 italic">The server library is empty. Add servers with MCP Servers…</p>
+              ) : (
+                <ul>
+                  {libraryNames.map((server) => {
+                    const on = servers.has(server)
+                    return (
+                      <li key={server} className="[&+&]:hair-t">
+                        {/* A real checkbox, hidden, so the whole row is its label; the drawn box shows its state and focus. */}
+                        <label className="flex w-full items-center gap-2.5 rounded-control px-3 py-1.5 hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)] has-[:focus-visible]:outline-[3px] has-[:focus-visible]:outline-offset-1 has-[:focus-visible]:outline-[color-mix(in_srgb,var(--er-accent)_50%,transparent)] has-[:focus-visible]:outline-solid">
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={on}
+                            onChange={() =>
+                              setServers((current) => {
+                                const next = new Set(current)
+                                if (on) next.delete(server)
+                                else next.add(server)
+                                return next
+                              })
+                            }
+                          />
+                          <CheckBox checked={on} />
+                          <span className={`shrink-0 font-mono text-small ${on ? 'text-ink' : 'text-ink-2'}`}>{server}</span>
+                          <span className="min-w-0 flex-1 truncate font-mono text-caption text-ink-2" title={serverSummary(library[server])}>
+                            {serverSummary(library[server])}
+                          </span>
+                        </label>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+            {libraryNames.length > 0 && mcpAgents.length > 0 && (
+              <p className="mt-2 text-caption text-ink-2">
+                {mcpAgents.join(' and ')} {mcpAgents.length > 1 ? 'load' : 'loads'} these in this profile's folders.
+              </p>
+            )}
           </fieldset>
         </div>
 

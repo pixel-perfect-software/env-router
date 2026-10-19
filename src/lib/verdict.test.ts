@@ -67,6 +67,7 @@ describe('verdictOf', () => {
       profile: 'Work',
       envVar: 'CLAUDE_CONFIG_DIR',
       value: `${HOME}/.claude-work`,
+      mcp: [],
       real: '/opt/bin/claude',
     }
     const v = verdictOf(routed, zsh(true), 'claude', true, SHIMS, HOME, `${HOME}/dev/work`)
@@ -75,6 +76,18 @@ describe('verdictOf', () => {
     expect(v.values).toEqual([
       { label: 'sets', value: 'CLAUDE_CONFIG_DIR=~/.claude-work' },
       { label: 'via', value: '~/dev/work' },
+      { label: 'runs', value: '/opt/bin/claude' },
+    ])
+  })
+
+  it('counts MCP servers as routing, even when the profile leaves the config alone', () => {
+    const base: FolderCheck = { status: 'routed', profile: 'Work', envVar: null, value: null, mcp: [], real: '/opt/bin/claude' }
+    expect(verdict(base).tone).toBe('warn')
+    const v = verdict({ ...base, mcp: ['github', 'linear'] })
+    expect(v.tone).toBe('ok')
+    expect(v.headline).toBe('Routed to Work')
+    expect(v.values).toEqual([
+      { label: 'mcp', value: 'github, linear' },
       { label: 'runs', value: '/opt/bin/claude' },
     ])
   })
