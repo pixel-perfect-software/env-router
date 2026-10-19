@@ -438,6 +438,7 @@ export default function App() {
         {(view === 'profiles' || !['ok', 'loading', 'setup'].includes(health.kind)) && (
           <HealthLine
             health={health}
+            quiet={view === 'servers'}
             onNewProfile={() => setEditing('new')}
             onEnableShell={enableShell}
             onCheckFolder={pickAndCheck}

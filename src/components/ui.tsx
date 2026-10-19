@@ -80,9 +80,7 @@ export function CheckBox({ checked }: { checked: boolean }) {
     <span
       aria-hidden="true"
       className={`grid size-[14px] shrink-0 place-items-center rounded-[4px] transition-colors duration-100 ${
-        checked
-          ? 'bg-accent text-on-accent shadow-[0_0.5px_1px_rgb(0_0_0/0.2)]'
-          : 'bg-field shadow-[inset_0_0_0_1px_var(--er-rule),0_0.5px_1px_rgb(0_0_0/0.06)]'
+        checked ? 'bg-accent text-on-accent shadow-[0_0.5px_1px_rgb(0_0_0/0.2)]' : 'bg-field shadow-[inset_0_0_0_1px_var(--er-field-edge)]'
       }`}
     >
       {checked && (

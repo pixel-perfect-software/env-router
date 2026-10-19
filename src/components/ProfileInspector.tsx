@@ -363,7 +363,7 @@ function ToolFilter({
     return (
       <p
         className={`${indent} pb-1.5 text-caption text-ink-2 ${off.length ? '' : 'italic'}`}
-        title="Check the server in MCP Servers… to choose its tools."
+        title="Check the server in Servers (⌘2) to choose its tools."
       >
         {off.length ? `${off.length} ${off.length === 1 ? 'tool' : 'tools'} off` : 'All tools'}
       </p>

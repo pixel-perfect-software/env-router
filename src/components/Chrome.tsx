@@ -125,6 +125,7 @@ function Banner({ tone, title, detail, action }: { tone: Tone; title: string; de
 
 export function HealthLine({
   health,
+  quiet = false,
   onNewProfile,
   onEnableShell,
   onCheckFolder,
@@ -134,6 +135,8 @@ export function HealthLine({
   onDismissError,
 }: {
   health: Health
+  /** On Servers the editor's Save is the accent, so the banner's action stands down to a push button. */
+  quiet?: boolean
   onNewProfile: () => void
   onEnableShell: (shell: Shell) => void
   onCheckFolder: () => void
@@ -142,6 +145,7 @@ export function HealthLine({
   onOpenConfig: () => void
   onDismissError: () => void
 }) {
+  const accent = quiet ? 'push' : 'primary'
   if (health.kind === 'loading') {
     return <div className="mx-4 h-[58px] shrink-0 animate-pulse rounded-card bg-card-muted" />
   }
@@ -150,13 +154,13 @@ export function HealthLine({
     const shellName = health.shell?.shell ?? 'your shell'
     const steps = ['Create a profile', `Turn on ${shellName}`, 'Check a folder']
     const actions = [
-      <Button key="1" kind="primary" onClick={onNewProfile}>
+      <Button key="1" kind={accent} onClick={onNewProfile}>
         New Profile
       </Button>,
-      <Button key="2" kind="primary" onClick={() => health.shell && onEnableShell(health.shell.shell)}>
+      <Button key="2" kind={accent} onClick={() => health.shell && onEnableShell(health.shell.shell)}>
         Turn On {shellName}
       </Button>,
-      <Button key="3" kind="primary" onClick={onCheckFolder}>
+      <Button key="3" kind={accent} onClick={onCheckFolder}>
         Check Folder…
       </Button>,
     ]
@@ -223,7 +227,7 @@ export function HealthLine({
           detail={health.message}
           action={
             health.canOpen ? (
-              <Button kind="primary" onClick={onOpenConfig}>
+              <Button kind={accent} onClick={onOpenConfig}>
                 Open config.json
               </Button>
             ) : undefined
@@ -237,7 +241,7 @@ export function HealthLine({
           title="The shim is missing or out of date"
           detail="No agent is routed until ~/.envrouter/bin/envrouter-shim is reinstalled."
           action={
-            <Button kind="primary" onClick={onReinstall}>
+            <Button kind={accent} onClick={onReinstall}>
               Reinstall
             </Button>
           }
@@ -250,7 +254,7 @@ export function HealthLine({
           title="Routing is off"
           detail={`New ${health.shell.shell} windows run every agent without a profile.`}
           action={
-            <Button kind="primary" onClick={() => onEnableShell(health.shell.shell)}>
+            <Button kind={accent} onClick={() => onEnableShell(health.shell.shell)}>
               Turn On {health.shell.shell}
             </Button>
           }

@@ -66,7 +66,7 @@ export function CatalogView({
     >
       <Header title="Catalog" onClose={onBack} />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-0.5 pb-5">
-        <ul className="rounded-card bg-card shadow-card">
+        <ul className="rounded-[8px] bg-well">
           {catalog(home).map((entry) => {
             // "In the library" only when it's the same server, not just the same name.
             const added = Object.values(library).some((server) => sameEndpoint(server, entry.server))
@@ -211,9 +211,9 @@ export function ImportView({
             </p>
           )
         ) : rows.length === 0 ? (
-          <p className="rounded-card bg-card px-3 py-2.5 text-small text-ink-2 italic shadow-card">Your agents don't define any servers yet</p>
+          <p className="rounded-[8px] bg-well px-3 py-2.5 text-small text-ink-2 italic">Your agents don't define any servers yet</p>
         ) : (
-          <ul className="rounded-card bg-card shadow-card">
+          <ul className="rounded-[8px] bg-well">
             {rows.map((row, i) => (
               <li key={`${row.candidate.name}-${row.candidate.sources.join()}`} className="[&+&]:hair-t">
                 <label
