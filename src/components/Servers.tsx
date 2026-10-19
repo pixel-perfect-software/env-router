@@ -20,6 +20,7 @@ import {
   TRANSPORTS,
   type Transport,
 } from '../lib/mcp'
+import { usePlatform } from '../lib/platform'
 import type { ConfigState, McpServer, ServerCheck, ToolInfo } from '../lib/types'
 import { CatalogIcon, CheckIcon, ImportIcon, TransportIcon } from './icons'
 import { ServerMark } from './ServerMark'
@@ -508,11 +509,12 @@ function ValueField({
   /** What to type, where it's known; shown in place of the placeholder. */
   hint?: string
 }) {
+  const platform = usePlatform()
   if (!isPending(value) && typeof value !== 'string') {
     return (
       <span className="flex h-[28px] min-w-0 flex-1 items-center gap-1.5 rounded-control bg-well pr-1 pl-2 text-small text-ink-2">
         <LockIcon />
-        <span className="min-w-0 flex-1 truncate italic">In Keychain</span>
+        <span className="min-w-0 flex-1 truncate italic">{platform.isMac ? 'In Keychain' : `In the ${platform.secretStore}`}</span>
         <Button
           kind="plain"
           className="!mx-0 !h-[22px]"
@@ -533,12 +535,12 @@ function ValueField({
         aria-label={label}
         value={pending ? value.value : value}
         onChange={(e) => onChange(pending ? { ...value, value: e.target.value } : e.target.value)}
-        placeholder={hint ?? (pending ? 'Saved to the Keychain' : placeholder)}
+        placeholder={hint ?? (pending ? `Saved to the ${platform.secretStore}` : placeholder)}
         className="w-full pr-8"
       />
       <IconButton
         // One name; aria-pressed says whether it's on. A name that flips with the state reads as its opposite.
-        label={`Store ${label} in the Keychain on save`}
+        label={`Store ${label} in the ${platform.secretStore} on save`}
         aria-pressed={pending}
         onClick={() => onChange(pending ? value.value : { secret: newSecretId(), value })}
         className={`absolute top-px right-px !size-[26px] ${pending ? '!bg-tint !text-accent' : 'opacity-60 hover:opacity-100 focus-visible:opacity-100'}`}

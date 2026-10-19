@@ -4,6 +4,7 @@
 
 import { type MouseEvent, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { isInside, splitLeaf, tildify, triggerBase } from '../lib/paths'
+import { shortcutLabel, usePlatform } from '../lib/platform'
 import { KNOWN_TOOLS, toolLabel } from '../lib/tools'
 import type { Profile } from '../lib/types'
 import { AgentMark } from './icons'
@@ -251,6 +252,7 @@ function ProfileCard({
 }
 
 function NewProfileCard({ first, selected, onNew }: { first: boolean; selected: boolean; onNew: () => void }) {
+  const platform = usePlatform()
   return (
     <button
       type="button"
@@ -264,7 +266,7 @@ function NewProfileCard({ first, selected, onNew }: { first: boolean; selected: 
         <PlusIcon />
       </span>
       <span className="font-medium">{first ? 'Create your first profile' : 'New Profile'}</span>
-      <kbd className="font-sans text-caption text-ink-2">⌘N</kbd>
+      <kbd className="font-sans text-caption text-ink-2">{shortcutLabel('n', platform)}</kbd>
     </button>
   )
 }

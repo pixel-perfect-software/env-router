@@ -17,6 +17,7 @@ import {
 } from '../lib/mcp'
 import { catalog } from '../lib/mcpCatalog'
 import { tildify } from '../lib/paths'
+import { usePlatform } from '../lib/platform'
 import { withAgents } from '../lib/tools'
 import type { ConfigState, ImportCandidate, McpServer } from '../lib/types'
 import { TransportIcon } from './icons'
@@ -55,6 +56,7 @@ export function CatalogView({
   onBack: () => void
   onPick: (draft: ServerDraft) => void
 }) {
+  const platform = usePlatform()
   const names = new Set(taken)
   return (
     <section
@@ -86,7 +88,7 @@ export function CatalogView({
                         {TRANSPORT_LABEL[entry.server.transport]}
                       </span>
                       {entry.secrets && (
-                        <span className="self-center text-ink-2" title="Takes a secret, kept in the Keychain">
+                        <span className="self-center text-ink-2" title={`Takes a secret, kept in the ${platform.secretStore}`}>
                           <LockIcon />
                         </span>
                       )}
@@ -142,6 +144,7 @@ export function ImportView({
   onBack: () => void
   onImport: (servers: [string, McpServer][], secrets: Record<string, string>) => Promise<void>
 }) {
+  const platform = usePlatform()
   const [rows, setRows] = useState<Row[] | null>(null)
   const [picked, setPicked] = useState<Set<number>>(new Set())
   const [error, setError] = useState<string | null>(null)
@@ -252,7 +255,8 @@ export function ImportView({
                     {row.locked.length > 0 && !row.present && (
                       <span className="mt-0.5 flex items-center gap-1 text-caption text-ink-2">
                         <LockIcon />
-                        <span className="font-mono">{row.locked.join(', ')}</span> {row.locked.length === 1 ? 'goes' : 'go'} to the Keychain
+                        <span className="font-mono">{row.locked.join(', ')}</span> {row.locked.length === 1 ? 'goes' : 'go'} to the{' '}
+                        {platform.secretStore}
                       </span>
                     )}
                   </span>
