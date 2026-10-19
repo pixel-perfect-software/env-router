@@ -69,11 +69,25 @@ selection of MCP servers from a library you keep in the app:
 - zsh, bash or fish.
 - Claude Code and/or Copilot CLI, installed the usual way.
 
-EnvRouter is pre-release and distributed as source: you build it on your own Mac. There are no
-prebuilt downloads, because those need a paid Apple Developer account for signing and
-notarization.
+EnvRouter is pre-release. It's signed ad hoc rather than with a paid Apple Developer ID, so it
+isn't notarized: install it with Homebrew, which clears the download's quarantine flag, or build
+it yourself.
 
-## 🚀 Build and install
+## 🚀 Install
+
+With [Homebrew](https://brew.sh):
+
+```sh
+brew install --cask pixel-perfect-software/tap/envrouter
+open /Applications/EnvRouter.app
+```
+
+The cask comes from [pixel-perfect-software/homebrew-tap](https://github.com/pixel-perfect-software/homebrew-tap).
+Each release is built from its tagged source by this repository's
+[release workflow](.github/workflows/release.yml) on GitHub Actions. Installing by full name
+trusts only this cask, not the whole tap.
+
+### 🔨 Build from source
 
 You need, once:
 
@@ -169,18 +183,23 @@ rendered file or on a command line, and the window never reads them back once th
 
 ## 🔄 Updating
 
-Pull the latest code, quit EnvRouter from its menu bar icon, and run the build and `ditto`
-commands again. When the new version starts, it updates the shim and helper in
-`~/.envrouter/bin` itself.
+With Homebrew, `brew upgrade --cask envrouter`. It quits EnvRouter first; open it again
+afterwards. From source, pull the latest code, quit EnvRouter from its menu bar icon, and run the
+build and `ditto` commands again. Either way, when the new version starts it updates the shim and
+helper in `~/.envrouter/bin` itself.
 
 ## 🗑️ Uninstall
 
 1. In the app, open **Shells…** and turn every shell off. This removes the marked block from
    each startup file. You can also delete the lines between `# >>> envrouter >>>` and
    `# <<< envrouter <<<` by hand.
-2. Quit EnvRouter and delete `/Applications/EnvRouter.app`.
-3. Delete `~/.envrouter`.
-4. If you stored MCP secrets, delete the "EnvRouter MCP secrets" item in Keychain Access, or run
+2. If you turned on an editor in **Editors…**, turn it off. This removes
+   `claudeCode.claudeProcessWrapper` from that editor's settings.
+3. Quit EnvRouter and delete `/Applications/EnvRouter.app` (with Homebrew,
+   `brew uninstall --cask envrouter`).
+4. Delete `~/.envrouter` (with Homebrew, `brew uninstall --zap --cask envrouter` does steps 3
+   and 4).
+5. If you stored MCP secrets, delete the "EnvRouter MCP secrets" item in Keychain Access, or run
    `security delete-generic-password -s "EnvRouter MCP secrets"`.
 
 Your agents' config folders are left alone.

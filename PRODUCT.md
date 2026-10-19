@@ -42,7 +42,7 @@ general env-var manager like direnv or mise.
 - Folder check (real shell, slow, up to ~15s) and instant preview (from the config alone).
 - No OAuth or logins. A new agent config folder starts logged out, and remote MCP servers sign in through the agent (`/mcp`); the user does both from the terminal. The only credentials EnvRouter holds are MCP secret values the user enters, in the macOS Keychain.
 - MCP servers reach the agent through the shim at launch, with no background process: the app only needs to run when servers or profiles change.
-- macOS only (11 or later). Distributed as source that each user builds: no paid Apple Developer ID, so no notarized downloads.
+- macOS only (11 or later). No paid Apple Developer ID, so it's signed ad hoc and not notarized. Users install the release build through a Homebrew cask (pixel-perfect-software/homebrew-tap), which clears the quarantine flag, or build it from source.
 
 ## Brand Commitments
 Name: EnvRouter. The app icon is "Points": a Finder-blue folder on a dark navy tile whose track

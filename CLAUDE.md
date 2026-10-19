@@ -6,9 +6,14 @@ EnvRouter is a macOS desktop app (Tauri v2) that does two things per folder for 
 (Claude Code and Copilot CLI): it sets the agent's config variable, so `claude`
 run in `~/dev/work` uses a different `CLAUDE_CONFIG_DIR` than in `~/dev/personal`, and it hands
 the agent a set of **MCP servers**. The user defines **profiles**: each one maps trigger folders to
-a variable per tool and a selection from the MCP **server library**. Profiles are stored in `~/.envrouter/config.json`. Other macOS users get it as
-source and build it themselves (README "Build and install"). There's deliberately no paid
-Apple Developer ID, so no Developer ID signing, notarization or prebuilt downloads.
+a variable per tool and a selection from the MCP **server library**. Profiles are stored in `~/.envrouter/config.json`. There's deliberately no paid
+Apple Developer ID, so no Developer ID signing or notarization. Other macOS users install the
+ad-hoc-signed release build with Homebrew (`brew install --cask pixel-perfect-software/tap/envrouter`;
+the cask in the separate `homebrew-tap` repo clears the quarantine flag) or build from source
+(README "Install"). Pushing a `v*` tag runs `.github/workflows/release.yml`: it builds the app,
+publishes `EnvRouter-<version>-arm64.zip` as a release, and rewrites the cask's `version` and
+`sha256` with the `TAP_TOKEN` secret (a fine-grained token, Contents read and write on
+`homebrew-tap` only). The tag must equal `version` in `tauri.conf.json` and be on `main`.
 
 **How it works: shims, like mise or volta.** `~/.envrouter/shims/<tool>` is a symlink to
 `~/.envrouter/bin/envrouter-shim`, a small Rust binary, and a marked block in the user's shell

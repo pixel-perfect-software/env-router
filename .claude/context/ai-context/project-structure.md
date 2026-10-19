@@ -41,6 +41,7 @@ env-router/
 ├── docs/contributing.md       # contributors: setup, commands, mock scenarios, rules, PRs
 ├── docs/images/               # README screenshots (browser mock, `mcp` scenario, light and dark)
 ├── .github/workflows/ci.yml   # lint, type check, frontend and Rust tests on macOS (with fish installed)
+├── .github/workflows/release.yml  # on a v* tag: build, publish the zip as a release, update the cask in homebrew-tap
 ├── PRODUCT.md                 # product truth for design work
 ├── .impeccable/               # design-workflow state: surface brief, review captures
 ├── .claude/                   # Claude Code settings and context docs

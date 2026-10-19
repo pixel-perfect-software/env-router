@@ -1,0 +1,97 @@
+name: Release
+
+# Pushing a tag like `v0.2.0` builds EnvRouter.app, publishes it as a GitHub release, and points
+# the Homebrew cask in pixel-perfect-software/homebrew-tap at it. The tag must match the version
+# in src-tauri/tauri.conf.json and sit on main.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # to create the release
+
+# One release at a time, so two can't race to update the cask.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Apple Silicon: the bundle is arm64-only for now.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # to check the tag is on main
+
+      - name: Check the tag
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          app=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if [ "$version" != "$app" ]; then
+            echo "::error::$GITHUB_REF_NAME doesn't match the app's version ($app in src-tauri/tauri.conf.json)."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME isn't on main."
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      # Reads the pnpm version from `packageManager` in package.json.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+      # The runner's rustup installs the version rust-toolchain.toml pins.
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+
+      - run: pnpm install --frozen-lockfile
+      # Signs ad hoc (bundle.macOS.signingIdentity "-"); there's no Developer ID to notarize with.
+      - run: pnpm tauri build
+
+      - name: Zip the app
+        run: |
+          zip="EnvRouter-$VERSION-arm64.zip"
+          # ditto keeps the bundle's symlinks, permissions and signature intact.
+          ditto -c -k --keepParent target/release/bundle/macos/EnvRouter.app "$zip"
+          echo "ZIP=$zip" >> "$GITHUB_ENV"
+          echo "SHA256=$(shasum -a 256 "$zip" | cut -d ' ' -f 1)" >> "$GITHUB_ENV"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" "$ZIP" --verify-tag --title "EnvRouter $VERSION" --generate-notes
+
+      # The built-in token can't write to another repository; TAP_TOKEN is a fine-grained token
+      # with Contents read and write on homebrew-tap only.
+      - uses: actions/checkout@v4
+        with:
+          repository: pixel-perfect-software/homebrew-tap
+          token: ${{ secrets.TAP_TOKEN }}
+          path: tap
+
+      - name: Point the cask at the release
+        working-directory: tap
+        run: |
+          sed -i '' -E \
+            -e "s/^  version \".*\"$/  version \"$VERSION\"/" \
+            -e "s/^  sha256 .*$/  sha256 \"$SHA256\"/" \
+            Casks/envrouter.rb
+          if git diff --quiet; then
+            echo "The cask already points at $VERSION."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --all --message "envrouter $VERSION"
+          # Another app's release may have pushed to the tap meanwhile.
+          for attempt in 1 2 3; do
+            git push origin HEAD:main && exit 0
+            git pull --rebase origin main
+          done
+          echo "::error::Couldn't push the cask update to homebrew-tap."
+          exit 1

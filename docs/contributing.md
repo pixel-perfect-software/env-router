@@ -5,7 +5,7 @@ how to work on the app without touching your real setup, and the rules the code 
 
 ## 🛠️ Setup
 
-Install the tools in the README's [Build and install](../README.md#-build-and-install) section
+Install the tools in the README's [Build from source](../README.md#-build-from-source) section
 (Xcode command line tools, rustup, Node.js 22.12 or later, pnpm), then:
 
 ```sh
@@ -139,6 +139,22 @@ source and loses the small-size cut.
 
 The README screenshots in `docs/images/` come from the browser mock's `mcp` scenario at
 960 × 640 and 2× scale, in light and dark.
+
+## 📦 Releases
+
+Releases go out through Homebrew. To cut one:
+
+1. Bump `version` in `src-tauri/tauri.conf.json` (and `package.json` and the crates' `Cargo.toml`
+   files, so they agree), and merge it to `main`.
+2. Tag that commit and push the tag: `git tag v0.2.0 && git push origin v0.2.0`.
+
+The [release workflow](../.github/workflows/release.yml) refuses a tag that doesn't match the
+app's version or isn't on `main`. It builds the app, publishes `EnvRouter-<version>-arm64.zip`
+as a GitHub release, and updates `Casks/envrouter.rb` in
+[homebrew-tap](https://github.com/pixel-perfect-software/homebrew-tap) using the `TAP_TOKEN`
+secret: a fine-grained token with Contents read and write on that repository only. When the
+token expires, the cask update fails and the release stays published; replace the secret and
+re-run the job.
 
 ## 🔀 Pull requests
 
