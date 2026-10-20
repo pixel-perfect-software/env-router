@@ -36,8 +36,8 @@ function routedTools(profile: Profile): [string, string][] {
 
 const CARD = 'flex min-h-[176px] flex-col rounded-card bg-card shadow-card transition-[opacity,box-shadow,background-color] duration-150'
 // Outlines, not shadows: they can't be overridden by the card's own shadow utility.
-const TARGETED = 'bg-tint outline-2 outline-offset-2 outline-accent'
-const SELECTED = 'outline-2 outline-offset-2 outline-accent'
+const TARGETED = 'bg-tint outline-2 outline-offset-2 outline-accent-ink'
+const SELECTED = 'outline-2 outline-offset-2 outline-accent-ink'
 
 export function Frame({
   profiles,
@@ -62,7 +62,8 @@ export function Frame({
 }) {
   const colors = profileColors(profiles.map((p) => p.id))
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3 px-4 pt-3 pb-4">
+    // Side padding plus the scroller's gutter on each side (App.tsx) makes the 16px window gutter, so the grid lines up with the banner.
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3 px-[5px] pt-3 pb-4">
       {profiles.map((profile) => (
         <ProfileCard
           key={profile.id}
@@ -159,7 +160,7 @@ function ProfileCard({
           </button>
         </h2>
         {selected ? (
-          <span className="pr-1.5 text-small font-medium text-accent">Editing</span>
+          <span className="pr-1.5 text-small font-medium text-accent-ink">Editing</span>
         ) : (
           <IconButton label={`Edit ${profile.name}`} onClick={onEdit}>
             <PencilIcon />
@@ -221,7 +222,7 @@ function ProfileCard({
                       type="button"
                       onClick={() => onOpenServer(name)}
                       title={`Open ${name} in Servers`}
-                      className="rounded-[3px] underline decoration-[color-mix(in_srgb,var(--er-ink)_28%,transparent)] underline-offset-[3px] hover:text-accent hover:decoration-current"
+                      className="rounded-[3px] underline decoration-[color-mix(in_srgb,var(--er-ink)_28%,transparent)] underline-offset-[3px] hover:text-accent-ink hover:decoration-current"
                     >
                       {name}
                     </button>
@@ -233,10 +234,10 @@ function ProfileCard({
                     <button
                       type="button"
                       aria-expanded={false}
-                      aria-label={`Show ${servers.length - 2} more servers`}
+                      aria-label={`+${servers.length - 2} more servers`}
                       onClick={() => setShowAllServers(true)}
                       title={servers.slice(2).join(', ')}
-                      className="rounded-[3px] text-ink-2 underline decoration-[color-mix(in_srgb,var(--er-ink)_28%,transparent)] underline-offset-[3px] hover:text-accent hover:decoration-current"
+                      className="rounded-[3px] text-ink-2 underline decoration-[color-mix(in_srgb,var(--er-ink)_28%,transparent)] underline-offset-[3px] hover:text-accent-ink hover:decoration-current"
                     >
                       +{servers.length - 2}
                     </button>
@@ -258,11 +259,11 @@ function NewProfileCard({ first, selected, onNew }: { first: boolean; selected: 
       type="button"
       disabled={selected}
       onClick={onNew}
-      className={`group flex min-h-[176px] flex-col items-center justify-center gap-2 rounded-card text-ink-2 shadow-[inset_0_0_0_1.5px_var(--er-rule)] transition-[opacity,background-color,color] duration-150 hover:bg-card hover:text-accent disabled:pointer-events-none ${
-        selected ? 'bg-tint text-accent shadow-[inset_0_0_0_2px_var(--er-accent)]' : ''
+      className={`group flex min-h-[176px] flex-col items-center justify-center gap-2 rounded-card text-ink-2 shadow-[inset_0_0_0_1.5px_var(--er-rule)] transition-[opacity,background-color,color] duration-150 hover:bg-card hover:text-accent-ink disabled:pointer-events-none ${
+        selected ? 'bg-tint text-accent-ink shadow-[inset_0_0_0_2px_var(--er-accent-ink)]' : ''
       }`}
     >
-      <span className="grid size-9 place-items-center rounded-full bg-card shadow-card group-hover:text-accent">
+      <span className="grid size-9 place-items-center rounded-full bg-card shadow-card group-hover:text-accent-ink">
         <PlusIcon />
       </span>
       <span className="font-medium">{first ? 'Create your first profile' : 'New Profile'}</span>
@@ -327,16 +328,17 @@ function SlipRow({ slip, home }: { slip: Slip; home: string }) {
     <li
       ref={ref}
       data-folder={slip.folder}
-      className="relative z-10 flex items-center gap-2 rounded-[6px] bg-tint px-1.5 py-1 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--er-accent)_40%,transparent)]"
+      className="relative z-10 flex items-center gap-2 rounded-[6px] bg-tint px-1.5 py-1 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--er-accent-ink)_40%,transparent)]"
     >
       <Mark
         key={slip.mark}
         kind={slip.mark}
-        className={`${slip.mark === 'on' ? 'text-accent' : 'text-ink-2'} animate-[er-stamp_180ms_var(--ease-settle)]`}
+        className={`${slip.mark === 'on' ? 'text-accent-ink' : 'text-ink-2'} animate-[er-stamp_180ms_var(--ease-settle)]`}
       />
-      <span className="min-w-0 truncate font-mono text-small select-text" title={display}>
-        <span className="text-ink-2">{parent}</span>
-        {leaf}
+      {/* The parent gives way first, so a long path still shows the folder's own name. */}
+      <span className="flex min-w-0 font-mono text-small select-text" title={display}>
+        <span className="min-w-0 truncate text-ink-2">{parent}</span>
+        <span className="shrink-0">{leaf}</span>
       </span>
     </li>
   )

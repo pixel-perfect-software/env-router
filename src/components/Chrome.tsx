@@ -16,6 +16,7 @@ export function TitleBand({
   setup,
   blockedShell,
   primary,
+  canCheck,
   shellsOpen,
   onToggleShells,
   editorsShown,
@@ -30,6 +31,8 @@ export function TitleBand({
   blockedShell: Shell | null
   /** Check Folder… is the window's accent button only when nothing more urgent is. */
   primary: boolean
+  /** Off while there's no config to check against (config.json unreadable, or still loading). */
+  canCheck: boolean
   shellsOpen: boolean
   onToggleShells: () => void
   /** An editor on this Mac runs an agent extension EnvRouter can route. */
@@ -49,7 +52,7 @@ export function TitleBand({
           the band is just the toolbar; the name stays for screen readers. */}
       {platform.isMac ? (
         <div data-tauri-drag-region className="flex items-center gap-2">
-          <img data-tauri-drag-region src={appIcon} alt="" width={18} height={18} draggable={false} />
+          <img data-tauri-drag-region src={appIcon} alt="" width={18} height={18} draggable={false} className="shrink-0" />
           {/* A narrow window keeps the icon; the name stays for screen readers. */}
           <h1 data-tauri-drag-region className="text-title font-semibold max-[900px]:sr-only">
             EnvRouter
@@ -89,14 +92,7 @@ export function TitleBand({
                 </li>
               ))}
             </ul>
-            <Button
-              aria-expanded={shellsOpen}
-              aria-haspopup="dialog"
-              aria-controls="shells-panel"
-              onClick={onToggleShells}
-              className={shellsOpen ? 'brightness-90' : ''}
-              title="Shells…"
-            >
+            <Button aria-expanded={shellsOpen} aria-haspopup="dialog" aria-controls="shells-panel" onClick={onToggleShells} title="Shells…">
               <ShellIcon />
               {/* A narrow window keeps the icon; the name stays as the tooltip and accessible label. */}
               <span className="max-[820px]:sr-only">Shells…</span>
@@ -104,19 +100,18 @@ export function TitleBand({
           </>
         )}
         {editorsShown && (
-          <Button
-            aria-expanded={editorsOpen}
-            aria-haspopup="dialog"
-            aria-controls="editors-panel"
-            onClick={onToggleEditors}
-            className={editorsOpen ? 'brightness-90' : ''}
-            title="Editors…"
-          >
+          <Button aria-expanded={editorsOpen} aria-haspopup="dialog" aria-controls="editors-panel" onClick={onToggleEditors} title="Editors…">
             <EditorIcon />
             <span className="max-[820px]:sr-only">Editors…</span>
           </Button>
         )}
-        <Button kind={primary ? 'primary' : 'push'} onClick={onCheckFolder} title={`Check Folder… (${shortcutLabel('o', platform)})`}>
+        <Button
+          id="check-folder"
+          kind={primary ? 'primary' : 'push'}
+          disabled={!canCheck}
+          onClick={onCheckFolder}
+          title={`Check Folder… (${shortcutLabel('o', platform)})`}
+        >
           <FolderCheckIcon />
           Check Folder…
         </Button>
@@ -130,7 +125,7 @@ export type Health =
   /** `dismissible`: a one-off action failed. A failing status refresh isn't: it clears itself once one works. */
   | { kind: 'error'; message: string; dismissible: boolean }
   /** config.json couldn't be read, so there are no profiles to show. Coming back to the window retries. */
-  | { kind: 'unloaded'; message: string; canOpen: boolean }
+  | { kind: 'unloaded'; message: string; canOpen: boolean; openError?: string }
   | { kind: 'setup'; step: 1 | 2 | 3; shell: ShellStatus | undefined }
   | { kind: 'ok'; on: Shell[] }
   | { kind: 'off'; shell: ShellStatus }
@@ -139,7 +134,7 @@ export type Health =
   /** The last check in this shell found something stopping the shim from running. */
   | { kind: 'blocked'; shell: Shell; tool: string; headline: string; folder: string }
 
-function Banner({ tone, title, detail, action }: { tone: Tone; title: string; detail?: string; action?: ReactNode }) {
+function Banner({ tone, title, detail, action }: { tone: Tone; title: string; detail?: ReactNode; action?: ReactNode }) {
   return (
     <div role="status" className="mx-4 flex shrink-0 items-center gap-3 rounded-card bg-card p-3 shadow-card">
       <StatusTile tone={tone} />
@@ -221,7 +216,10 @@ export function HealthLine({
                       n
                     )}
                   </span>
-                  <span className={current ? 'font-medium' : ''}>{label}</span>
+                  <span className={current ? 'font-medium' : ''}>
+                    {label}
+                    {done && <span className="sr-only"> (done)</span>}
+                  </span>
                 </li>
               )
             })}
@@ -253,7 +251,16 @@ export function HealthLine({
         <Banner
           tone="problem"
           title="EnvRouter can't read config.json"
-          detail={health.message}
+          detail={
+            health.openError ? (
+              <>
+                {health.message}
+                <span className="block text-problem">{health.openError}</span>
+              </>
+            ) : (
+              health.message
+            )
+          }
           action={
             health.canOpen ? (
               <Button kind={accent} onClick={onOpenConfig}>
@@ -268,7 +275,11 @@ export function HealthLine({
         <Banner
           tone="problem"
           title="The shim is missing or out of date"
-          detail="No agent is routed until ~/.envrouter/bin/envrouter-shim is reinstalled."
+          detail={
+            <>
+              No agent is routed until <span className="font-mono">~/.envrouter/bin/envrouter-shim</span> is reinstalled.
+            </>
+          }
           action={
             <Button kind={accent} onClick={onReinstall}>
               Reinstall
@@ -332,7 +343,12 @@ function TitlePopover({ id, label, onClose, children }: { id: string; label: str
   const panel = useRef<HTMLElement>(null)
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      // Back to the button that opened it, or focus would fall to the page.
+      document.querySelector<HTMLElement>(`[aria-controls="${id}"]`)?.focus()
+      onClose()
+    }
     const onPointer = (e: PointerEvent) => {
       const target = e.target as HTMLElement
       if (!panel.current?.contains(target) && !target.closest(`[aria-controls="${id}"]`)) onClose()
@@ -392,15 +408,18 @@ export function ShellsPopover({
     <TitlePopover id="shells-panel" label="Shell setup" onClose={onClose}>
       <ul>
         {setup.shells.map((s) => (
-          <li key={s.shell} className={`flex items-center gap-3 rounded-[7px] px-2.5 py-2 ${s.available ? '' : 'opacity-60'}`}>
+          <li key={s.shell} className="flex items-center gap-3 rounded-[7px] px-2.5 py-2">
             <div className="min-w-0 flex-1">
-              <p className="font-medium">
+              {/* An unavailable shell steps down to secondary ink rather than fading, so it stays readable. */}
+              <p className={`font-medium ${s.available ? '' : 'text-ink-2'}`}>
                 {s.shell}
-                {s.isDefault && <span className="ml-2 rounded-full bg-tint px-1.5 py-px text-caption font-normal text-accent">login shell</span>}
+                {s.isDefault && <span className="ml-2 rounded-full bg-tint px-1.5 py-px text-caption font-normal text-accent-ink">login shell</span>}
               </p>
-              <p className="truncate font-mono text-small text-ink-2 select-text">
-                {s.available ? s.startupFiles.map((f) => tildify(f, home)).join(', ') : 'Not installed'}
-              </p>
+              {s.available ? (
+                <p className="truncate font-mono text-small text-ink-2 select-text">{s.startupFiles.map((f) => tildify(f, home)).join(', ')}</p>
+              ) : (
+                <p className="text-small text-ink-2 italic">Not installed</p>
+              )}
             </div>
             {s.available && (
               <Switch

@@ -8,6 +8,7 @@ import {
   isPending,
   newSecretId,
   plainCredentials,
+  sameDefinition,
   sameEndpoint,
   serverOf,
   serverWithInit,
@@ -234,5 +235,23 @@ describe('sameEndpoint and withUsedBy', () => {
     const next = withUsedBy(config(), 'github', ['w', 'h'])
     expect(next.profiles.map((p) => p.mcpServers.github)).toEqual([{ disabledTools: ['fork'] }, { disabledTools: [] }])
     expect(withUsedBy(next, 'github', []).profiles.every((p) => !p.mcpServers.github)).toBe(true)
+  })
+})
+
+describe('sameDefinition', () => {
+  it('counts a server whose credential went to the store as the one an agent still defines in plain text', () => {
+    const saved: McpServer = { transport: 'stdio', command: 'npx', args: ['-y', 'server'], env: { TOKEN: { secret: 'AB' } } }
+    const found: McpServer = { transport: 'stdio', command: 'npx', args: ['-y', 'server'], env: { TOKEN: 'ghp_x' } }
+    expect(sameDefinition(saved, found)).toBe(true)
+    expect(sameDefinition(saved, { ...found, args: ['-y', 'other'] })).toBe(false)
+    expect(sameDefinition(saved, { ...found, env: {} })).toBe(false)
+    expect(sameDefinition(undefined, found)).toBe(false)
+  })
+
+  it('compares plain values exactly, and remote servers by URL and headers', () => {
+    const remote: McpServer = { transport: 'http', url: 'https://mcp.example.com/mcp', headers: { Authorization: { secret: 'CD' } } }
+    expect(sameDefinition(remote, { ...remote, headers: { Authorization: 'Bearer x' } })).toBe(true)
+    expect(sameDefinition(remote, { ...remote, url: 'https://mcp.example.com/other', headers: { Authorization: 'Bearer x' } })).toBe(false)
+    expect(sameDefinition({ ...remote, headers: { A: 'b' } }, { ...remote, headers: { A: 'c' } })).toBe(false)
   })
 })

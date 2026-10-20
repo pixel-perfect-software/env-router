@@ -62,8 +62,9 @@ function healthOf(
   home: string,
   checkedOnce: boolean,
   blocked: Blocked | null,
+  openError: string | null,
 ): Health {
-  if (loadError) return { kind: 'unloaded', message: loadError, canOpen: home !== '' }
+  if (loadError) return { kind: 'unloaded', message: loadError, canOpen: home !== '', openError: openError ?? undefined }
   if (setupError) return { kind: 'error', message: setupError, dismissible: false }
   if (actionError) return { kind: 'error', message: actionError, dismissible: true }
   if (!config || !setup) return { kind: 'loading' }
@@ -84,9 +85,13 @@ function healthOf(
 export default function App() {
   const [home, setHome] = useState('')
   const [config, setConfig] = useState<ConfigState | null>(null)
+  // A check compares against the config; with config.json unreadable (or not read yet) there's none.
+  const canCheck = config !== null
   const [setup, setSetup] = useState<SetupStatus | null>(null)
   // config.json (or the home folder) couldn't be read, so there's nothing to show yet.
   const [loadError, setLoadError] = useState<string | null>(null)
+  // Opening an unreadable config.json failed too; shown under the parse error, not instead of it.
+  const [openError, setOpenError] = useState<string | null>(null)
   // A failed status refresh. Cleared by the next one that works.
   const [setupError, setSetupError] = useState<string | null>(null)
   // A failed one-off action (turning on a shell, reinstalling). Cleared by the next success.
@@ -147,6 +152,7 @@ export default function App() {
       if (seq !== configSeq.current) return
       setConfig(loaded)
       setLoadError(null)
+      setOpenError(null)
     } catch (err) {
       if (seq !== configSeq.current) return
       // Nothing is editable until the file is fixed: a save would replace whatever is in it.
@@ -266,6 +272,7 @@ export default function App() {
 
   // A check's answer files into the Profiles map, so checking from Servers goes there.
   const pickAndCheck = async () => {
+    if (!canCheck) return
     const picked = await open({ directory: true, defaultPath: home || undefined, title: 'Check Folder' })
     if (typeof picked !== 'string') return
     setView('profiles')
@@ -315,7 +322,7 @@ export default function App() {
   }, [])
 
   const hovering = useFolderDrop(({ path, origin }) => {
-    if (inspecting) return
+    if (inspecting || !canCheck) return
     setView('profiles')
     runCheck(path, defaultShell(), origin)
   })
@@ -465,12 +472,12 @@ export default function App() {
       ? Boolean(verdictOf(check.result, status, check.tool, routedTools.includes(check.tool), setup.shimsDir, home).action)
       : false
   })()
-  const health = healthOf(config, setup, loadError, setupError, actionError, home, checkedOnce, blocked)
+  const health = healthOf(config, setup, loadError, setupError, actionError, home, checkedOnce, blocked, openError)
   const editingId = editing === 'new' ? newId : editing
 
   return (
     <PlatformContext.Provider value={platform}>
-      <div className={`relative flex h-full flex-col ${hovering ? 'shadow-[inset_0_0_0_2px_var(--er-accent)]' : ''}`}>
+      <div className={`relative flex h-full flex-col ${hovering && canCheck ? 'shadow-[inset_0_0_0_2px_var(--er-accent-ink)]' : ''}`}>
         {/* While the inspector is open, everything behind it is out of reach: Tab, clicks and
           screen readers stay in the editor, so a stray Enter on a card can't drop its edits.
           `contents` keeps the window's layout as if this wrapper weren't there. */}
@@ -479,6 +486,7 @@ export default function App() {
             setup={setup}
             blockedShell={blocked?.shell ?? null}
             primary={view === 'profiles' && !inspecting && !bannerHasPrimary(health) && !docketHasAction}
+            canCheck={canCheck}
             shellsOpen={shellsOpen}
             onToggleShells={() => {
               setEditorsOpen(false)
@@ -504,7 +512,10 @@ export default function App() {
               onCheckFolder={pickAndCheck}
               onReinstall={() => config && commit(config).catch((err) => setActionError(errorMessage(err)))}
               onRecheck={(folder, shell, tool) => runCheck(folder, shell, null, tool)}
-              onOpenConfig={() => openInEditor(`${home}/.envrouter/config.json`).catch((err) => setLoadError(errorMessage(err)))}
+              onOpenConfig={() => {
+                setOpenError(null)
+                openInEditor(`${home}/.envrouter/config.json`).catch((err) => setOpenError(errorMessage(err)))
+              }}
               onDismissError={() => setActionError(null)}
             />
           )}
@@ -532,7 +543,8 @@ export default function App() {
           )}
           {view === 'profiles' && (
             <>
-              <main className="min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_10px,black_calc(100%-18px),transparent)]">
+              {/* A stable gutter on both sides: the scrollbar coming and going (a check result rising) never reflows the cards. */}
+              <main className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable_both-edges] [mask-image:linear-gradient(to_bottom,transparent,black_10px,black_calc(100%-18px),transparent)]">
                 {config && (
                   <Frame
                     profiles={config.profiles}
@@ -546,22 +558,27 @@ export default function App() {
                   />
                 )}
               </main>
-              <Docket
-                check={check}
-                shells={setup?.shells ?? []}
-                home={home}
-                routedTools={routedTools}
-                shimsDir={setup?.shimsDir ?? `${home}/.envrouter/shims`}
-                hovering={hovering}
-                onRecheck={(shell, tool) => check && runCheck(check.folder, shell, null, tool)}
-                onAction={runAction}
-                primary={!inspecting && !bannerHasPrimary(health)}
-                onDismiss={() => {
-                  checkKey.current++
-                  setCheck(null)
-                  setSlip(null)
-                }}
-              />
+              {/* With nothing to check against, no drop zone invites one. */}
+              {canCheck && (
+                <Docket
+                  check={check}
+                  shells={setup?.shells ?? []}
+                  home={home}
+                  routedTools={routedTools}
+                  shimsDir={setup?.shimsDir ?? `${home}/.envrouter/shims`}
+                  hovering={hovering}
+                  onRecheck={(shell, tool) => check && runCheck(check.folder, shell, null, tool)}
+                  onAction={runAction}
+                  primary={!inspecting && !bannerHasPrimary(health)}
+                  onDismiss={() => {
+                    checkKey.current++
+                    setCheck(null)
+                    setSlip(null)
+                    // Dismiss leaves with the result; Check Folder… is where the next one starts.
+                    document.getElementById('check-folder')?.focus()
+                  }}
+                />
+              )}
             </>
           )}
         </div>

@@ -63,6 +63,13 @@ export interface ServerDraft {
   headers: Pair[]
 }
 
+/** A profile as the Used by toggles show it. */
+export interface ProfileChip {
+  id: string
+  name: string
+  color: string
+}
+
 const pairs = (values: Record<string, McpValue>): Pair[] => Object.entries(values).map(([key, value]) => ({ key, value }))
 
 export function draftOf(name: string, server: McpServer | undefined): ServerDraft {
@@ -353,4 +360,27 @@ export function sameEndpoint(a: McpServer, b: McpServer): boolean {
   }
   const url = (s: McpServer) => ('url' in s ? s.url.trim().replace(/\/+$/, '') : '')
   return url(a) === url(b)
+}
+
+/**
+ * Whether `found` (read from an agent's file, so every value is plain) is the server `saved` in
+ * the library. A value the library keeps as a secret can't be read back to compare, so it matches
+ * whatever stands in its place: the same server, once imported with its token moved to the store,
+ * still counts as already there.
+ */
+export function sameDefinition(saved: McpServer | undefined, found: McpServer): boolean {
+  if (!saved || saved.transport !== found.transport) return false
+  const same = (a: McpValue | undefined, b: McpValue | undefined) =>
+    a !== undefined && b !== undefined && (isSecret(a) || JSON.stringify(a) === JSON.stringify(b))
+  const sameTable = (a: Record<string, McpValue>, b: Record<string, McpValue>) =>
+    Object.keys(a).length === Object.keys(b).length && Object.keys(a).every((key) => same(a[key], b[key]))
+  if (saved.transport === 'stdio' && found.transport === 'stdio') {
+    return (
+      saved.command === found.command &&
+      saved.args.length === found.args.length &&
+      saved.args.every((arg, i) => same(arg, found.args[i])) &&
+      sameTable(saved.env, found.env)
+    )
+  }
+  return 'url' in saved && 'url' in found && saved.url === found.url && sameTable(saved.headers, found.headers)
 }

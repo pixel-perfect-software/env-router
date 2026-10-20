@@ -9,7 +9,7 @@ import type { Platform } from './types'
 export interface PlatformInfo {
   platform: Platform
   isMac: boolean
-  /** What the store MCP secrets go to is called: "Keychain", "keyring". */
+  /** What the store MCP secrets go to is called: "Keychain", "keyring", "Credential Manager" (Windows, and inside WSL). */
   secretStore: string
 }
 
@@ -19,7 +19,7 @@ export const guessPlatform = (): Platform => (/Mac/.test(navigator.userAgent) ? 
 export const platformInfo = (platform: Platform, secretStore?: string): PlatformInfo => ({
   platform,
   isMac: platform === 'macos',
-  secretStore: secretStore ?? (platform === 'macos' ? 'Keychain' : platform === 'windows' ? 'Credential Manager' : 'keyring'),
+  secretStore: secretStore ?? (platform === 'macos' ? 'Keychain' : platform === 'linux' ? 'keyring' : 'Credential Manager'),
 })
 
 export const PlatformContext = createContext<PlatformInfo>(platformInfo(guessPlatform()))
