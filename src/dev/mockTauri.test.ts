@@ -87,7 +87,7 @@ describe('pasted JSON', () => {
     expect(pasted.skipped).toEqual(['odd'])
     await expect(call('parse_mcp_json', { text: '{ "mcpServers": {} }' })).rejects.toBe('There are no MCP servers in it.')
     await expect(call('parse_mcp_json', { text: '{ "command": "srv", "args": [["nested"]] }' })).rejects.toBe(
-      "EnvRouter can't use this server's transport or values.",
+      "EnvRouter can't use this server's transport, values or sign-in.",
     )
   })
 })

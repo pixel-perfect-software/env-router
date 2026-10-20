@@ -341,7 +341,7 @@ export function ImportView({
         {pasted && pasted.skipped.length > 0 && (
           <p className="mb-2 text-small text-ink-2">
             Left out <span className="font-mono">{pasted.skipped.join(', ')}</span>: EnvRouter can't use{' '}
-            {pasted.skipped.length === 1 ? 'its transport or values' : 'their transports or values'}.
+            {pasted.skipped.length === 1 ? 'its transport, values or sign-in' : 'their transports, values or sign-in'}.
           </p>
         )}
         {rows === null ? (

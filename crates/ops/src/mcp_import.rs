@@ -112,8 +112,8 @@ pub fn parse_pasted(text: &str) -> std::result::Result<Pasted, String> {
     };
     let is_entry = |value: &Value| value.get("command").is_some() || value.get("url").is_some();
     if is_entry(&json) {
-        let server =
-            parse_entry(&json).ok_or("EnvRouter can't use this server's transport or values.")?;
+        let server = parse_entry(&json)
+            .ok_or("EnvRouter can't use this server's transport, values or sign-in.")?;
         return Ok(Pasted {
             servers: vec![PastedServer { name: None, server }],
             skipped: Vec::new(),
@@ -145,7 +145,7 @@ pub fn parse_pasted(text: &str) -> std::result::Result<Pasted, String> {
     }
     if pasted.servers.is_empty() {
         return Err(format!(
-            "EnvRouter can't use {}: their transports or values aren't ones it supports.",
+            "EnvRouter can't use {}: their transports, values or sign-in aren't ones it supports.",
             pasted.skipped.join(", ")
         ));
     }
@@ -215,6 +215,14 @@ fn parse_entry(entry: &Value) -> Option<McpServer> {
         });
     }
     let url = entry["url"].as_str()?.to_string();
+    // A pre-registered OAuth client (Claude's `oauth`, Copilot's `oauthClientId` and the like) or
+    // a headers helper is how the server signs in; without it the import couldn't connect.
+    let signs_in_itself = entry.as_object()?.iter().any(|(key, value)| {
+        (key.starts_with("oauth") || key == "headersHelper") && !value.is_null()
+    });
+    if signs_in_itself {
+        return None;
+    }
     let headers = strings(&entry["headers"])?;
     match kind {
         Some("http" | "streamable-http") | None => Some(McpServer::Http { url, headers }),
@@ -261,6 +269,23 @@ mod tests {
         .unwrap();
         assert_eq!(named(&mixed), [Some("lin")]);
         assert_eq!(mixed.skipped, ["odd"]);
+    }
+
+    #[test]
+    fn skips_a_server_that_signs_in_with_its_own_client_or_helper() {
+        // Imported without these, the server would sign in with the wrong client or none at all.
+        let pasted = parse_pasted(
+            r#"{ "mcpServers": {
+                "asana": { "type": "http", "url": "https://mcp.asana.com/v2/mcp",
+                           "oauth": { "clientId": "abc", "callbackPort": 8080 } },
+                "copilot": { "type": "http", "url": "https://c/mcp", "oauthClientId": "abc" },
+                "helped": { "type": "http", "url": "https://h/mcp", "headersHelper": "/bin/token" },
+                "plain": { "type": "http", "url": "https://p/mcp", "oauth": null }
+            } }"#,
+        )
+        .unwrap();
+        assert_eq!(named(&pasted), [Some("plain")]);
+        assert_eq!(pasted.skipped, ["asana", "copilot", "helped"]);
     }
 
     #[test]

@@ -487,6 +487,8 @@ const parseEntry = (value: unknown): McpServer | null => {
     return env && { transport: 'stdio', command: entry.command, args, env }
   }
   if (typeof entry.url !== 'string') return null
+  // A server that signs in with its own OAuth client or a headers helper couldn't connect without it.
+  if (Object.entries(entry).some(([key, v]) => (key.startsWith('oauth') || key === 'headersHelper') && v !== null && v !== undefined)) return null
   const headers = strings(entry.headers)
   if (!headers) return null
   if (kind === null || kind === 'http' || kind === 'streamable-http') return { transport: 'http', url: entry.url, headers }
@@ -552,7 +554,7 @@ const parsePasted = (text: string): Pasted => {
   }
   if (isEntry(json)) {
     const server = parseEntry(json)
-    if (!server) throw "EnvRouter can't use this server's transport or values."
+    if (!server) throw "EnvRouter can't use this server's transport, values or sign-in."
     return { servers: [{ name: null, server }], skipped: [] }
   }
   const root = obj(json)
@@ -569,7 +571,8 @@ const parsePasted = (text: string): Pasted => {
     else pasted.skipped.push(name)
   }
   if (pasted.servers.length === 0 && pasted.skipped.length === 0) throw 'There are no MCP servers in it.'
-  if (pasted.servers.length === 0) throw `EnvRouter can't use ${pasted.skipped.join(', ')}: their transports or values aren't ones it supports.`
+  if (pasted.servers.length === 0)
+    throw `EnvRouter can't use ${pasted.skipped.join(', ')}: their transports, values or sign-in aren't ones it supports.`
   return pasted
 }
 
