@@ -1,34 +1,132 @@
 // Development only: lets the frontend run in a plain browser for design review, with the
-// Tauri commands answered from memory. main.tsx loads it only when `import.meta.env.DEV` and no
-// Tauri runtime is present, so it never ships. Pick a state with `?scenario=`:
-// first-run (default), populated, mcp (populated, with an MCP server library), shadowed, or broken (config.json can't be read until
-// "Open config.json" is clicked, which stands in for fixing it). `?platform=linux` answers as a
-// Linux desktop would (home in /home, bash as the login shell, ~/.config editor settings, a
-// keyring). `window.__mockDrop(path, x, y)` simulates a Finder drop.
+// Tauri commands answered from memory the way `crates/ops` answers them (same checks, same
+// messages, fresh objects each call). main.tsx loads it only when `import.meta.env.DEV` and no
+// Tauri runtime is present, so it never ships. URL parameters pick the state:
+// - `?scenario=` first-run (default), populated, mcp (populated, with an MCP server library),
+//   shadowed (a function in the checked shell's startup file shadows the tool), or broken
+//   (config.json can't be read until "Open config.json" is clicked, which stands in for fixing it).
+// - `&platform=linux` answers as a Linux desktop would (home in /home, bash as the login shell,
+//   ~/.config editor settings, a keyring); `&platform=wsl` as a WSL distro (bash reading
+//   .profile and .bashrc, VS Code Server's machine settings, Windows editors connected remotely).
+// - `&check=` forces what Check Folder finds: routed (default: worked out from the config),
+//   shadowedOnPath, byPromptHook, shadowedByShell (an alias, so no origin), notFound,
+//   notInstalled, shimFailed (empty message, as when macOS kills a shim), timeout or noPath (the
+//   two ways the shell itself fails). Use it with a populated scenario, where the shell is on.
+// - `&shim=stale`: the installed shim doesn't match the app's, until a save reinstalls it.
+// - `&store=off`: there's no secret store, so saving a secret (or checking a server that needs
+//   a saved one) fails as it does there.
+// The mcp library has a server named `slow` whose check times out. `window.__mockDrop(path, x, y)`
+// simulates a Finder drop. The profile card's context menu pops up as a DOM stand-in.
 
 import { emit } from '@tauri-apps/api/event'
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
+import { isSecret } from '../lib/mcp'
+import { platformInfo } from '../lib/platform'
 import { withAgents } from '../lib/tools'
 import type {
+  AgentDef,
   ConfigState,
+  Editor,
   EditorStatus,
   FolderCheck,
+  IdeHook,
   ImportCandidate,
+  McpDialect,
   McpServer,
+  McpValue,
   Pasted,
+  Platform,
   Profile,
   ServerCheck,
   SetupStatus,
+  Shell,
   ShellStatus,
   ToolInfo,
 } from '../lib/types'
 
-const linux = new URLSearchParams(location.search).get('platform') === 'linux'
-const HOME = linux ? '/home/sam' : '/Users/sam'
+const params = new URLSearchParams(location.search)
+const platform: Platform = params.get('platform') === 'linux' ? 'linux' : params.get('platform') === 'wsl' ? 'wsl' : 'macos'
+const macos = platform === 'macos'
+const wsl = platform === 'wsl'
+const HOME = macos ? '/Users/sam' : '/home/sam'
+const scenario = params.get('scenario') ?? 'first-run'
+const forcedCheck = params.get('check')
+const storeOff = params.get('store') === 'off'
 
-const scenario = new URLSearchParams(location.search).get('scenario') ?? 'first-run'
+/** `config::CONFIG_VERSION`: every save writes it. */
+const CONFIG_VERSION = 3
 
-const shell = (name: ShellStatus['shell'], files: string[], available: boolean, installed: boolean, isDefault = false): ShellStatus => ({
+/** What each platform's store says when it can't be used (`crates/keychain/src/store/`). */
+const storeError = {
+  macos: 'the Keychain said: User interaction is not allowed.',
+  linux: "there's no Secret Service to keep secrets in (GNOME Keyring or KWallet). Install or start one, then try again",
+  wsl: "couldn't reach the Windows Credential Manager (No such file or directory (os error 2)). Install EnvRouter's Windows helper, or turn on WSL interop",
+  windows: "there's no secret store EnvRouter can use on this system",
+}[platform]
+
+const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+/** A record's entries in key order, as Rust's `BTreeMap` iterates them. */
+const sorted = <T>(record: Record<string, T>) => Object.entries(record).sort(([a], [b]) => cmp(a, b))
+const sortedKeys = (record: object) => Object.keys(record).sort(cmp)
+const has = (record: object, key: string) => Object.keys(record).includes(key)
+const obj = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null)
+
+/** Structural equality, as Rust's `PartialEq` compares two definitions: key order doesn't count. */
+const same = (a: unknown, b: unknown): boolean => {
+  if (a === b) return true
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) !== Array.isArray(b)) return false
+  const ka = Object.keys(a)
+  return (
+    ka.length === Object.keys(b).length && ka.every((k) => has(b, k) && same((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]))
+  )
+}
+
+// Paths, as `std::path` and `config` treat them.
+
+const segments = (path: string) => path.split('/').filter((s) => s && s !== '.')
+/** `Path::cmp`: component by component, so `/a/b/x` sorts before `/a/b-c/x`. */
+const comparePaths = (a: string, b: string) => {
+  const [sa, sb] = [segments(a), segments(b)]
+  for (let i = 0; i < Math.min(sa.length, sb.length); i++) if (sa[i] !== sb[i]) return cmp(sa[i], sb[i])
+  return sa.length - sb.length
+}
+const join = (dir: string, file: string) => `/${[...segments(dir), file].join('/')}`
+
+/** `config::expand_home`: a leading `~` becomes the home folder, dropping repeated and trailing slashes after it. */
+const expandHome = (path: string, home = HOME) => {
+  if (path !== '~' && !path.startsWith('~/')) return path
+  const parts = segments(path.slice(1))
+  return home === '/' ? `/${parts.join('/')}` : [home, ...parts].join('/')
+}
+
+/** `config::tool_dir`: the folder a tool's variable is set to, or null unless it's absolute without `..`. */
+const toolDir = (raw: string, home = HOME) => {
+  const dir = expandHome(raw.trim(), home)
+  return dir.startsWith('/') && !dir.split('/').includes('..') ? dir : null
+}
+
+/** `config::trigger_base`: the folder a trigger covers. Throws its message for one it can't match. */
+const triggerBase = (raw: string) => {
+  const trimmed = raw.trim()
+  const suffix = ['/**', '/*'].find((s) => trimmed.endsWith(s))
+  const withoutGlob = suffix ? trimmed.slice(0, -suffix.length) : trimmed
+  if (withoutGlob.includes('*')) throw `Trigger path "${raw}" has a wildcard EnvRouter can't match. Only a trailing /* is supported.`
+  const base = expandHome(withoutGlob)
+  if (!base.startsWith('/')) throw `Trigger path "${raw}" must be absolute or start with ~.`
+  if (base.split('/').includes('..')) throw `Trigger path "${raw}" can't contain "..".`
+  return `/${segments(base).join('/')}`
+}
+const triggerBaseOrNull = (raw: string) => {
+  try {
+    return triggerBase(raw)
+  } catch {
+    return null
+  }
+}
+
+// The data.
+
+const shell = (name: Shell, files: string[], available: boolean, installed: boolean, isDefault = false): ShellStatus => ({
   shell: name,
   available,
   installed,
@@ -64,6 +162,8 @@ const library: Record<string, McpServer> = withLibrary
         args: ['-y', '@modelcontextprotocol/server-postgres', 'postgresql://localhost/acme_dev'],
         env: {},
       },
+      // Its check times out: Docker is still pulling the image.
+      slow: { transport: 'stdio', command: 'docker', args: ['run', '-i', '--rm', 'mcp/fetch'], env: {} },
     }
   : {}
 const tool = (name: string, description: string | null = null): ToolInfo => ({ name, description })
@@ -88,10 +188,16 @@ const serverTools: Record<string, ToolInfo[]> = {
   ],
   sentry: [tool('find_issues', 'Find issues in Sentry'), tool('get_issue_details'), tool('search_events')],
 }
-const checked = new Set(withLibrary ? ['github', 'playwright'] : [])
+/**
+ * `~/.envrouter/mcp-tools.json`: each good check's tools with the definition they came from.
+ * `get_mcp_tools` offers a list only while that definition is still the saved one.
+ */
+const toolCache = new Map<string, { server: McpServer; tools: ToolInfo[] }>(
+  withLibrary ? ['github', 'playwright'].map((name) => [name, { server: structuredClone(library[name]), tools: serverTools[name] }]) : [],
+)
 const using = (...names: string[]) => (withLibrary ? Object.fromEntries(names.map((n) => [n, { disabledTools: [] }])) : {})
 let config: ConfigState = withAgents({
-  version: 3,
+  version: CONFIG_VERSION,
   mcpServers: library,
   agents: {},
   profiles: populated
@@ -112,36 +218,136 @@ let config: ConfigState = withAgents({
       ]
     : [],
 })
-const setup: SetupStatus = {
-  platform: linux ? 'linux' : 'macos',
-  secretStore: linux ? 'keyring' : 'Keychain',
-  shimInstalled: true,
+
+/** `McpServer::values`: every value a secret can stand in. */
+const valuesOf = (server: McpServer): McpValue[] =>
+  server.transport === 'stdio' ? [...server.args, ...Object.values(server.env)] : Object.values(server.headers)
+const secretIdsOf = (server: McpServer) => valuesOf(server).flatMap((v) => (isSecret(v) ? [v.secret] : []))
+/** `config::secret_ids` */
+const secretIds = (cfg: ConfigState) => new Set(Object.values(cfg.mcpServers).flatMap(secretIdsOf))
+/** The ids the secret store holds: what the config named when the mock started, unless there's no store. */
+let stored = storeOff ? new Set<string>() : secretIds(config)
+let shimInstalled = params.get('shim') !== 'stale'
+
+/** `Platform::secret_store_name` */
+const storeName = platformInfo(platform).secretStore
+
+const setup: Omit<SetupStatus, 'shimInstalled'> = {
+  platform,
+  secretStore: storeName,
   shimsDir: `${HOME}/.envrouter/shims`,
-  shells: [
-    shell('zsh', ['.zshrc'], true, linux ? false : populated, !linux),
-    linux ? shell('bash', ['.bashrc'], true, populated, true) : shell('bash', ['.bash_profile', '.bashrc'], true, false),
-    shell('fish', ['.config/fish/config.fish'], false, false),
-  ],
+  // `shell::status`, with bash's files as `bash_startup_files` picks them for each platform.
+  shells: macos
+    ? [
+        shell('zsh', ['.zshrc'], true, populated, true),
+        shell('bash', ['.bash_profile', '.bashrc'], true, false),
+        shell('fish', ['.config/fish/config.fish'], false, false),
+      ]
+    : [
+        shell('zsh', ['.zshrc'], !wsl, false),
+        shell('bash', wsl ? ['.profile', '.bashrc'] : ['.bashrc'], true, populated, true),
+        shell('fish', ['.config/fish/config.fish'], false, false),
+      ],
+}
+/** `Shell::binary`: the login shell, then `/etc/shells`. Named in a timeout's message. */
+const shellBinary = (name: Shell) => ({ zsh: '/bin/zsh', bash: '/bin/bash', fish: macos ? '/opt/homebrew/bin/fish' : '/usr/bin/fish' })[name]
+
+/** Where `editors::Editor` looks, and what's there: VS Code and Insiders with Claude Code (Insiders through the user's own wrapper), Cursor without it. In WSL, the Windows editors' remote servers instead. */
+interface EditorSpot {
+  editor: Editor
+  label: string
+  settingsFile: string
+  available: boolean
+  extensions: string[]
+}
+const appConfig = macos ? `${HOME}/Library/Application Support` : `${HOME}/.config`
+/** A desktop editor keeps user settings under the app config folder; a remote server, machine settings in its own. */
+const spot = (editor: Editor, label: string, settingsFile: string, available: boolean, claude: boolean): EditorSpot => ({
+  editor,
+  label,
+  settingsFile,
+  available,
+  extensions: claude ? ['anthropic.claude-code'] : [],
+})
+const desktop = (dir: string) => `${appConfig}/${dir}/User/settings.json`
+const remote = (dir: string) => `${HOME}/${dir}/data/Machine/settings.json`
+const editorSpots: EditorSpot[] = [
+  spot('code', 'VS Code', desktop('Code'), !wsl, !wsl),
+  spot('codeInsiders', 'VS Code Insiders', desktop('Code - Insiders'), !wsl, !wsl),
+  spot('cursor', 'Cursor', desktop('Cursor'), !wsl, false),
+  spot('windsurf', 'Windsurf', desktop('Windsurf'), false, false),
+  spot('codium', 'VSCodium', desktop('VSCodium'), false, false),
+  spot('remoteCode', 'VS Code Server', remote('.vscode-server'), wsl, wsl),
+  spot('remoteCodeInsiders', 'VS Code Insiders Server', remote('.vscode-server-insiders'), false, false),
+  spot('remoteCursor', 'Cursor Server', remote('.cursor-server'), wsl, false),
+  spot('remoteWindsurf', 'Windsurf Server', remote('.windsurf-server'), false, false),
+]
+const SHIM = `${HOME}/.envrouter/bin/envrouter-shim`
+/** The wrapper each settings file names, keyed by file and setting. */
+const wrappers = new Map<string, string>(
+  wsl ? [] : [[`${appConfig}/Code - Insiders/User/settings.json claudeCode.claudeProcessWrapper`, `${HOME}/bin/claude-wrap`]],
+)
+const editorStatus = (spot: EditorSpot, command: string, hook: IdeHook): EditorStatus => {
+  const wrapper = wrappers.get(`${spot.settingsFile} ${hook.setting}`) ?? null
+  return {
+    editor: spot.editor,
+    command,
+    available: spot.available,
+    extensionInstalled: spot.extensions.includes(hook.extension),
+    settingsFile: spot.settingsFile,
+    wrapper,
+    installed: wrapper === SHIM,
+  }
 }
 
-/** VS Code with Claude Code installed, Insiders already running it through the user's own wrapper, and Cursor without the extension. */
-const editors: EditorStatus[] = (
-  [
-    ['code', 'Code', true, true],
-    ['codeInsiders', 'Code - Insiders', true, true],
-    ['cursor', 'Cursor', true, false],
-    ['windsurf', 'Windsurf', false, false],
-    ['codium', 'VSCodium', false, false],
-  ] as const
-).map(([editor, dir, available, extensionInstalled]) => ({
-  editor,
-  command: 'claude',
-  available,
-  extensionInstalled,
-  settingsFile: `${HOME}/${linux ? '.config' : 'Library/Application Support'}/${dir}/User/settings.json`,
-  wrapper: editor === 'codeInsiders' ? `${HOME}/bin/claude-wrap` : null,
-  installed: false,
-}))
+/**
+ * The agents' own MCP files in this home, as `serde_json` reads them. Import finds what the
+ * payload's agents and profiles point it at; the first run has none.
+ */
+const agentFiles: Record<string, unknown> = populated
+  ? {
+      [`${HOME}/.claude.json`]: {
+        numStartups: 212,
+        mcpServers: {
+          github: {
+            type: 'stdio',
+            command: 'docker',
+            args: ['run', '-i', '--rm', '-e', 'GITHUB_PERSONAL_ACCESS_TOKEN', 'ghcr.io/github/github-mcp-server'],
+            env: { GITHUB_PERSONAL_ACCESS_TOKEN: 'ghp_example' },
+          },
+          mcpmux: { type: 'http', url: 'http://localhost:45818/mcp' },
+        },
+        projects: {
+          [`${HOME}/dev/work/billing-api`]: {
+            allowedTools: [],
+            mcpServers: {
+              supabase: {
+                type: 'stdio',
+                command: 'npx',
+                args: ['-y', '@supabase/mcp-server-supabase', '--read-only'],
+                env: { SUPABASE_ACCESS_TOKEN: 'sbp_example' },
+              },
+            },
+          },
+        },
+      },
+      [`${HOME}/.claude-work/.claude.json`]: {
+        mcpServers: {
+          github: {
+            type: 'stdio',
+            command: 'npx',
+            args: ['-y', '@modelcontextprotocol/server-github'],
+            env: { GITHUB_PERSONAL_ACCESS_TOKEN: 'ghp_example' },
+          },
+          mcpmux: { type: 'http', url: 'http://localhost:45818/mcp' },
+        },
+      },
+      [`${HOME}/clients/northwind/.mcp.json`]: { mcpServers: { sentry: { type: 'http', url: 'https://mcp.sentry.dev/mcp' } } },
+      [`${HOME}/.copilot-work/mcp-config.json`]: {
+        mcpServers: { playwright: { type: 'local', command: 'npx', args: ['@playwright/mcp@latest'], tools: ['*'] } },
+      },
+    }
+  : {}
 
 try {
   if (populated) localStorage.setItem('envrouter.checkedOnce', '1')
@@ -150,15 +356,13 @@ try {
   // Storage unavailable; first-run state still renders.
 }
 
-const expand = (p: string) => (p.startsWith('~') ? HOME + p.slice(1) : p).replace(/\/\*\*?$/, '').replace(/\/$/, '')
-
 /** Longest-prefix owner, as the Rust resolver decides it. */
 const owner = (cfg: ConfigState, folder: string) => {
   let best: { depth: number; profile: Profile } | null = null
   for (const p of cfg.profiles) {
     for (const t of p.triggerPaths) {
-      const base = expand(t)
-      if (folder === base || folder.startsWith(`${base}/`)) {
+      const base = triggerBaseOrNull(t)
+      if (base && (folder === base || folder.startsWith(`${base}/`))) {
         const depth = base.split('/').length
         if (!best || depth > best.depth) best = { depth, profile: p }
       }
@@ -175,58 +379,361 @@ const setTool = (p: Profile | null, tool: string) => {
 
 /** `mcp::servers_for`: the library servers a profile hands a tool that takes them. */
 const mcpFor = (cfg: ConfigState, p: Profile | null, tool: string) =>
-  p && cfg.agents[tool]?.mcp
-    ? Object.keys(p.mcpServers)
-        .filter((name) => cfg.mcpServers[name])
-        .sort()
-    : []
+  p && cfg.agents[tool]?.mcp ? sortedKeys(p.mcpServers).filter((name) => has(cfg.mcpServers, name)) : []
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** `mcp_import::parse_pasted`, without its JSONC: the same shapes, entries and messages. */
+// `config::validate`, check for check and message for message, in its order.
+
+const isFileName = (s: string) => /^[A-Za-z0-9_-]{1,64}$/.test(s)
+const isMcpToolName = (s: string) => /^[A-Za-z0-9_.-]{1,128}$/.test(s)
+const isSecretId = (s: string) => /^[0-9A-F]{1,64}$/.test(s)
+const isHeaderName = (s: string) => /^[A-Za-z0-9_-]+$/.test(s)
+const isEnvVarName = (s: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(s)
+const isCommandName = (s: string) => /^[A-Za-z_][A-Za-z0-9_-]*$/.test(s)
+
+const validateServer = (name: string, server: McpServer) => {
+  const invalid = (problem: string) => `MCP server "${name}" ${problem}`
+  if (!isFileName(name)) throw invalid('needs a name made of letters, digits, - and _.')
+  if (server.transport === 'stdio') {
+    if (!server.command.trim()) throw invalid('needs a command to run.')
+    const key = sortedKeys(server.env).find((k) => !isEnvVarName(k))
+    if (key !== undefined) throw invalid(`sets "${key}", which isn't a valid environment variable name.`)
+  } else {
+    const { url } = server
+    const rest = url.startsWith('https://') ? url.slice(8) : url.startsWith('http://') ? url.slice(7) : null
+    if (rest === null || !rest.trim()) throw invalid(`has the URL "${url}". It must start with https:// or http://.`)
+    const key = sortedKeys(server.headers).find((k) => !isHeaderName(k))
+    if (key !== undefined) throw invalid(`has a header named "${key}", which isn't valid.`)
+  }
+  const bad = secretIdsOf(server).find((id) => !isSecretId(id))
+  if (bad !== undefined) throw invalid(`refers to a secret with a malformed id, "${bad}".`)
+}
+
+const validateAgent = (name: string, agent: AgentDef) => {
+  if (!isCommandName(name)) throw `"${name}" in the agent list isn't a valid command name.`
+  const files = agent.mcpFiles
+  if (files) {
+    // Plain file names, joined onto folders; never a path that climbs out of one.
+    const plain = (f: string) => f !== '' && !f.includes('/') && f !== '.' && f !== '..'
+    if (!plain(files.userFile) || (typeof files.projectFile === 'string' && !plain(files.projectFile)) || !toolDir(files.defaultDir, '/'))
+      throw `The MCP file locations for ${name} aren't plain file names in an absolute or ~ folder.`
+  }
+  if (!agent.mcp) return
+  const isPrefix = (arg: string) => arg.startsWith('-') && arg.indexOf('=') > 1 && !/\s/.test(arg)
+  if (!isPrefix(agent.mcp.configArg) || (agent.mcp.denyArg !== null && !isPrefix(agent.mcp.denyArg)))
+    throw `The MCP arguments for ${name} must each be one option of the form --flag=.`
+}
+
+const validate = (cfg: ConfigState) => {
+  const owners = new Map<string, Profile>()
+  for (const p of cfg.profiles) {
+    for (const [name, settings] of sorted(p.tools)) {
+      if (!isCommandName(name)) throw `"${name}" in profile "${p.name}" isn't a valid command name.`
+      if (!settings.path.trim()) continue
+      if (!isEnvVarName(settings.envVar)) throw `"${settings.envVar}" in profile "${p.name}" isn't a valid environment variable name.`
+      if (!toolDir(settings.path))
+        throw `The ${name} folder "${settings.path.trim()}" in profile "${p.name}" must be an absolute path or start with ~, without "..".`
+    }
+    const uses = sorted(p.mcpServers)
+    if (uses.length > 0 && !isFileName(p.id))
+      throw `Profile "${p.name}" has the id "${p.id}", which can't name a folder. Use letters, digits, - and _.`
+    for (const [server, use] of uses) {
+      if (!has(cfg.mcpServers, server)) throw `Profile "${p.name}" uses the MCP server "${server}", which isn't in the server list.`
+      const bad = use.disabledTools.find((t) => !isMcpToolName(t))
+      if (bad !== undefined) throw `"${bad}" in profile "${p.name}" isn't a valid MCP tool name.`
+    }
+    for (const raw of p.triggerPaths) {
+      const folder = triggerBase(raw)
+      const other = owners.get(folder)
+      owners.set(folder, p)
+      if (other && other.id !== p.id)
+        throw `${folder} is a trigger path in both "${other.name}" and "${p.name}". A folder can belong to only one profile.`
+    }
+  }
+  for (const [name, server] of sorted(cfg.mcpServers)) validateServer(name, server)
+  for (const [name, agent] of sorted(cfg.agents)) validateAgent(name, agent)
+}
+
+// `mcp_import`: entries in the shape Claude and Copilot share, from files or pasted text.
+
+/** `mcp_import::parse_entry`. Numbers and flags become text; anything else EnvRouter can't represent drops the entry. */
+const parseEntry = (value: unknown): McpServer | null => {
+  const entry = obj(value)
+  if (!entry) return null
+  const text = (v: unknown) => (typeof v === 'string' ? v : typeof v === 'number' || typeof v === 'boolean' ? String(v) : null)
+  const strings = (v: unknown): Record<string, string> | null => {
+    if (v === undefined || v === null) return {}
+    const map = obj(v)
+    if (!map) return null
+    const out: Record<string, string> = {}
+    for (const key of sortedKeys(map)) {
+      const t = text(map[key])
+      if (t === null) return null
+      out[key] = t
+    }
+    return out
+  }
+  const kind = typeof entry.type === 'string' ? entry.type : null
+  if (typeof entry.command === 'string') {
+    if (kind !== null && kind !== 'stdio' && kind !== 'local') return null
+    let args: string[] = []
+    if (Array.isArray(entry.args)) {
+      const texts = entry.args.map(text)
+      if (texts.some((t) => t === null)) return null
+      args = texts as string[]
+    } else if (entry.args !== undefined && entry.args !== null) return null
+    const env = strings(entry.env)
+    return env && { transport: 'stdio', command: entry.command, args, env }
+  }
+  if (typeof entry.url !== 'string') return null
+  const headers = strings(entry.headers)
+  if (!headers) return null
+  if (kind === null || kind === 'http' || kind === 'streamable-http') return { transport: 'http', url: entry.url, headers }
+  return kind === 'sse' ? { transport: 'sse', url: entry.url, headers } : null
+}
+
+/** What `jsonc_parser` takes beyond JSON, made plain: comments go, and so do commas before a closing bracket. */
+const stripJsonc = (text: string) => {
+  // Each pass copies strings as they are, so `//` in a URL is never a comment.
+  const scan = (input: string, outside: (i: number) => { skip: number; emit?: string } | null) => {
+    let out = ''
+    let i = 0
+    while (i < input.length) {
+      if (input[i] === '"') {
+        let j = i + 1
+        while (j < input.length && input[j] !== '"') j += input[j] === '\\' ? 2 : 1
+        out += input.slice(i, j + 1)
+        i = j + 1
+        continue
+      }
+      const step = outside(i)
+      if (step) {
+        out += step.emit ?? ''
+        i += step.skip
+      } else {
+        out += input[i]
+        i += 1
+      }
+    }
+    return out
+  }
+  const uncommented = scan(text, (i) => {
+    if (text.startsWith('//', i)) {
+      const end = text.indexOf('\n', i)
+      return { skip: (end === -1 ? text.length : end) - i }
+    }
+    if (text.startsWith('/*', i)) {
+      const end = text.indexOf('*/', i + 2)
+      return end === -1 ? null : { skip: end + 2 - i, emit: ' ' }
+    }
+    return null
+  })
+  return scan(uncommented, (i) => (uncommented[i] === ',' && /^\s*[}\]]/.test(uncommented.slice(i + 1)) ? { skip: 1 } : null))
+}
+
+/** `mcp_import::parse_pasted`: the same shapes, entries and messages. */
 const parsePasted = (text: string): Pasted => {
   if (!text.trim()) throw "Paste a server's JSON first."
-  let json: Record<string, unknown>
+  let json: unknown
   try {
-    json = JSON.parse(text)
+    json = JSON.parse(stripJsonc(text))
   } catch (err) {
     try {
-      json = JSON.parse(`{${text.trim().replace(/,$/, '')}}`)
+      // The brace goes on its own line, so a trailing `//` comment can't swallow it.
+      json = JSON.parse(stripJsonc(`{${text}\n}`))
     } catch {
       throw `That isn't JSON EnvRouter can read: ${(err as Error).message}.`
     }
   }
-  const obj = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null)
-  const isEntry = (v: unknown) => Boolean(obj(v) && ('command' in (v as object) || 'url' in (v as object)))
-  const entry = (v: unknown): McpServer | null => {
+  const isEntry = (v: unknown) => {
     const e = obj(v)
-    if (!e) return null
-    if (typeof e.command === 'string')
-      return { transport: 'stdio', command: e.command, args: (e.args as string[]) ?? [], env: (e.env as Record<string, string>) ?? {} }
-    if (typeof e.url !== 'string') return null
-    if (e.type && !['http', 'streamable-http', 'sse'].includes(String(e.type))) return null
-    return { transport: e.type === 'sse' ? 'sse' : 'http', url: e.url, headers: (e.headers as Record<string, string>) ?? {} }
+    return Boolean(e && (has(e, 'command') || has(e, 'url')))
   }
   if (isEntry(json)) {
-    const server = entry(json)
+    const server = parseEntry(json)
     if (!server) throw "EnvRouter can't use this server's transport or values."
     return { servers: [{ name: null, server }], skipped: [] }
   }
+  const root = obj(json)
   const table =
-    obj(json.mcpServers) ??
-    obj(json.servers) ??
-    obj(obj(json.mcp)?.servers) ??
-    (Object.keys(json).length > 0 && Object.values(json).every(isEntry) ? json : null)
+    obj(root?.mcpServers) ??
+    obj(root?.servers) ??
+    obj(obj(root?.mcp)?.servers) ??
+    (root && Object.keys(root).length > 0 && Object.values(root).every(isEntry) ? root : null)
   if (!table) throw 'There are no MCP servers in it. Paste the part with mcpServers, or one server with its command or url.'
   const pasted: Pasted = { servers: [], skipped: [] }
-  for (const [name, value] of Object.entries(table)) {
-    const server = entry(value)
+  for (const [name, value] of sorted(table)) {
+    const server = parseEntry(value)
     if (server) pasted.servers.push({ name, server })
     else pasted.skipped.push(name)
   }
+  if (pasted.servers.length === 0 && pasted.skipped.length === 0) throw 'There are no MCP servers in it.'
   if (pasted.servers.length === 0) throw `EnvRouter can't use ${pasted.skipped.join(', ')}: their transports or values aren't ones it supports.`
   return pasted
 }
+
+/** `mcp_import::read_servers`: a file's `mcpServers`, plus each project's in Claude's `.claude.json`. */
+const readServers = (path: string, dialect: McpDialect): [string, McpServer][] => {
+  const file = obj(agentFiles[path])
+  if (!file) return []
+  const tables = [file.mcpServers]
+  const projects = obj(file.projects)
+  if (dialect === 'claude' && projects) tables.push(...sorted(projects).map(([, project]) => obj(project)?.mcpServers))
+  return tables.flatMap((table) => {
+    const t = obj(table)
+    return t
+      ? sorted(t).flatMap(([name, entry]): [string, McpServer][] => {
+          const server = parseEntry(entry)
+          return server ? [[name, server]] : []
+        })
+      : []
+  })
+}
+
+/** `mcp_import::candidates`: only the files the payload's agents and profiles point at. */
+const importCandidates = (cfg: ConfigState): ImportCandidate[] => {
+  const found: ImportCandidate[] = []
+  for (const [command, agent] of sorted(cfg.agents)) {
+    const files = agent.mcpFiles
+    if (!files || !agent.mcp) continue
+    const dirs = [toolDir(files.defaultDir), ...cfg.profiles.map((p) => setTool(p, command)).map((t) => (t ? toolDir(t.path) : null))]
+    const sources = dirs.flatMap((dir) => (dir ? [join(dir, files.userFile)] : []))
+    const { projectFile } = files
+    if (projectFile)
+      for (const raw of cfg.profiles.flatMap((p) => p.triggerPaths)) {
+        const base = triggerBaseOrNull(raw)
+        if (base) sources.push(join(base, projectFile))
+      }
+    sources.sort(comparePaths)
+    for (const path of sources.filter((s, i) => i === 0 || comparePaths(s, sources[i - 1]) !== 0)) {
+      for (const [name, server] of readServers(path, agent.mcp.dialect)) {
+        const existing = found.find((c) => c.name === name && same(c.server, server))
+        if (!existing) found.push({ name, server, sources: [path] })
+        else if (!existing.sources.includes(path)) existing.sources.push(path)
+      }
+    }
+  }
+  const compareSources = (a: string[], b: string[]) => {
+    for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return cmp(a[i], b[i])
+    return a.length - b.length
+  }
+  return found.sort((a, b) => cmp(a.name, b.name) || compareSources(a.sources, b.sources))
+}
+
+// What Check Folder finds.
+
+/** A result `?check=` asks for, or null to work it out from the config. */
+const forcedResult = (check: string | null, tool: string): FolderCheck | null => {
+  switch (check) {
+    case 'shadowedOnPath':
+      return { status: 'shadowedOnPath', path: `${macos ? '/opt/homebrew' : '/usr/local'}/bin/${tool}`, byPromptHook: false }
+    case 'byPromptHook':
+      return { status: 'shadowedOnPath', path: `${HOME}/.local/share/mise/installs/node/24.11.0/bin/${tool}`, byPromptHook: true }
+    case 'shadowedByShell':
+      // Shells name the file only for a function; an alias has no origin.
+      return { status: 'shadowedByShell', kind: 'alias', origin: null }
+    case 'notFound':
+      return { status: 'notFound' }
+    case 'notInstalled':
+      return { status: 'notInstalled' }
+    case 'shimFailed':
+      // A shim the kernel kills (its signature broke) writes nothing to stderr.
+      return { status: 'shimFailed', message: '' }
+    default:
+      return null
+  }
+}
+
+// The native context menu, as a DOM stand-in. `Menu.new` sends each item's action as a channel;
+// choosing an item sends the item's id down it, as Tauri does.
+
+interface MenuEntry {
+  id?: string
+  text?: string
+  enabled?: boolean
+  item?: unknown
+  handler?: { id: number }
+}
+const menus = new Map<number, MenuEntry[]>()
+let nextRid = 1
+/** `popup()` without a position opens at the pointer. */
+let pointer = { x: 0, y: 0 }
+document.addEventListener(
+  'contextmenu',
+  (event) => {
+    pointer = { x: event.clientX, y: event.clientY }
+  },
+  true,
+)
+
+const MENU_STYLE = `
+#mock-menu { position: fixed; z-index: 2147483647; min-width: 200px; padding: 5px; border-radius: 8px; color-scheme: light dark;
+  background: Canvas; color: CanvasText; font: menu; font-size: 13px; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.25), 0 8px 24px rgb(0 0 0 / 0.2); }
+#mock-menu button { display: block; width: 100%; padding: 3px 10px; border: 0; border-radius: 4px; background: none; color: inherit; font: inherit; text-align: left; }
+#mock-menu button:hover, #mock-menu button:focus-visible { background: Highlight; color: HighlightText; outline: none; }
+#mock-menu button:disabled { opacity: 0.4; }
+#mock-menu [role='separator'] { height: 1px; margin: 5px 10px; background: GrayText; opacity: 0.4; }
+`
+
+const popupMenu = (entries: MenuEntry[]) => {
+  document.getElementById('mock-menu')?.remove()
+  if (!document.getElementById('mock-menu-style')) {
+    const style = document.createElement('style')
+    style.id = 'mock-menu-style'
+    style.textContent = MENU_STYLE
+    document.head.append(style)
+  }
+  const menu = document.createElement('div')
+  menu.id = 'mock-menu'
+  menu.setAttribute('role', 'menu')
+  const items: HTMLButtonElement[] = []
+  const close = () => {
+    menu.remove()
+    document.removeEventListener('pointerdown', outside, true)
+    document.removeEventListener('keydown', keys, true)
+  }
+  const outside = (event: PointerEvent) => {
+    if (!menu.contains(event.target as Node)) close()
+  }
+  const keys = (event: KeyboardEvent) => {
+    const at = items.indexOf(document.activeElement as HTMLButtonElement)
+    if (event.key === 'Escape') close()
+    else if (event.key === 'ArrowDown') items[(at + 1) % items.length]?.focus()
+    else if (event.key === 'ArrowUp') items[(at - 1 + items.length) % items.length]?.focus()
+    else return
+    event.preventDefault()
+  }
+  for (const entry of entries) {
+    if (entry.item === 'Separator') {
+      const line = document.createElement('div')
+      line.setAttribute('role', 'separator')
+      menu.append(line)
+      continue
+    }
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.setAttribute('role', 'menuitem')
+    button.textContent = entry.text ?? ''
+    button.disabled = entry.enabled === false
+    button.addEventListener('click', () => {
+      close()
+      const internals = (window as unknown as { __TAURI_INTERNALS__: { runCallback: (id: number, data: unknown) => void } }).__TAURI_INTERNALS__
+      if (entry.handler) internals.runCallback(entry.handler.id, { index: 0, message: entry.id })
+    })
+    items.push(button)
+    menu.append(button)
+  }
+  document.body.append(menu)
+  const { width, height } = menu.getBoundingClientRect()
+  menu.style.left = `${Math.max(4, Math.min(pointer.x, innerWidth - width - 4))}px`
+  menu.style.top = `${Math.max(4, Math.min(pointer.y, innerHeight - height - 4))}px`
+  items[0]?.focus()
+  document.addEventListener('pointerdown', outside, true)
+  document.addEventListener('keydown', keys, true)
+}
+
+const failed = (status: ServerCheck['status'], message: string, log: string | null = null): ServerCheck => ({ status, tools: [], message, log })
 
 const respond = async (cmd: string, args: unknown): Promise<unknown> => {
   const a = (args ?? {}) as Record<string, unknown>
@@ -245,156 +752,166 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       const yes = window.confirm([a.title, a.message].filter(Boolean).join('\n\n'))
       return Array.isArray(labels) ? labels[yes ? 0 : 1] : yes ? 'Ok' : 'Cancel'
     }
+    case 'plugin:menu|new': {
+      const rid = nextRid++
+      const opts = (a.options ?? {}) as { id?: string; items?: MenuEntry[] }
+      menus.set(rid, opts.items ?? [])
+      return [rid, opts.id ?? `menu-${rid}`]
+    }
+    case 'plugin:menu|popup':
+      popupMenu(menus.get(a.rid as number) ?? [])
+      return null
+    case 'plugin:resources|close':
+      menus.delete(a.rid as number)
+      return null
+    case 'plugin:opener|reveal_item_in_dir':
+      // Finder or the file manager would open beside the window; nothing to show in a browser.
+      return null
     case 'get_config':
       if (configBroken) throw `${HOME}/.envrouter/config.json is not valid JSON: expected \`,\` or \`}\` at line 7 column 5`
       return config
     case 'save_config': {
-      const next = a.payload as ConfigState
-      const seen = new Map<string, Profile>()
-      for (const p of next.profiles) {
-        for (const server of Object.keys(p.mcpServers))
-          if (!next.mcpServers[server]) throw `Profile "${p.name}" uses the MCP server "${server}", which isn't in the server list.`
-        for (const [name, tool] of Object.entries(p.tools)) {
-          const path = tool.path.trim()
-          if (path && !/^(~$|~\/|\/)/.test(path))
-            throw `The ${name} folder "${path}" in profile "${p.name}" must be an absolute path or start with ~, without "..".`
-        }
-        for (const t of p.triggerPaths) {
-          const other = seen.get(expand(t))
-          if (other && other.id !== p.id)
-            throw `${expand(t)} is a trigger path in both "${other.name}" and "${p.name}". A folder can belong to only one profile.`
-          seen.set(expand(t), p)
-        }
-      }
       await delay(250)
-      config = next
+      const next = structuredClone(a.payload as ConfigState)
+      const secrets = (a.secrets ?? {}) as Record<string, string>
+      validate(next)
+      const referenced = secretIds(next)
+      if (Object.keys(secrets).some((id) => !referenced.has(id))) throw "A new secret isn't used by any server. Save the server again."
+      // `shims::install_bundled` runs before the store is touched, so a failed save still reinstalls.
+      shimInstalled = true
+      // The store is read only when this save adds a secret or stops using one.
+      const dropped = [...secretIds(config)].some((id) => !referenced.has(id))
+      if (Object.keys(secrets).length > 0 || dropped) {
+        if (storeOff) throw `Couldn't save the secret: ${storeError.replace(/\.$/, '')}. Nothing was saved.`
+        stored = new Set([...[...stored].filter((id) => referenced.has(id)), ...Object.keys(secrets)])
+      }
+      config = { ...next, version: CONFIG_VERSION }
+      configBroken = false
       return null
     }
     case 'import_candidates':
       await delay(500)
-      return [
-        {
-          name: 'github',
-          server: library.github ?? { transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'], env: {} },
-          sources: [`${HOME}/.claude-work/.claude.json`],
-        },
-        {
-          name: 'github',
-          server: {
-            transport: 'stdio',
-            command: 'docker',
-            args: ['run', '-i', '--rm', 'ghcr.io/github/github-mcp-server'],
-            env: { GITHUB_TOKEN: 'ghp_example' },
-          },
-          sources: [`${HOME}/.claude.json`],
-        },
-        {
-          name: 'mcpmux',
-          server: { transport: 'http', url: 'http://localhost:45818/mcp', headers: {} },
-          sources: [`${HOME}/.claude.json`, `${HOME}/.claude-work/.claude.json`],
-        },
-        {
-          name: 'supabase',
-          server: {
-            transport: 'stdio',
-            command: 'npx',
-            args: ['-y', '@supabase/mcp-server-supabase'],
-            env: { SUPABASE_ACCESS_TOKEN: 'sbp_example' },
-          },
-          sources: [`${HOME}/dev/work/billing-api/.mcp.json`],
-        },
-      ] satisfies ImportCandidate[]
+      return importCandidates(a.payload as ConfigState)
     case 'parse_mcp_json':
       return parsePasted(String(a.text ?? ''))
-    case 'get_mcp_tools':
-      return Object.fromEntries([...checked].filter((name) => config.mcpServers[name]).map((name) => [name, serverTools[name] ?? []]))
+    case 'get_mcp_tools': {
+      if (configBroken) return respond('get_config', {})
+      const known = [...toolCache].filter(([name, cached]) => same(config.mcpServers[name], cached.server))
+      return Object.fromEntries(known.sort(([x], [y]) => cmp(x, y)).map(([name, cached]) => [name, cached.tools]))
+    }
     case 'check_mcp_server': {
       await delay(1400)
       const name = a.name as string
       const server = a.server as McpServer
-      if (server.transport === 'sse')
-        return {
-          status: 'unsupported',
-          tools: [],
-          message: "SSE servers can't be checked here. The agent connects to them as usual.",
-          log: null,
-        } satisfies ServerCheck
-      if (name === 'linear')
-        return {
-          status: 'needsLogin',
-          tools: [],
-          message: 'The server wants a sign-in. Run the agent in a profile folder and use /mcp to sign in.',
-          log: null,
-        } satisfies ServerCheck
+      const typed = (a.secrets ?? {}) as Record<string, string>
+      const ids = secretIdsOf(server)
+      if (!ids.every((id) => has(typed, id))) {
+        if (storeOff) return failed('failed', `Couldn't read the secrets: ${storeError}.`)
+        if (ids.some((id) => !has(typed, id) && !stored.has(id)))
+          return failed('failed', `A secret this server needs isn't in the ${storeName}. Enter it again.`)
+      }
+      if (server.transport === 'sse') return failed('unsupported', "SSE servers can't be checked here. The agent connects to them as usual.")
+      if (name === 'slow') {
+        await delay(3000)
+        const what = server.transport === 'stdio' ? server.command : server.url
+        return failed(
+          'timedOut',
+          `${what} didn't answer within 45 seconds.`,
+          server.transport === 'stdio' ? "Unable to find image 'mcp/fetch:latest' locally\nlatest: Pulling from mcp/fetch" : null,
+        )
+      }
+      if (name === 'linear') return failed('needsLogin', 'The server wants a sign-in. Run the agent in a profile folder and use /mcp to sign in.')
       if (name === 'postgres')
-        return {
-          status: 'failed',
-          tools: [],
-          message: 'connection closed: initialize response',
-          log: 'Error: connect ECONNREFUSED 127.0.0.1:5432\n    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16)',
-        } satisfies ServerCheck
-      checked.add(name)
-      return { status: 'ok', tools: serverTools[name] ?? [tool('echo', 'Echo the input back')], message: null, log: null } satisfies ServerCheck
+        return failed(
+          'failed',
+          'connection closed: initialize response',
+          'Error: connect ECONNREFUSED 127.0.0.1:5432\n    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16)',
+        )
+      const tools = serverTools[name] ?? [tool('echo', 'Echo the input back')]
+      if (isFileName(name)) toolCache.set(name, { server: structuredClone(server), tools })
+      return { status: 'ok', tools, message: null, log: null } satisfies ServerCheck
     }
-    case 'open_in_editor':
+    case 'open_in_editor': {
+      const path = String(a.path)
+      if (!path.startsWith(`${HOME}/`)) throw `${path} isn't a file in your home folder.`
       configBroken = false
       return null
+    }
     case 'get_setup_status':
-      return setup
+      return { ...setup, shimInstalled } satisfies SetupStatus
     case 'set_shell_integration': {
       await delay(300)
       const s = setup.shells.find((x) => x.shell === a.shell)
-      if (!s) throw 'unknown shell'
+      if (!s) throw `unknown variant \`${a.shell}\`, expected one of \`zsh\`, \`bash\`, \`fish\``
+      if (a.enabled) shimInstalled = true
       s.installed = Boolean(a.enabled)
       return s
     }
-    case 'get_editor_status':
-      return editors.map((e) => ({ ...e }))
+    case 'get_editor_status': {
+      const hooks = sorted((a.hooks ?? {}) as Record<string, IdeHook>)
+      return editorSpots.flatMap((spot) => hooks.map(([command, hook]) => editorStatus(spot, command, hook)))
+    }
     case 'set_editor_integration': {
       await delay(300)
-      const e = editors.find((x) => x.editor === a.editor && x.command === a.command)
-      if (!e) throw 'unknown editor'
+      const spot = editorSpots.find((x) => x.editor === a.editor)
+      if (!spot) throw `unknown variant \`${a.editor}\``
+      const command = String(a.command)
+      const hook = a.hook as IdeHook
+      if (a.enabled) shimInstalled = true
+      const key = `${spot.settingsFile} ${hook.setting}`
+      const current = wrappers.get(key)
       // As `editors::set_integration`: someone else's wrapper is never replaced or cleared.
-      if (e.wrapper && !e.installed) {
+      if (current && current !== SHIM) {
         if (a.enabled)
-          throw `VS Code Insiders already runs the extension through ${e.wrapper}. Clear claudeCode.claudeProcessWrapper in the VS Code Insiders settings to use EnvRouter.`
-        return { ...e }
-      }
-      e.installed = Boolean(a.enabled)
-      e.wrapper = e.installed ? `${HOME}/.envrouter/bin/envrouter-shim` : null
-      return { ...e }
+          throw `${spot.label} already runs the extension through ${current}. Clear ${hook.setting} in the ${spot.label} settings to use EnvRouter.`
+      } else if (a.enabled) wrappers.set(key, SHIM)
+      else wrappers.delete(key)
+      return editorStatus(spot, command, hook)
     }
     case 'preview_folder': {
       const payload = a.payload as ConfigState
       const p = owner(payload, a.folder as string)
-      const tool = setTool(p, a.tool as string)
+      const settings = setTool(p, a.tool as string)
       return {
         profileId: p?.id ?? null,
         profile: p?.name ?? null,
-        envVar: tool ? tool.envVar : null,
-        value: tool ? expand(tool.path) : null,
+        envVar: settings ? settings.envVar : null,
+        value: settings ? expandHome(settings.path.trim()) : null,
         mcp: mcpFor(payload, p, a.tool as string),
       }
     }
     case 'check_folder': {
-      await delay(1100)
-      if (!(a.folder as string).startsWith('/')) throw `${a.folder} isn't a folder. Drop or choose a folder to check.`
+      const command = String(a.tool)
+      const folder = String(a.folder)
+      if (!isCommandName(command)) throw `"${command}" isn't a valid command name.`
+      if (!folder.startsWith('/')) throw `${folder} isn't a folder. Drop or choose a folder to check.`
       const s = setup.shells.find((x) => x.shell === a.shell)
-      if (scenario === 'shadowed') return { status: 'shadowedByShell', kind: 'function', origin: `${HOME}/.zshrc` } satisfies FolderCheck
+      if (!s?.available) throw `${a.shell} isn't installed.`
+      if (forcedCheck === 'timeout') {
+        // The real deadline is 15 seconds; the mock gives up sooner.
+        await delay(4000)
+        throw `"${shellBinary(s.shell)}" didn't finish within 15 seconds. Something in your shell startup files may be waiting for input.`
+      }
+      await delay(1100)
+      // A startup file that runs `exec tmux` replaces the shell before it can answer.
+      if (forcedCheck === 'noPath') throw `${s.shell} exited without reporting its PATH. open terminal failed: not a terminal`
+      const forced = forcedResult(forcedCheck, command)
+      if (forced) return forced
+      if (scenario === 'shadowed') return { status: 'shadowedByShell', kind: 'function', origin: s.startupFiles[0] ?? null } satisfies FolderCheck
       // With the shell off, or no profile setting the tool (so no shim for it), the real backend
       // finds the tool itself on PATH, not nothing.
-      const shimmed = config.profiles.some((p) => setTool(p, a.tool as string) || mcpFor(config, p, a.tool as string).length > 0)
-      if (!s?.installed || !shimmed)
-        return { status: 'shadowedOnPath', path: `${HOME}/.local/bin/${a.tool as string}`, byPromptHook: false } satisfies FolderCheck
-      const p = owner(config, a.folder as string)
-      const tool = setTool(p, a.tool as string)
+      const shimmed = config.profiles.some((p) => setTool(p, command) || mcpFor(config, p, command).length > 0)
+      if (!s.installed || !shimmed)
+        return { status: 'shadowedOnPath', path: `${HOME}/.local/bin/${command}`, byPromptHook: false } satisfies FolderCheck
+      const p = owner(config, folder)
+      const settings = setTool(p, command)
       return {
         status: 'routed',
         profile: p?.name ?? null,
-        envVar: tool ? tool.envVar : null,
-        value: tool ? expand(tool.path) : null,
-        mcp: mcpFor(config, p, a.tool as string),
-        real: `${HOME}/.local/bin/${a.tool as string}`,
+        envVar: settings ? settings.envVar : null,
+        value: settings ? expandHome(settings.path.trim()) : null,
+        mcp: mcpFor(config, p, command),
+        real: `${HOME}/.local/bin/${command}`,
       } satisfies FolderCheck
     }
     default:
