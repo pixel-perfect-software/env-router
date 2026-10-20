@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { draftOf, plainCredentials } from './mcp'
 import { accessOf, catalog, filterCatalog, isLocal } from './mcpCatalog'
+import { serverLogo } from './serverLogo'
 
 const all = catalog('/home/me')
 const names = (filter: Partial<Parameters<typeof filterCatalog>[1]>) =>
@@ -29,6 +30,17 @@ describe('the catalog', () => {
     expect(names({ query: 'postgres' })).toEqual(expect.arrayContaining(['postgres', 'neon', 'prisma']))
     expect(names({ query: 'GIT repos' })).toContain('git')
     expect(names({ query: 'no-such-thing' })).toEqual([])
+  })
+
+  it("gives every entry its own brand's logo, or none", () => {
+    // A brand word that's also a plain word (next, fly, square, render) mustn't claim another vendor's server.
+    const squash = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, '')
+    for (const entry of all) {
+      const logo = serverLogo(entry.name, entry.server)
+      if (!logo || logo.title === 'Model Context Protocol') continue
+      const [label, title] = [squash(entry.label), squash(logo.title)]
+      expect(label.includes(title.slice(0, 4)) || title.includes(label.slice(0, 4)), `${entry.name} wears ${logo.title}`).toBe(true)
+    }
   })
 
   it('tells remote from local, a loopback URL included, and filters by what a server needs', () => {
