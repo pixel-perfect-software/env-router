@@ -1,6 +1,6 @@
 [package]
 name = "envrouter-build-support"
-version = "0.4.0"
+version = "0.5.0"
 description = "Build-script helper: builds the shim and the secrets helper for the crates that bundle or test them"
 license = "GPL-3.0-or-later"
 edition = "2021"
