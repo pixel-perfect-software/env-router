@@ -84,7 +84,11 @@ export function TitleBand({
                   ) : (
                     <span
                       aria-hidden="true"
-                      className={`size-[7px] rounded-full ${s.installed ? 'bg-ok' : 'shadow-[inset_0_0_0_1.2px_var(--er-ink-3)]'}`}
+                      className={`size-[7px] rounded-full ${
+                        s.installed
+                          ? 'bg-ok forced-colors:bg-[CanvasText] forced-colors:forced-color-adjust-none'
+                          : 'shadow-[inset_0_0_0_1.2px_var(--er-ink-3)] forced-colors:border forced-colors:border-[CanvasText]'
+                      }`}
                     />
                   )}
                   <span className={s.installed ? 'text-ink' : ''}>{s.shell}</span>

@@ -102,6 +102,25 @@
   }
 }
 
+/*
+ * Where WebKit can, the accent's lightness is clamped instead, which holds for every macOS accent:
+ * yellow, orange and green are too light for a fixed mix. The fill stays dark enough for white
+ * text (5.2:1 at worst), and the ink for text and focus rings on the card, tint and well (4.9:1
+ * in light, 4.5:1 in dark). Measured across the macOS accents.
+ */
+@supports (color: oklch(from AccentColor min(l, 0.5) c h)) {
+  :root {
+    --er-accent: oklch(from AccentColor min(l, 0.5) c h);
+    --er-accent-ink: oklch(from AccentColor min(l, 0.48) c h);
+    --er-on-accent: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --er-accent-ink: oklch(from AccentColor max(l, 0.82) c h);
+    }
+  }
+}
+
 @media (min-resolution: 2dppx) {
   :root {
     --hair: 0.5px;
@@ -233,14 +252,17 @@
   }
 }
 
+/*
+ * Reduced motion keeps the fades, which say something changed without moving anything, and drops
+ * the movement: transitions skip transforms, so a switch's knob and a chevron jump instead of
+ * travelling, and the keyframes below lose their slides, drops, rises and stamps.
+ */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must beat every component's own timing */
-    animation-duration: 1ms !important;
-    /* biome-ignore lint/complexity/noImportantStyles: as above */
-    transition-duration: 1ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must beat every component's own transitions */
+    transition-property: color, background-color, border-color, outline-color, opacity, box-shadow, filter !important;
   }
   /* A pulse at 1ms is a strobe; a pending mark holds still instead. */
   [class*="er-pending"] {
@@ -291,5 +313,45 @@
 @keyframes er-fade {
   from {
     opacity: 0;
+  }
+}
+
+/* After the keyframes above, so these win while reduced motion is on: the same fades, no movement. */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes er-stamp {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes er-open {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes er-rise {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes er-slide {
+    from {
+      opacity: 0;
+    }
+  }
+}
+
+/*
+ * Forced colours (Windows' contrast themes, and Linux desktops that ask for them) drop every
+ * shadow and tint, and with them the edges of cards, raised panels and buttons. A system-colour
+ * outline puts the edges back; in the base layer, so a card's selection outline still wins.
+ * Controls whose state is a fill (switches, segments, checkboxes, shell dots) style themselves.
+ */
+@layer base {
+  @media (forced-colors: active) {
+    .shadow-card,
+    .shadow-raised {
+      outline: 1px solid CanvasText;
+      outline-offset: -1px;
+    }
   }
 }
