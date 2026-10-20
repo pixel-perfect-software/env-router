@@ -5,6 +5,9 @@
   "debug": false,
   "silent": false,
   "updateAllowlist": [],
-  "updateDenylist": [],
-  "cooldown": 0
+  "updateDenylist": ["@tauri-apps/api", "@tauri-apps/cli", "@tauri-apps/plugin-dialog", "@tauri-apps/plugin-opener"],
+  "cooldown": {
+    "patch": "2 days",
+    "minor": "1 week"
+  }
 }
