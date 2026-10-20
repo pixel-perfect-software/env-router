@@ -1,6 +1,6 @@
 [package]
 name = "envrouter-core"
-version = "0.5.1"
+version = "0.5.2"
 description = "EnvRouter's profile model, validation and folder resolution, shared by the app and the shim"
 license = "GPL-3.0-or-later"
 edition = "2021"

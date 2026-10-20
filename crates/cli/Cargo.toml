@@ -1,6 +1,6 @@
 [package]
 name = "envrouter-cli"
-version = "0.5.1"
+version = "0.5.2"
 description = "The envrouter command: EnvRouter without the window, for servers, WSL distros and scripts, and the rpc bridge a window uses to manage another machine"
 license = "GPL-3.0-or-later"
 edition = "2021"

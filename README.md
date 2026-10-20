@@ -123,7 +123,7 @@ envrouter shell on zsh     # or bash, fish
 
 On a Mac with the app installed, skip `envrouter install`: the app keeps `~/.envrouter/bin`
 current itself. Without Homebrew, unpack `envrouter-cli-<version>-<target>.tar.gz` from the release (for example
-`envrouter-cli-0.5.1-x86_64-unknown-linux-gnu.tar.gz`)
+`envrouter-cli-0.5.2-x86_64-unknown-linux-gnu.tar.gz`)
 and run `./envrouter install` from that folder.
 
 Every release comes with `SHA256SUMS`; `sha256sum -c SHA256SUMS --ignore-missing` checks the
