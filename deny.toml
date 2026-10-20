@@ -1,5 +1,5 @@
-# cargo-deny: run `cargo deny check` (CI does). EnvRouter is MIT and ships only for Apple
-# silicon Macs, so the graph is checked for that target alone.
+# cargo-deny: run `cargo deny check` (CI does). EnvRouter ships only for Apple silicon Macs,
+# so the graph is checked for that target alone.
 
 [graph]
 targets = ["aarch64-apple-darwin"]
@@ -10,8 +10,9 @@ all-features = false
 yanked = "deny"
 
 [licenses]
-# Permissive licences only. GPL, AGPL and LGPL-only crates fail, so nothing copyleft (such as
-# McpMux's GPL-3.0 code) can enter an MIT app by way of a dependency.
+# Permissive licences only. EnvRouter is GPL-3.0-or-later and could take GPL-3.0 code, but GPL,
+# AGPL and LGPL-only crates still fail, so no dependency ties EnvRouter to the GPL and its
+# authors stay free to relicense.
 allow = [
   "0BSD",
   "Apache-2.0",
@@ -29,6 +30,11 @@ allow = [
   "Zlib",
 ]
 confidence-threshold = 0.9
+
+[licenses.private]
+# The workspace's own crates (all `publish = false`) carry EnvRouter's GPL-3.0-or-later; the
+# allow list is for dependencies.
+ignore = true
 
 [bans]
 # Several versions of one crate are common under Tauri; report them, don't fail on them.

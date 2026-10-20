@@ -44,10 +44,11 @@ recommends its extension and turns on format-on-save.
 | Format and lint the frontend | `pnpm format-and-lint:fix` |
 | Format and lint the Rust | `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings` |
 | Licences and RustSec advisories | `cargo deny check` |
+| Third-party notices, as a release ships them (needs `cargo install --locked --features cli cargo-about`) | `pnpm notices`, which writes `target/notices/THIRD-PARTY-NOTICES.txt` |
 | Unused Rust dependencies | `cargo machete` |
 
 CI (`.github/workflows/ci.yml`) runs these for every pull request and every push to `main`,
-except changes that only touch docs, design notes, `dev/containers` or `packaging`. Most of it
+except changes that only touch docs, design notes, `dev/containers` or `packaging/homebrew`. Most of it
 runs on Linux: the frontend, formatting, licences, the backend, shim, secrets and CLI tests, the
 secrets round trip through a GNOME Keyring, and a lint of the Windows secrets helper. The macOS
 job runs only what needs a Mac: clippy and the tests for the whole workspace, including the app
@@ -209,6 +210,9 @@ app's version or isn't on `main`. Then:
 - **Linux** (x86_64 and aarch64, on Ubuntu 22.04 for an older glibc): a `.deb` (carrying the
   Windows secrets helper for WSL) and an AppImage, and the CLI as
   `envrouter-cli-<version>-<arch>-unknown-linux-gnu.tar.gz` with the Windows helper inside.
+- **Notices:** `pnpm notices` writes `THIRD-PARTY-NOTICES.txt`, the licence of every crate and
+  npm package built into the release (`packaging/notices/`). Every app bundle and CLI archive
+  carries it beside `LICENSE`, and the release lists it as a file of its own.
 - **Publish:** one GitHub release with every file and `SHA256SUMS`, then
   `packaging/homebrew/render.sh` fills the templates in `packaging/homebrew/` (the `envrouter`
   cask and the `envrouter-cli` formula) and pushes them to
@@ -226,6 +230,10 @@ published; replace the secret and re-run the job.
    a bug fix.
 3. Run the commands above. CI must pass.
 4. Update the README when the change is visible to users.
+5. Sign off every commit (`git commit -s`). The `Signed-off-by` line certifies the
+   [Developer Certificate of Origin](https://developercertificate.org): you wrote the change, or
+   otherwise have the right to submit it, under EnvRouter's licence,
+   [GPL-3.0-or-later](../LICENSE). You keep the copyright on what you contribute.
 
 Report bugs and suggest features in [GitHub issues](https://github.com/pixel-perfect-software/env-router/issues).
 Include your OS and version (and whether it's WSL), shell, and the output of `ENVROUTER_EXPLAIN=1 claude` (or `copilot`)

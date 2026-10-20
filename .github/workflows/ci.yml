@@ -45,7 +45,7 @@ jobs:
               - '!.impeccable/**'
               - '!.claude/**'
               - '!dev/containers/**'
-              - '!packaging/**'
+              - '!packaging/homebrew/**'
 
   linux:
     needs: changes
@@ -80,7 +80,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
-          tool: cargo-deny@0.20.2,cargo-machete@0.9.2
+          tool: cargo-deny@0.20.2,cargo-machete@0.9.2,cargo-about@0.9.2
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm format-and-lint
@@ -88,8 +88,10 @@ jobs:
       - run: pnpm build
 
       - run: cargo fmt --all -- --check
-      # Licences (no copyleft in an MIT app), RustSec advisories, sources.
+      # Licences (permissive dependencies only), RustSec advisories, sources.
       - run: cargo deny check
+      # The release's third-party notices, so a dependency without a licence text fails here.
+      - run: pnpm notices
       - run: cargo machete
 
       - run: cargo clippy --locked -p envrouter-core -p envrouter-shim -p envrouter-keychain -p envrouter-ops -p envrouter-cli --all-targets -- -D warnings

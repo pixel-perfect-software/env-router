@@ -2,7 +2,7 @@
 name = "envrouter-cli"
 version = "0.4.0"
 description = "The envrouter command: EnvRouter without the window, for servers, WSL distros and scripts, and the rpc bridge a window uses to manage another machine"
-license = "MIT"
+license = "GPL-3.0-or-later"
 edition = "2021"
 publish = false
 

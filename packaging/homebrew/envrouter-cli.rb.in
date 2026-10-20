@@ -4,7 +4,7 @@ class EnvrouterCli < Formula
   desc "Routes each coding agent to the right account and MCP servers by folder"
   homepage "https://github.com/pixel-perfect-software/env-router"
   version "@VERSION@"
-  license "MIT"
+  license "GPL-3.0-or-later"
 
   on_macos do
     on_arm do

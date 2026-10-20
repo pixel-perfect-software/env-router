@@ -2,7 +2,7 @@
 name = "envrouter-keychain"
 version = "0.4.0"
 description = "EnvRouter's MCP secrets in the platform's secret store, and the helper binary the shim runs to read them"
-license = "MIT"
+license = "GPL-3.0-or-later"
 edition = "2021"
 publish = false
 
