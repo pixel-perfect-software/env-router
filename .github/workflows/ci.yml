@@ -47,23 +47,17 @@ jobs:
               - '!dev/containers/**'
               - '!packaging/homebrew/**'
 
-  linux:
+  # The frontend, formatting, licences and the release's notices, beside the Rust tests rather
+  # than before them: none of it needs the other's build.
+  checks:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    # Everything that doesn't need a Mac runs here, where runners start sooner and cost a tenth
-    # as much: the frontend, formatting, licences, and the backend, shim, secrets and CLI tests
-    # with real zsh, bash and fish.
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    env:
-      # The shell tests skip a shell that isn't installed; here a missing one fails the run.
-      ENVROUTER_REQUIRE_SHELLS: 1
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zsh fish gnome-keyring dbus
-
       # Reads the pnpm version from `packageManager` in package.json, and Node's from .tool-versions.
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -72,7 +66,8 @@ jobs:
           cache: pnpm
       # The runner's rustup installs the version and components rust-toolchain.toml pins.
       - run: rustup show active-toolchain || rustup toolchain install
-      - run: rustup target add x86_64-pc-windows-gnu
+      # Nothing here compiles; the cache keeps the downloaded crates that cargo-deny and the
+      # notices read.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           # Pull requests restore main's cache but don't save their own, so the cache store keeps
@@ -94,6 +89,27 @@ jobs:
       - run: pnpm notices
       - run: cargo machete
 
+  # The backend, shim, secrets and CLI tests with real zsh, bash and fish, on Linux, where
+  # runners start sooner and cost a tenth as much as a Mac's.
+  rust:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # The shell tests skip a shell that isn't installed; here a missing one fails the run.
+      ENVROUTER_REQUIRE_SHELLS: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zsh fish gnome-keyring dbus
+      - run: rustup show active-toolchain || rustup toolchain install
+      - run: rustup target add x86_64-pc-windows-gnu
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
       - run: cargo clippy --locked -p envrouter-core -p envrouter-shim -p envrouter-keychain -p envrouter-ops -p envrouter-cli --all-targets -- -D warnings
       - run: cargo test --locked -p envrouter-core -p envrouter-shim -p envrouter-keychain -p envrouter-ops -p envrouter-cli
       # The secret store's round trip, through a GNOME Keyring started in a private D-Bus session.
@@ -103,6 +119,30 @@ jobs:
       # The Windows secrets helper a WSL distro runs. Clippy only type-checks, so no mingw is
       # needed; its Credential Manager round trip runs under Wine with dev/containers.
       - run: cargo clippy --locked -p envrouter-keychain --target x86_64-pc-windows-gnu --all-targets -- -D warnings
+
+  # The check branch protection requires for everything that doesn't need a Mac. It passes only
+  # when checks and rust both passed, or both were skipped for a docs-only change. It runs
+  # whatever they did (`always()`): left to the default, a failure above would skip it, and a
+  # skipped job counts as passing.
+  linux:
+    needs: [changes, checks, rust]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          CHANGES: ${{ needs.changes.result }}
+          CHECKS: ${{ needs.checks.result }}
+          RUST: ${{ needs.rust.result }}
+          CODE: ${{ needs.changes.outputs.code }}
+        run: |
+          echo "changes: $CHANGES, checks: $CHECKS, rust: $RUST"
+          [ "$CHANGES" = success ] || exit 1
+          if [ "$CODE" = true ]; then
+            [ "$CHECKS" = success ] && [ "$RUST" = success ]
+          else
+            [ "$CHECKS" = skipped ] && [ "$RUST" = skipped ]
+          fi
 
   macos:
     needs: changes

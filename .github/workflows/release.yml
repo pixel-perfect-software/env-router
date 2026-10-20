@@ -45,34 +45,16 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-  # THIRD-PARTY-NOTICES.txt, the licences of everything built into a release, for one file that
-  # every build below carries beside LICENSE and the release lists on its own.
-  notices:
-    needs: check
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .tool-versions
-          package-manager-cache: false
-      - run: rustup show active-toolchain || rustup toolchain install
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
-        with:
-          tool: cargo-about@0.9.2
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm notices out/THIRD-PARTY-NOTICES.txt
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: notices
-          path: out/THIRD-PARTY-NOTICES.txt
-
+  # Each platform's app and CLI build in jobs of their own, side by side, since the CLI needs
+  # nothing from the app. They're separate cargo builds anyway: on macOS both binaries are named
+  # `envrouter` in target/release.
+  #
+  # Every job renders THIRD-PARTY-NOTICES.txt, the licences of everything built into a release,
+  # while it compiles, and only bundling needs it, so no build waits for a notices job. The
+  # file depends only on Cargo.lock, pnpm-lock.yaml and packaging/notices (its targets cover
+  # every platform), so each copy is the same; the macOS app's is the one the release lists.
   macos:
-    needs: [check, notices]
+    needs: check
     # Apple Silicon: the bundle is arm64-only for now.
     runs-on: macos-15
     timeout-minutes: 45
@@ -90,34 +72,34 @@ jobs:
           package-manager-cache: false
       # The runner's rustup installs the version rust-toolchain.toml pins.
       - run: rustup show active-toolchain || rustup toolchain install
-      - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
-          name: notices
-          path: notices
+          tool: cargo-about@0.9.2
+      - run: pnpm install --frozen-lockfile
       # Signs ad hoc (bundle.macOS.signingIdentity "-"); there's no Developer ID to notarize with.
       # The licences go in Contents/Resources.
-      - run: >-
-          pnpm tauri build --config
-          '{"bundle":{"resources":{"../LICENSE":"LICENSE","../notices/THIRD-PARTY-NOTICES.txt":"THIRD-PARTY-NOTICES.txt"}}}'
+      - name: Build
+        run: |
+          cargo fetch --locked
+          pnpm notices notices/THIRD-PARTY-NOTICES.txt &
+          notices=$!
+          pnpm tauri build --no-bundle
+          wait "$notices"
+          pnpm tauri bundle --config \
+            '{"bundle":{"resources":{"../LICENSE":"LICENSE","../notices/THIRD-PARTY-NOTICES.txt":"THIRD-PARTY-NOTICES.txt"}}}'
       - name: Package
         run: |
           mkdir -p out
           # ditto keeps the bundle's symlinks, permissions and signature intact.
           ditto -c -k --keepParent target/release/bundle/macos/EnvRouter.app "out/EnvRouter-$VERSION-arm64.zip"
-          cargo build --locked --release -p envrouter-cli -p envrouter-shim -p envrouter-keychain
-          cli="envrouter-cli-$VERSION-aarch64-apple-darwin"
-          mkdir "$cli"
-          cp target/release/envrouter target/release/envrouter-shim target/release/envrouter-keychain \
-            LICENSE notices/THIRD-PARTY-NOTICES.txt "$cli/"
-          tar -czf "out/$cli.tar.gz" "$cli"
+          cp notices/THIRD-PARTY-NOTICES.txt out/
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: macos
           path: out/*
 
   linux:
-    needs: [check, notices]
+    needs: check
     strategy:
       matrix:
         include:
@@ -128,8 +110,6 @@ jobs:
             triple: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
-    env:
-      VERSION: ${{ needs.check.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -145,37 +125,97 @@ jobs:
           package-manager-cache: false
       - run: rustup show active-toolchain || rustup toolchain install
       - run: rustup target add x86_64-pc-windows-gnu
-      - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
-          name: notices
-          path: notices
-      # The Windows build of the secrets helper, which a WSL distro runs to keep its secrets in
-      # the Windows Credential Manager. Windows on Arm runs it too.
-      - run: cargo build --locked --release -p envrouter-keychain --target x86_64-pc-windows-gnu
-      # The .deb carries the Windows helper beside the shim, where the app installs it from. The
-      # licences go in the app's resources (/usr/lib/EnvRouter in the .deb), in both bundles.
-      - run: |
-          exe="$PWD/target/x86_64-pc-windows-gnu/release/envrouter-keychain.exe"
-          resources='"resources":{"../LICENSE":"LICENSE","../notices/THIRD-PARTY-NOTICES.txt":"THIRD-PARTY-NOTICES.txt"}'
-          pnpm tauri build --config "{\"bundle\":{$resources,\"linux\":{\"deb\":{\"files\":{\"/usr/bin/envrouter-keychain.exe\":\"$exe\"}}}}}"
-      - name: Package
+          tool: cargo-about@0.9.2
+      - run: pnpm install --frozen-lockfile
+      # The .deb carries the Windows build of the secrets helper beside the shim, where the app
+      # installs it from: a WSL distro runs it to keep its secrets in the Windows Credential
+      # Manager (Windows on Arm runs it too). The licences go in the app's resources
+      # (/usr/lib/EnvRouter in the .deb), in both bundles.
+      - name: Build
         run: |
-          mkdir -p out
-          cp target/release/bundle/deb/*.deb target/release/bundle/appimage/*.AppImage out/
-          cargo build --locked --release -p envrouter-cli -p envrouter-shim -p envrouter-keychain
-          cli="envrouter-cli-$VERSION-${{ matrix.triple }}"
-          mkdir "$cli"
-          cp target/release/envrouter target/release/envrouter-shim target/release/envrouter-keychain \
-            target/x86_64-pc-windows-gnu/release/envrouter-keychain.exe LICENSE notices/THIRD-PARTY-NOTICES.txt "$cli/"
-          tar -czf "out/$cli.tar.gz" "$cli"
+          cargo fetch --locked
+          pnpm notices notices/THIRD-PARTY-NOTICES.txt &
+          notices=$!
+          cargo build --locked --profile helpers -p envrouter-keychain --target x86_64-pc-windows-gnu
+          pnpm tauri build --no-bundle
+          wait "$notices"
+          exe="$PWD/target/x86_64-pc-windows-gnu/helpers/envrouter-keychain.exe"
+          resources='"resources":{"../LICENSE":"LICENSE","../notices/THIRD-PARTY-NOTICES.txt":"THIRD-PARTY-NOTICES.txt"}'
+          pnpm tauri bundle --config "{\"bundle\":{$resources,\"linux\":{\"deb\":{\"files\":{\"/usr/bin/envrouter-keychain.exe\":\"$exe\"}}}}}"
+      - run: mkdir -p out && cp target/release/bundle/deb/*.deb target/release/bundle/appimage/*.AppImage out/
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-${{ matrix.triple }}
           path: out/*
 
+  # The CLI with the shim and the secrets helper beside it, as the formula installs them. The
+  # helpers come from the CLI's own build (crates/ops builds them, with the helpers profile,
+  # into target/shim), so they're the same build the app bundles.
+  cli:
+    needs: check
+    strategy:
+      matrix:
+        include:
+          - runner: macos-15
+            triple: aarch64-apple-darwin
+          - runner: ubuntu-22.04
+            triple: x86_64-unknown-linux-gnu
+          - runner: ubuntu-22.04-arm
+            triple: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+      TRIPLE: ${{ matrix.triple }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .tool-versions
+          package-manager-cache: false
+      - run: rustup show active-toolchain || rustup toolchain install
+      - if: runner.os == 'Linux'
+        run: rustup target add x86_64-pc-windows-gnu
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-about@0.9.2
+      # The notices read node_modules for the window's packages.
+      - run: pnpm install --frozen-lockfile
+      - name: Build
+        run: |
+          cargo fetch --locked
+          pnpm notices notices/THIRD-PARTY-NOTICES.txt &
+          notices=$!
+          cargo build --locked --release -p envrouter-cli
+          if [ "$RUNNER_OS" = Linux ]; then
+            cargo build --locked --profile helpers -p envrouter-keychain --target x86_64-pc-windows-gnu
+          fi
+          wait "$notices"
+      - name: Package
+        run: |
+          mkdir -p out
+          cli="envrouter-cli-$VERSION-$TRIPLE"
+          mkdir "$cli"
+          cp target/release/envrouter "target/shim/$TRIPLE/helpers/envrouter-shim" "target/shim/$TRIPLE/helpers/envrouter-keychain" \
+            LICENSE notices/THIRD-PARTY-NOTICES.txt "$cli/"
+          if [ "$RUNNER_OS" = Linux ]; then
+            cp target/x86_64-pc-windows-gnu/helpers/envrouter-keychain.exe "$cli/"
+          fi
+          tar -czf "out/$cli.tar.gz" "$cli"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cli-${{ matrix.triple }}
+          path: out/*
+
   publish:
-    needs: [check, macos, linux]
+    needs: [check, macos, linux, cli]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:

@@ -40,10 +40,21 @@ unnested_or_patterns = "warn"
 dbg_macro = "warn"
 todo = "warn"
 
-# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+# The app and the CLI: parallel codegen, no cross-crate LTO (`false` still optimises within each
+# crate), optimised for size, since their speed is the webview's and the disk's, not Rust's.
+# Measured on a cold build of both on an M-series Mac: whole-program LTO with one codegen unit
+# took 127s for a 10.4MB binary (5.0MB compressed); this takes 60s for 11.5MB (4.4MB compressed).
 [profile.release]
+lto = false
+opt-level = "s"
+panic = "abort"
+strip = true
+
+# The shim and the secrets helper, which run on every agent launch, keep whole-program LTO, one
+# codegen unit and full speed (https://tauri.app/concept/size/#cargo-configuration). They're
+# small, so it costs seconds. crates/build-support builds them with it whatever the outer profile.
+[profile.helpers]
+inherits = "release"
 codegen-units = 1
 lto = true
 opt-level = 3
-panic = "abort"
-strip = true
