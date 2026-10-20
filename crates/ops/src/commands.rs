@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use envrouter_core::config::{self, ConfigState, IdeHook, McpServer};
 use envrouter_core::platform::{self, Platform};
-use envrouter_core::{mcp, paths, Error, Result};
+use envrouter_core::{agents, mcp, paths, Error, Result};
 use serde::Serialize;
 
 use crate::editors::{self, Editor, EditorStatus};
@@ -20,11 +20,32 @@ pub fn get_config(home: &Path) -> Result<ConfigState> {
 
 /// Validates and saves the config, then renders each profile's MCP files and updates the shims
 /// to match. `secrets` holds values typed since the last save, keyed by the ids the config
-/// refers to them by; they go to the secret store before the config names them.
+/// refers to them by; they go to the secret store before the config names them. The window's
+/// save: it installs the shim and helper it ships with.
 pub fn save_config(
     home: &Path,
     payload: &ConfigState,
     secrets: &HashMap<String, String>,
+) -> Result<()> {
+    save(home, payload, secrets, true)
+}
+
+/// [`save_config`] for the CLI: the same save, but it installs its own shim and helper only
+/// where none is installed. Where the app is in use, its builds stay; `envrouter install`
+/// replaces them on purpose.
+pub fn save_config_from_cli(
+    home: &Path,
+    payload: &ConfigState,
+    secrets: &HashMap<String, String>,
+) -> Result<()> {
+    save(home, payload, secrets, !paths::shim_binary(home).is_file())
+}
+
+fn save(
+    home: &Path,
+    payload: &ConfigState,
+    secrets: &HashMap<String, String>,
+    install: bool,
 ) -> Result<()> {
     config::validate(payload, home)?;
     let referenced = config::secret_ids(payload);
@@ -33,7 +54,7 @@ pub fn save_config(
             "A new secret isn't used by any server. Save the server again.".into(),
         ));
     }
-    let fresh_shim = shims::install_bundled(home)?;
+    let fresh_shim = install && shims::install_bundled(home)?;
     // Only inside home: a typo'd absolute path shouldn't create folders elsewhere.
     for dir in config::tool_dirs(payload, home) {
         if dir.starts_with(home) && !dir.exists() {
@@ -57,6 +78,44 @@ pub fn save_config(
         shims::ask_keychain_access(home);
     }
     Ok(())
+}
+
+/// A secret the server library refers to: who uses it and whether the store has it, never
+/// its value.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretUse {
+    pub id: String,
+    /// The servers that refer to it, by name.
+    pub servers: Vec<String>,
+    /// `None` when the store couldn't be read.
+    pub stored: Option<bool>,
+}
+
+/// Each secret the saved config refers to, and why the store couldn't say which it holds, if it
+/// couldn't. For `envrouter secret list`, an explicit request, so it may read the store; the
+/// window never reads it just to look. An unreadable store still lists the ids, since they're
+/// what `envrouter secret set` takes.
+pub fn secrets(home: &Path) -> Result<(Vec<SecretUse>, Option<String>)> {
+    let config = get_config(home)?;
+    let users = config::secret_users(&config);
+    let (stored, problem) = if users.is_empty() {
+        (Some(HashMap::new()), None)
+    } else {
+        match envrouter_keychain::read(home) {
+            Ok(stored) => (Some(stored), None),
+            Err(err) => (None, Some(err.to_string())),
+        }
+    };
+    let secrets = users
+        .into_iter()
+        .map(|(id, servers)| SecretUse {
+            id: id.to_string(),
+            servers: servers.into_iter().map(str::to_string).collect(),
+            stored: stored.as_ref().map(|stored| stored.contains_key(id)),
+        })
+        .collect();
+    Ok((secrets, problem))
 }
 
 #[derive(Debug, Serialize)]
@@ -101,9 +160,10 @@ pub fn editor_status(home: &Path, hooks: &BTreeMap<String, IdeHook>) -> Vec<Edit
         .collect()
 }
 
-/// The editor hooks the saved config names, for callers without the window's registry.
+/// The editor hooks of the saved config's agents, with the registry's filled in as the
+/// window's next save would, for callers without the window.
 pub fn saved_hooks(home: &Path) -> Result<BTreeMap<String, IdeHook>> {
-    Ok(get_config(home)?
+    Ok(agents::with_agents(get_config(home)?)
         .agents
         .into_iter()
         .filter_map(|(command, agent)| agent.ide.map(|hook| (command, hook)))

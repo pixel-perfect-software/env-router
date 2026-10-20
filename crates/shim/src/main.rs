@@ -22,6 +22,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use envrouter_core::mcp::{self, Launch};
+use envrouter_core::platform::Platform;
 use envrouter_core::{config, paths, resolve, EXIT_TOOL_NOT_FOUND};
 
 /// When set to `1`, print how this invocation would be routed, as one line of JSON, and exit
@@ -163,7 +164,7 @@ fn inject(launch: &Launch, home: &Path, tool: &str) -> mcp::Injection {
         Ok(secrets) => {
             let injection = launch.inject(&secrets);
             for name in &injection.dropped {
-                eprintln!("envrouter: the MCP server {name} needs a secret that isn't in the Keychain. Running {tool} without it.");
+                eprintln!("envrouter: the MCP server {name} needs a secret that isn't in the {}. Running {tool} without it.", Platform::current().secret_store_name());
             }
             injection
         }
@@ -196,7 +197,10 @@ fn read_secrets(home: &Path, ids: &[&str]) -> Result<HashMap<String, String>, St
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
-            return Err("the Keychain didn't answer within 20 seconds".into());
+            return Err(format!(
+                "the {} didn't answer within 20 seconds",
+                Platform::current().secret_store_name()
+            ));
         }
         thread::sleep(Duration::from_millis(5));
     }
@@ -206,7 +210,7 @@ fn read_secrets(home: &Path, ids: &[&str]) -> Result<HashMap<String, String>, St
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
     serde_json::from_slice(&output.stdout)
-        .map_err(|err| format!("the Keychain helper's answer was unreadable: {err}"))
+        .map_err(|err| format!("the secrets helper's answer was unreadable: {err}"))
 }
 
 /// One line on stderr: what went wrong, then what the shim does about it.

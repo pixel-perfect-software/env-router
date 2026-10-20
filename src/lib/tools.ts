@@ -1,7 +1,19 @@
 // The coding agents EnvRouter knows how to route. The data model takes any command name, but
-// the window offers these. Adding an agent is a new entry here, not a new code path: only add
-// one whose variable really separates accounts (logins included), and say so in its note.
+// the window offers these. Adding an agent is a new entry in agents.json, not a new code path:
+// only add one whose variable really separates accounts (logins included), and say so in its
+// note. The CLI reads the same file (`envrouter_core::agents`), so it can fill `config.agents`
+// on a machine where the window never saved.
+//
+// Why each entry says what it says, since JSON holds no comments:
+// - claude: `--strict-mcp-config` means the user wants only the servers they pass themselves.
+//   User and local scopes live in .claude.json in the config folder; project scope in .mcp.json.
+//   The editor hook was verified on the VS Code extension 2.1.301: it runs `<wrapper> <its
+//   bundled claude> <args>` in the workspace folder. The setting is machine-wide, which is fine,
+//   since the shim routes by folder.
+// - copilot: verified on 1.0.98: `@` takes a file and the flag adds to the user's own servers; a
+//   tool is turned off with `--deny-tool=server(tool)`, one per argument.
 
+import registry from './agents.json'
 import type { AgentDef, ConfigState, IdeHook, McpFiles, McpInjection } from './types'
 
 export interface KnownTool {
@@ -21,31 +33,8 @@ export interface KnownTool {
   ide?: IdeHook
 }
 
-export const KNOWN_TOOLS: KnownTool[] = [
-  {
-    command: 'claude',
-    label: 'Claude Code',
-    envVar: 'CLAUDE_CONFIG_DIR',
-    defaultPath: '~/.claude',
-    // --strict-mcp-config means the user wants only the servers they pass themselves.
-    mcp: { dialect: 'claude', configArg: '--mcp-config=', denyArg: '--disallowedTools=', skipAnyArgs: ['--strict-mcp-config'] },
-    // User and local scopes live in .claude.json in the config folder; project scope in .mcp.json.
-    mcpFiles: { userFile: '.claude.json', defaultDir: '~', projectFile: '.mcp.json' },
-    // Verified on the VS Code extension 2.1.301: it runs `<wrapper> <its bundled claude> <args>` in the
-    // workspace folder. The setting is machine-wide, which is fine, since the shim routes by folder.
-    ide: { setting: 'claudeCode.claudeProcessWrapper', extension: 'anthropic.claude-code' },
-  },
-  {
-    command: 'copilot',
-    label: 'Copilot CLI',
-    envVar: 'COPILOT_HOME',
-    defaultPath: '~/.copilot',
-    // Verified on 1.0.98: `@` takes a file and the flag adds to the user's own servers; a tool is
-    // turned off with `--deny-tool=server(tool)`, one per argument.
-    mcp: { dialect: 'copilot', configArg: '--additional-mcp-config=@', denyArg: '--deny-tool=', skipAnyArgs: [] },
-    mcpFiles: { userFile: 'mcp-config.json', defaultDir: '~/.copilot', projectFile: '.mcp.json' },
-  },
-]
+// JSON infers `dialect` as a plain string; Rust's tests reject one that isn't a dialect.
+export const KNOWN_TOOLS: KnownTool[] = registry as KnownTool[]
 
 /** The editor hooks to offer, keyed by command. */
 export const ideHooks = (): Record<string, IdeHook> => Object.fromEntries(KNOWN_TOOLS.flatMap((t) => (t.ide ? [[t.command, t.ide] as const] : [])))
@@ -58,6 +47,7 @@ export const toolLabel = (command: string) => toolByCommand(command)?.label ?? c
 /**
  * The config to save: `agents` rewritten from this registry, so Rust learns each agent's MCP
  * descriptor without knowing its name. Agents added by hand keep what they have.
+ * `envrouter_core::agents::with_agents` does the same for the CLI.
  */
 export const withAgents = (config: ConfigState): ConfigState => {
   const agents: Record<string, AgentDef> = { ...config.agents }

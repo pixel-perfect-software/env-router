@@ -40,12 +40,13 @@ impl Platform {
         !matches!(self, Platform::Linux)
     }
 
-    /// What the window calls the store MCP secrets go to.
+    /// What the window calls the store MCP secrets go to. A WSL distro keeps them in the
+    /// Windows Credential Manager, through the Windows build of the helper.
     pub fn secret_store_name(self) -> &'static str {
         match self {
             Platform::MacOs => "Keychain",
-            Platform::Linux | Platform::Wsl => "keyring",
-            Platform::Windows => "Credential Manager",
+            Platform::Linux => "keyring",
+            Platform::Wsl | Platform::Windows => "Credential Manager",
         }
     }
 
@@ -188,6 +189,12 @@ mod tests {
         assert!(Platform::MacOs.terminal_starts_login_shell());
         assert!(Platform::Wsl.terminal_starts_login_shell());
         assert!(!Platform::Linux.terminal_starts_login_shell());
+    }
+
+    #[test]
+    fn wsl_names_the_store_its_secrets_go_to() {
+        assert_eq!(Platform::Linux.secret_store_name(), "keyring");
+        assert_eq!(Platform::Wsl.secret_store_name(), "Credential Manager");
     }
 
     #[test]

@@ -63,14 +63,25 @@ pub fn write(home: &Path, secrets: &HashMap<String, String>) -> Result<()> {
 }
 
 /// Adds `new` and drops every secret not in `keep`, in one read and one write. A save calls it
-/// before writing `config.json`, so the config never names a secret that isn't stored yet.
+/// before writing `config.json`, so the config never names a secret that isn't stored yet. A
+/// store's failure comes back as a sentence a save can show as it is.
 pub fn update(home: &Path, new: &HashMap<String, String>, keep: &BTreeSet<&str>) -> Result<()> {
-    let mut secrets = read(home)?;
-    let before = secrets.clone();
-    secrets.retain(|id, _| keep.contains(id.as_str()));
-    secrets.extend(new.iter().map(|(id, value)| (id.clone(), value.clone())));
-    if secrets == before {
-        return Ok(());
-    }
-    write(home, &secrets)
+    let update = || {
+        let mut secrets = read(home)?;
+        let before = secrets.clone();
+        secrets.retain(|id, _| keep.contains(id.as_str()));
+        secrets.extend(new.iter().map(|(id, value)| (id.clone(), value.clone())));
+        if secrets == before {
+            return Ok(());
+        }
+        write(home, &secrets)
+    };
+    // Each store words its own reason, naming itself, to follow a prefix like this one.
+    update().map_err(|err| match err {
+        Error::SecretStore(why) => Error::SecretStore(format!(
+            "Couldn't save the secret: {}. Nothing was saved.",
+            why.trim_end_matches('.')
+        )),
+        other => other,
+    })
 }

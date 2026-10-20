@@ -1,0 +1,19 @@
+[
+  {
+    "command": "claude",
+    "label": "Claude Code",
+    "envVar": "CLAUDE_CONFIG_DIR",
+    "defaultPath": "~/.claude",
+    "mcp": { "dialect": "claude", "configArg": "--mcp-config=", "denyArg": "--disallowedTools=", "skipAnyArgs": ["--strict-mcp-config"] },
+    "mcpFiles": { "userFile": ".claude.json", "defaultDir": "~", "projectFile": ".mcp.json" },
+    "ide": { "setting": "claudeCode.claudeProcessWrapper", "extension": "anthropic.claude-code" }
+  },
+  {
+    "command": "copilot",
+    "label": "Copilot CLI",
+    "envVar": "COPILOT_HOME",
+    "defaultPath": "~/.copilot",
+    "mcp": { "dialect": "copilot", "configArg": "--additional-mcp-config=@", "denyArg": "--deny-tool=", "skipAnyArgs": [] },
+    "mcpFiles": { "userFile": "mcp-config.json", "defaultDir": "~/.copilot", "projectFile": ".mcp.json" }
+  }
+]
