@@ -11,13 +11,14 @@ colors:
   button-surface: "#ffffff"
   hairline-border: "rgb(16 24 48 / 0.1)"
   rule: "#e3e6ec"
-  field-edge: "#8e939d"
+  field-edge: "#7f848e"
   track: "rgb(16 24 48 / 0.07)"
   well: "#f1f3f7"
   ink-primary: "#1b1d22"
-  ink-secondary: "#61656f"
+  ink-secondary: "#5b5f69"
   ink-tertiary: "#959aa5"
   system-accent: "#0a64d8"
+  accent-ink: "#0a64d8"
   on-accent: "#ffffff"
   accent-tint: "color-mix(in srgb, #0a64d8 9%, #ffffff)"
   status-ok: "#24a148"
@@ -31,13 +32,14 @@ colors:
   button-surface-dark: "#3a3f4a"
   hairline-border-dark: "rgb(255 255 255 / 0.09)"
   rule-dark: "#30343c"
-  field-edge-dark: "#747a86"
+  field-edge-dark: "#808693"
   track-dark: "rgb(0 0 0 / 0.32)"
   well-dark: "#31353e"
   ink-primary-dark: "#eef0f4"
   ink-secondary-dark: "#a0a5b0"
   ink-tertiary-dark: "#6c717c"
-  system-accent-dark: "#3d8af7"
+  system-accent-dark: "#2a6fd9"
+  accent-ink-dark: "#5aa2ff"
   accent-tint-dark: "color-mix(in srgb, #3d8af7 18%, #20232a)"
   status-ok-dark: "#3ec46d"
   status-warn-dark: "#e5a83a"
@@ -327,12 +329,13 @@ Rejected, by the user: a web-app look, the System Settings sidebar-and-switches 
 
 A cool, navy-tinted grey ground with white (dark: navy graphite) cards, one system accent, three status hues, eight profile hues that never borrow from status, and server brand colours confined to their logo tiles.
 
-**How theming is applied.** Light and dark follow the system through a `prefers-color-scheme: dark` media query that redefines the `--er-*` custom properties on `:root` (`color-scheme: light dark` is set, so native controls and scrollbars follow too). There is no in-app toggle and no class or stored preference. Where WebKit supports it (`@supports (color: AccentColor)`), the accent becomes the `AccentColor` system keyword and on-accent text becomes `AccentColorText`, so the accent tracks the user's macOS accent; `system-accent` and `system-accent-dark` are the fallbacks. A reviewer checks both themes by switching macOS appearance, and should check at least one non-blue system accent.
+**How theming is applied.** Light and dark follow the system through a `prefers-color-scheme: dark` media query that redefines the `--er-*` custom properties on `:root` (`color-scheme: light dark` is set, so native controls and scrollbars follow too). There is no in-app toggle and no class or stored preference. Where WebKit supports it (`@supports (color: AccentColor)`), the accent is derived from the `AccentColor` system keyword and on-accent text becomes `AccentColorText`, so the accent tracks the user's macOS accent. System accents are bright (blue under white text is 4.0:1), so the window holds them to contrast: the fill (`system-accent`) is the accent mixed 15% toward black, and the ink (`accent-ink`) 20% toward black in light and 35% toward white in dark. `system-accent`, `system-accent-dark`, `accent-ink` and `accent-ink-dark` are the fallbacks. A reviewer checks both themes by switching macOS appearance, and should check at least one non-blue system accent.
 
 **How vibrancy is applied.** The Tauri window is transparent with macOS's `underWindowBackground` effect (following the window's active state, `macOSPrivateApi` on). Only inside the app (`main.tsx` sets `data-vibrant` on `<html>` when Tauri is present) the body ground becomes `window-ground` at 76% over the vibrancy, and the titlebar band (`data-titlebar`) `window-ground` at 90%, so text on the ground keeps its contrast over any wallpaper. Cards, raised surfaces and fields stay opaque. In the browser preview there is no `data-vibrant` and the ground is solid.
 
 ### Primary
-- **System Accent** (`system-accent`, AccentColor at runtime): the window's single primary button, the focus ring (solid, 2px, 2px offset), selection and drop-target outlines, a checked checkbox, the switch's on track, the current setup step, the caret, text selection (30% mix), plain buttons, the selected server's name, hovered server links, and the filed slip.
+- **System Accent** (`system-accent`, from AccentColor at runtime): the fill. The window's single primary button, a checked checkbox, the switch's on track, the current setup step and text selection (30% mix). On-accent text holds 4.5:1 on it.
+- **Accent Ink** (`accent-ink`, from AccentColor at runtime): the accent as a line or text. The focus ring (solid, 2px, 2px offset), selection and drop-target outlines, the caret, plain buttons, the selected server's name, hovered server links, the login-shell chip, a pressed icon button, and the filed slip. It holds 4.5:1 on the card, the accent tint and the well in both themes.
 - **Accent Tint** (`accent-tint`, 9% accent over card; 18% in dark): the wash behind a drop-targeted card, the selected server row, the filed slip, the hovering docket, plain-button hover, an active Keychain lock, and the login-shell chip.
 
 ### Status
@@ -371,7 +374,7 @@ The app icon's own fixed palette, used only in `src-tauri/icons/`. It never ente
 - **Tertiary Ink** (`ink-tertiary`): non-text strokes only. Used for the empty Everywhere else dot, an off shell's dot, and the idle docket's dashed border at 45%.
 
 ### Named Rules
-**The One Accent Rule.** At most one accent-filled button is visible per window state. On Profiles, the health banner's action outranks the check result's action, which outranks Check Folder… in the titlebar; whichever loses renders as a push button. With the profile inspector open, Save takes the accent and Check Folder… stands down. On Servers, Check Folder… is always a push button, a health banner shown there renders its action as a push button too, and the detail's footer action (Save, or Import N Servers) holds the accent; Save is disabled while the editor is clean.
+**The One Accent Rule.** At most one accent-filled button is visible per window state. On Profiles, the health banner's action outranks the check result's action, which outranks Check Folder… in the titlebar; whichever loses renders as a push button. With the profile inspector open, Save takes the accent and Check Folder… stands down. On Servers, Check Folder… is always a push button, a health banner shown there renders its action as a push button too, and the detail's footer action (Save, or Import N Servers) holds the accent; Save is disabled while the editor is clean. One exception: a blocked banner's Check Again stays a push button, because the fix lives in the check result (Open ~/.zshrc and the like); with the result dismissed, Check Folder… takes the accent.
 
 **The Status-Free Palette Rule.** Profile colours never use red, amber or green, which belong to status, so a profile tag can't read as a verdict. Colours are keyed by profile id, so they survive renames and reordering, and a profile moves off its preferred colour only when another profile on screen already holds it.
 
@@ -381,7 +384,7 @@ The app icon's own fixed palette, used only in `src-tauri/icons/`. It never ente
 
 **The Readable Ink Rule.** `ink-tertiary` is never used for text that must be read. Its contrast is for strokes and empty-state marks only; readable secondary text uses `ink-secondary`.
 
-**The Three-to-One Rule.** Anything that marks where a control is or where focus sits holds 3:1 against what's around it: the focus ring is solid accent, and a text field's edge is `field-edge`, not `rule`.
+**The Three-to-One Rule.** Anything that marks where a control is or where focus sits holds 3:1 against what's around it: the focus ring is solid accent ink, a text field's edge is `field-edge` (which holds 3:1 on the well too), not `rule`, and an off switch carries the same edge.
 
 ## Typography
 
@@ -405,7 +408,7 @@ The app icon's own fixed palette, used only in `src-tauri/icons/`. It never ente
 
 ## Layout
 
-A single native window with an overlay titlebar. The 52px titlebar band is draggable; the traffic lights are centred on it at `trafficLightPosition` x 18, y 28, and its content starts at an 86px inset. Left to right: the app icon (18px) and name, then 12px on the Profiles | MCP Servers segmented switch, then, pushed right, shell status, Shells…, Editors… and Check Folder… (⌘O). Editors… appears only when an editor on the Mac has an agent extension EnvRouter can route. ⌘1 and ⌘2 switch views; both stand down while the profile inspector is open. Switching view closes either popover, and opening one closes the other.
+A single native window with an overlay titlebar. The 52px titlebar band is draggable; the traffic lights are centred on it at `trafficLightPosition` x 18, y 28, and its content starts at an 86px inset. Left to right: the app icon (18px) and name, then 12px on the Profiles | MCP Servers segmented switch, then, pushed right, shell status, Shells…, Editors… and Check Folder… (⌘O). Editors… appears only when an editor on the machine has an agent extension EnvRouter can route. ⌘1 and ⌘2 switch views; both stand down while the profile inspector is open. Switching view closes either popover, and opening one closes the other.
 
 **Profiles view**, top to bottom under the titlebar: the health banner card or the three-step setup card, a scrolling profile grid, and the docket along the bottom. The window body does not scroll; only the grid does, with a soft fade mask at its top (10px) and bottom (18px) edges.
 
@@ -417,7 +420,7 @@ A single native window with an overlay titlebar. The 52px titlebar band is dragg
 - **Server list:** header 8px vertical, 14px left, hairline under; rows inside 6px padding with 1px between them.
 - **Server detail:** header 16px top, 12px bottom, 20px sides, hairline under; footer 12px by 20px on muted card under a hairline.
 - **Overlays:** the profile inspector slides in from the right edge at `min(440px, 100% − 40px)`, full window height, with its body scrolling and Save pinned in a footer. The view stays in place behind a scrim (black 15%, 35% in dark). The Shells and Editors popovers anchor under the titlebar at the right, `min(440px, 100vw − 32px)`.
-- **Docket:** at least 60px tall. The verdict keeps a 300px minimum and the actions wrap underneath it in a narrow window rather than squeezing it.
+- **Docket:** at least 60px tall. The verdict keeps a 300px minimum and the actions wrap underneath it in a narrow window rather than squeezing it. Its headline wraps rather than truncating; the folder path beside it gives way first, dropping to its own line and ending in an ellipsis. In a window under 520px tall the note keeps to one line (the full text in its tooltip), so a row of cards stays in view; each value carries its full text as a tooltip. While config.json can't be read there's no docket, since there's nothing to check against. The grid's scroller keeps a stable gutter, so a scrollbar appearing never reflows the cards.
 - **Narrow window:** under 900px the app name hides (kept for screen readers); under 820px Shells… and Editors… collapse to their icon (the name kept for screen readers and as a tooltip). Check Folder… and the view switch always keep their text. The window's 680px minimum fits it all.
 
 **Viewports that matter** (instead of 390 / 768 / 1440):
@@ -464,8 +467,8 @@ Native push buttons, small and tactile.
 - **Push:** button surface with the push-control shadow; hover darkens slightly (brightness 0.97), active to 0.9. A push button held open (Shells… or Editors… while its popover is open) stays at 0.9.
 - **Primary:** system accent with on-accent text at 500 weight; hover brightens (1.05). Only one per window state (see The One Accent Rule).
 - **Plain:** accent text with no fill, 8px padding pulled back into the margin; hover shows the accent tint. Used for in-row actions such as Undo, Replace, All On and All Off (the last three at 22px).
-- **Icon button:** 26px square, borderless, secondary ink; hover adds an 8% ink wash and primary ink. Always carries an accessible label and tooltip.
-- **Disabled:** 45% opacity, no pointer events. A button that must keep focus while busy (Check Server while running) uses `aria-disabled` at the same 45%.
+- **Icon button:** 26px square, borderless, secondary ink; hover adds an 8% ink wash and primary ink. Pressed (`aria-pressed`, such as Add from Catalog while the Catalog is open) takes the accent tint and accent ink, the selected-row treatment. Always carries an accessible label and tooltip.
+- **Disabled:** 45% opacity, no pointer events. A button that must keep focus while busy (Check Server while running, Save while saving) takes `busy`: `aria-disabled` at the same 45%, ignoring presses.
 
 ### Chips
 - **Login shell:** an accent-tinted pill with accent caption text, beside the default shell's name in the shells popover.
@@ -482,14 +485,14 @@ Native push buttons, small and tactile.
 ### Inputs / Fields
 - **Text field:** field surface, 6px, 28px tall, 8px padding, an inset 1px `field-edge` stroke; overflowing text ends in an ellipsis; placeholders in italic secondary ink. A mono variant holds paths and values at 12px.
 - **Focus:** the stroke becomes a 1.5px inset accent ring (no outer focus outline).
-- **Error:** shown inline as small problem-red text in the footer, never as a modal.
+- **Error:** shown inline as small problem-red text in the footer, never as a modal. Empty, it's the footer's spacer; once it says something it takes its own full-width row above the buttons (`Footer` in `ui.tsx`), so a sentence never squeezes between them. A save keeps Save focused (`Button`'s `busy`: `aria-disabled`, not `disabled`), and a saved server's editor reopens with focus on its row in the list.
 - **Checkbox:** a drawn 14px box (4px corners) for rows whose whole surface is the label of a hidden native checkbox: unchecked, field surface with a 1px `field-edge` ring; checked, accent with an on-accent check (1.6px stroke) and a contact shadow. The row shows the hidden control's focus as the standard ring around the row (`focus-within-ring`).
-- **Switch:** 28 × 16 pill, accent when on, 18% ink when off, with a white 13px knob that slides 12px over 150ms on the settle curve.
+- **Switch:** 28 × 16 pill, accent when on, 18% ink inside a 1px `field-edge` ring when off, with a white 13px knob that slides 12px over 150ms on the settle curve.
 - **Segmented:** a `track` well with 2px padding and 7px corners; the selected segment is a button-surface chip (5px) with a contact shadow, the others secondary ink, primary on hover. Small size (22px, small text) in the docket and the server editor; toolbar size (24px, body text, 12px padding) for the titlebar's view switch. Segments may lead with an icon.
-- **Keychain value:** every value field in the server editor carries a lock icon button at its right edge, 60% until hovered; on (accent tint and accent), the value is masked and goes to the Keychain on Save. A new value under a name like `API_KEY` or `Authorization` starts with it on. A value already in the Keychain renders as a sealed well (6px, 28px): a lock, italic "In Keychain", and a plain Replace button; it is never shown or read back.
+- **Keychain value:** every value field in the server editor carries a lock icon button at its right edge, in secondary ink; on (accent tint and accent), the value is masked and goes to the Keychain on Save. A new value under a name like `API_KEY` or `Authorization` starts with it on. A value already in the Keychain renders as a sealed well (6px, 28px): a lock, italic "In Keychain", and a plain Replace button; it is never shown or read back.
 
 ### Navigation
-- **View switch:** the titlebar's toolbar-size segmented control, Profiles (folder icon) and Servers (plug icon), right of the app name. ⌘1 and ⌘2.
+- **View switch:** the titlebar's toolbar-size segmented control, Profiles (folder icon) and MCP Servers (plug icon), right of the app name. ⌘1 and ⌘2.
 - **Titlebar:** the app icon (the small cut at 18px, 8px before the name) and the app name; the view switch; then shell status (a green dot when on, an empty tertiary ring when off, a red cross when blocked, each with a hidden text state), Shells…, Editors… and Check Folder… (⌘O), each with a leading icon. Check Folder… takes the accent only on Profiles and only when nothing outranks it.
 - **Server links:** a server name in a profile card's footer opens that server's editor in Servers.
 
@@ -526,7 +529,7 @@ How the server answered. A 28px status tile and a body-strong headline: the tool
 ### Catalog and Import
 Shown in the server detail card, each with a header (title and a close button that takes focus on open, except in the Catalog, whose search does; Escape closes).
 - **Catalog:** the header counts the entries shown. Under it, fixed while the list scrolls: a search field (search icon inset, italic placeholder) that takes focus on open, where Escape clears a search before it closes the view; then two small segmented filters, All · Hosted · Runs locally and All · No sign-in · Sign-in · Secret. The list sits on the sealed `well` (8px, hairline-ruled rows), never a card inside the detail card, sorted by label: a 28px ServerMark, the label at 500, then in caption where it runs (globe Hosted, the vendor runs it at a URL; laptop Runs locally, the agent starts it on this machine, even when it calls the vendor's cloud; a loopback URL counts as local) and what it needs (lock "Needs a secret", sign-in arrow "Sign in with /mcp" or "Signs in" for a vendor's own sign-in, open lock "No sign-in"), "In the library" when the same server is already there, a description in small secondary ink, and a chevron. No match: a well with italic "No servers match" and a plain Clear Filters button. Picking one opens the editor prefilled, its secret fields empty and masked, with the expected format as the placeholder.
-- **Import:** a list on the `well`, like Catalog, of the servers the agents already define, one checkbox row each: the name in mono (with "`name` is taken" when it was renamed, `github-2`), its command or URL, "from" the file, and which values go to the Keychain. Ones already in the library fade their box and tile and read "In the library". Pasted servers have no "from" line. Footer on muted card: inline error, Cancel and "Import N Servers" as the accent button. Source files are never changed.
+- **Import:** a list on the `well`, like Catalog, of the servers the agents already define, one checkbox row each: the name in mono (with "`name` is taken" when it was renamed, `github-2`), its command or URL, "from" the file, and which values go to the Keychain. Ones already in the library fade their box and tile and read "In the library"; a value the library keeps in the secret store matches whatever the agent's file holds there, so a server imported once isn't offered again under a new name. Pasted servers have no "from" line. Footer on muted card: inline error, Cancel and "Import N Servers" as the accent button. Source files are never changed.
 - **Paste JSON:** a server's config as a README or an agent's file writes it (`mcpServers`, VS Code's `servers`, a bare table, one unnamed server, comments allowed). A mono text area in the field style fills the body, its example in the italic placeholder, with a one-line caption on what it reads. The search-style rule applies: the area takes focus on open. Footer on muted card: inline error, Cancel and Continue as the accent button (⌘Return too). One server opens the editor prefilled, named from its host or package; several open the Import review titled "Import Pasted Servers", with a line naming any it left out. Either way, credential-looking values head for the Keychain and containers get `--init`.
 - **Nothing selected:** the detail card centres one small line and four stacked push buttons: Add from Catalog…, Import from Your Agents…, Paste JSON…, Add by Hand….
 
@@ -546,14 +549,14 @@ The floating check result along the bottom of Profiles, one complete state at a 
 The signature interaction of Profiles. A checked folder becomes a slip filed in the owning card (or Everywhere else): accent-tinted row with a 40% accent inset ring, a state mark (filled accent dot when routed, red cross on a problem) and the mono path. It animates from the drop point into its slot over 300ms on the settle curve, the card it will land in lights up with the drop-target outline before release, and then the status tile stamps.
 
 ### Profile Inspector
-The only profile editor: a raised panel sliding in from the right (220ms), over a scrim that keeps the view visible. Header: profile dot (12px), name, close. Body: Name field (32px, title size), Trigger folders as a card list with remove buttons that strike rows through (Undo) until saved, Add Folder…, then one mono path field per agent with its variable name and Choose…, then MCP servers.
+The only profile editor: a raised panel sliding in from the right (220ms), over a scrim that keeps the view visible. It's a modal dialog to assistive tech (`role="dialog"`, `aria-modal`), traps focus, and on close returns it to the pencil that opened it. Header: profile dot (12px), name, close. Body: Name field (32px, title size), Trigger folders as a card list with remove buttons that strike rows through (Undo) until saved, Add Folder…, then one mono path field per agent with its variable name and Choose…, then MCP servers.
 
 **MCP checklist:** the library as a card list, one row per server: a hidden native checkbox labelled by the whole row, the drawn 14px box, a 20px ServerMark, the name in mono (primary ink when on, secondary when off) and its command or URL in mono caption, truncated. A caption under it names the agents that load them. With no servers, a quiet line points to Servers (⌘2).
 
 **Tool filter:** under each checked server, aligned past its checkbox. When the server has been checked, a disclosure ("7 of 9 tools on", or "All 9 tools") opens a nested checklist indented on a hairline like a carve-out: 28px rows with the drawn box, the tool name in mono caption (struck through and secondary when off) and its description; All On and All Off sit as plain buttons beside the disclosure. Without a checked tool list it reads a quiet "All tools", or how many are off. Footer on muted card: Delete… and Duplicate (a saved profile only; it opens a new profile named "‹name› copy" with the same agents, servers and turned-off tools but no folders, since a folder belongs to one profile), inline error, Cancel, and Save as the accent button. A profile card's context menu offers Duplicate Profile… too. Escape cancels.
 
 ### Shells Popover
-A raised panel under the titlebar that opens with a 4px drop (140ms): one row per shell with its name, login-shell chip, startup files in mono, and a switch; unavailable shells show "Not installed" at 60% opacity. A hairline footer states what the app edits, or the error.
+A raised panel under the titlebar that opens with a 4px drop (140ms): one row per shell with its name, login-shell chip, startup files in mono, and a switch; an unavailable shell has no switch: its name steps down to secondary ink and "Not installed" (quiet italic) stands in for the startup files. Escape returns focus to the button that opened the popover. A hairline footer states what the app edits, or the error.
 
 ### The Mark
 The app icon and menu bar glyph, drawn by hand as SVG in `src-tauri/icons/` and rendered into every raster at its exact pixel size with a transparent background.

@@ -20,7 +20,7 @@ The Sorting Frame (roll, seed 9c112fdb), code-led. On 2026-10-05 the user overro
 Two views under one titlebar switch: Profiles (the Sorting Frame, below) and Servers (a list beside the server editor, with Catalog and Import in the same detail area). Assignment works from both sides: a profile's MCP checklist and tool filter, and a server's Used by toggles. Card footers link each server name to its editor; the check result lists the servers a run gets.
 
 ## Unresolved
-App icon and tray glyph are decided (see the src-tauri-icons brief); the titlebar shows the icon's small cut before the app name. Agents offered: Claude Code and Copilot CLI (src/lib/tools.ts); Codex and Gemini CLI are future add-ons. Saving creates missing agent folders inside home. opencode and Aider are excluded because their variables don't separate logins.
+App icon and tray glyph are decided (see the src-tauri-icons brief); the titlebar shows the icon's small cut before the app name. Agents offered: Claude Code and Copilot CLI (src/lib/agents.json); Codex and Gemini CLI are future add-ons. Saving creates missing agent folders inside home. opencode and Aider are excluded because their variables don't separate logins.
 
 ## Direction contract
 THESIS: Each profile is a card that holds the folders it owns, so "the most specific folder wins" is visible structure: a nested folder sits as a carve-out inside its parent's card, tagged with the owning profile's colour. It refuses both the System Settings sidebar-and-switches default and the flat ruled sheet the user rejected.

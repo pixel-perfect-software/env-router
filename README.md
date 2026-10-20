@@ -122,7 +122,8 @@ envrouter shell on zsh     # or bash, fish
 ```
 
 On a Mac with the app installed, skip `envrouter install`: the app keeps `~/.envrouter/bin`
-current itself. Without Homebrew, unpack `envrouter-cli-<version>-<arch>.tar.gz` from the release
+current itself. Without Homebrew, unpack `envrouter-cli-<version>-<target>.tar.gz` from the release (for example
+`envrouter-cli-0.3.0-x86_64-unknown-linux-gnu.tar.gz`)
 and run `./envrouter install` from that folder.
 
 Every release comes with `SHA256SUMS`; `sha256sum -c SHA256SUMS --ignore-missing` checks the
@@ -181,16 +182,70 @@ and then `target/release/envrouter install`. The first build takes a few minutes
    does the same, and `ENVROUTER_EXPLAIN=1 claude` prints the route as JSON instead of running
    Claude.
 
-To give a profile MCP servers, switch to **MCP Servers** (⌘2; Ctrl+2), add servers from the
-catalog, by import, by pasting their JSON or by hand, and choose the profiles that use each one, either with the
-server's **Used by** toggles or from the profile's own checklist. **Check Server** starts a
-server and lists its tools, so a profile can turn individual tools off. Remote servers that need
-a login sign in through the agent (`/mcp` in Claude Code), not through EnvRouter.
-
 To route an editor extension, open **Editors…** and switch on the editor. It points the
 extension's process-wrapper setting (`claudeCode.claudeProcessWrapper` for Claude Code) at
 EnvRouter; new sessions in that editor then use the folder's profile. EnvRouter never replaces a
-wrapper you set yourself.
+wrapper you set yourself. **Editors…** appears once EnvRouter finds an editor with an agent
+extension it can route.
+
+To start a profile from one you have, right-click its card and choose **Duplicate Profile…**
+(or **Duplicate** in its editor). The copy keeps the agents, servers and turned-off tools, but no
+folders, since a folder belongs to one profile.
+
+## 🔌 MCP servers
+
+Switch to **MCP Servers** (⌘2; Ctrl+2). The list on the left is your server library; the editor
+beside it changes one server at a time. A server reaches an agent only in the folders of the
+profiles that use it.
+
+### ➕ Add a server
+
+- **Add from Catalog** (the package icon): search the vendors' own servers. Filter by where they
+  run (**Hosted** by the vendor, or **Runs locally** on your machine) and by what they need
+  (**No sign-in**, **Sign-in**, **Secret**). Picking one opens the editor filled in, with any
+  secret fields empty and the expected format as a hint.
+- **Import from Your Agents** (the import icon): lists the servers your agents already define, in
+  Claude Code's `.claude.json` (your home folder and each profile's config folder) and any
+  `.mcp.json` in a trigger folder, and in Copilot's `mcp-config.json`. Tick the ones to bring in.
+  Values that look like credentials go to your system's secret store, and Docker or Podman
+  servers get `--init` so the container stops with the agent. EnvRouter never changes those
+  files, and a server already in the library is shown as such.
+- **Paste JSON** (the clipboard icon): paste a server's config as its README or an agent's file
+  writes it: an `mcpServers` block, VS Code's `servers`, a bare table of servers, or one server on
+  its own. Comments and trailing commas are fine. One server opens in the editor; several open
+  the import review. ⌘Return (Ctrl+Return) continues.
+- **Add Server** (the plus): fill in the editor by hand. **Connects with** picks a command the
+  agent starts (with arguments and environment variables), or a URL (HTTP or SSE) with headers.
+
+### 👥 Choose which profiles use it
+
+Switch a profile on in the server's **Used by** row, or tick the server in the profile's own
+**MCP servers** checklist. Both change the same thing. Each profile card lists its servers;
+click a name to open it.
+
+### 🔑 Keep secrets out of config.json
+
+Every value field has a lock at its right edge. Click it to keep that value in the macOS
+Keychain, the Linux keyring or, in WSL, the Windows Credential Manager, instead of
+`config.json`. A new value under a name like `API_KEY` or `Authorization` starts locked. A stored
+value shows as **In Keychain** (**In the keyring**, **In the Credential Manager**) and is never
+shown again; **Replace**
+sets a new one. EnvRouter also warns when a value that looks like a credential would be saved as
+plain text, such as an `--api-key=` argument or a password in a connection string.
+
+Copilot CLI expands `${VAR}` in environment variables and headers but not in arguments, so give
+a server its secret through an environment variable or a header rather than an argument.
+
+### 🧰 Check a server and turn tools off
+
+**Check Server** starts the server (or calls its URL), lists its tools and stops it again. Once a
+server has been checked, each profile that uses it can turn individual tools off: open the
+profile, expand the server's **All 9 tools** line under **MCP servers**, and untick tools, or use
+**All On** and **All Off**. A tool turned off in a profile stays available in the others.
+
+Remote servers that need a login sign in through the agent (`/mcp` in Claude Code), not through
+EnvRouter. **Duplicate** in the editor's footer starts a new server from this one, with its
+secret fields empty; **Delete…** removes it from the library and from every profile.
 
 On macOS, EnvRouter lives in the menu bar: closing the window only hides it; quit from the menu
 bar icon. On Linux, closing the window quits; routing keeps working without it.
@@ -204,14 +259,60 @@ bar icon. On Linux, closing the window quits; routing keeps working without it.
 | `envrouter` or `envrouter status` | The shim, each shell and editor, and the config |
 | `envrouter install` | Installs the shim, the secrets helper and the CLI into `~/.envrouter/bin`, and a shim per agent |
 | `envrouter shell on\|off <zsh\|bash\|fish>` | Adds or removes the block in that shell's startup files |
-| `envrouter editor on\|off <editor>` | Routes an editor extension (`code`, `cursor`, `remote-code` for the VS Code Server, …) |
-| `envrouter check [folder]` | Starts a shell the way a new terminal would and reports what running the agent there does; exits 1 unless it's routed |
-| `envrouter explain [folder]` | Which profile the saved config picks, without starting a shell |
+| `envrouter editor on\|off <editor> [--agent <command>]` | Routes an editor extension (`code`, `cursor`, `remote-code` for the VS Code Server, …) |
+| `envrouter check [folder] [--tool <command>] [--shell <shell>]` | Starts a shell the way a new terminal would and reports what running the agent there does; exits 1 unless it's routed |
+| `envrouter explain [folder] [--tool <command>]` | Which profile the saved config picks, without starting a shell |
 | `envrouter apply` | Validates `~/.envrouter/config.json` after you edit it by hand, and renders its MCP files and shims |
-| `envrouter rpc` | Answers the window's commands as JSON lines, for a window managing another machine |
+| `envrouter secret set <ID>` | Stores the value of a server's secret in the system's store: piped in, or typed without echo; never on the command line |
+| `envrouter secret list` | Each secret the config refers to, the servers that use it, and whether it's stored (`unknown` when the store can't be read) |
+| `envrouter rpc` | Answers the window's commands as JSON lines, one per line each way, so another program (later, a window managing a WSL distro) can drive this machine |
 
-Add `--json` for machine-readable output. Profiles are edited in the window, or in
-`~/.envrouter/config.json` followed by `envrouter apply`.
+`--tool` defaults to `claude`; pass `--tool copilot` for Copilot CLI. `--shell` defaults to your
+login shell. Add `--json` to any command for machine-readable output.
+
+### 📝 Without the window
+
+On a server or in a WSL distro, write `~/.envrouter/config.json` yourself and run
+`envrouter apply`. A profile names its trigger folders, a config folder per agent and the
+library servers it loads; a value kept in the secret store is written `{ "secret": "<ID>" }`,
+with an ID of uppercase hex:
+
+```json
+{
+  "version": 3,
+  "profiles": [
+    {
+      "id": "work",
+      "name": "Work",
+      "triggerPaths": ["~/dev/work"],
+      "tools": {
+        "claude": { "envVar": "CLAUDE_CONFIG_DIR", "path": "~/.claude-work" },
+        "copilot": { "envVar": "COPILOT_HOME", "path": "~/.copilot-work" }
+      },
+      "mcpServers": { "github": { "disabledTools": [] } }
+    }
+  ],
+  "mcpServers": {
+    "github": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": { "secret": "A1" } }
+    }
+  }
+}
+```
+
+```sh
+envrouter apply                 # validates it, fills in what each agent needs, renders the MCP files
+envrouter secret set A1         # paste the token, then Return (or: … secret set A1 < token.txt)
+envrouter explain ~/dev/work    # Work: CLAUDE_CONFIG_DIR=~/.claude-work, with MCP servers github
+```
+
+A hand-written config doesn't need the `agents` section: `apply` adds each agent's MCP and
+editor details to it, and `install` and `editor` use them without saving. The CLI only fills in
+agents the config doesn't name yet, and where the app is installed it leaves the app's own shim
+and helper in place.
 
 ## 🪟 Using EnvRouter in WSL
 
@@ -219,11 +320,12 @@ A WSL 2 distro is a Linux machine: install EnvRouter inside it, not on the Windo
 
 1. **Install inside the distro:** the CLI (`brew install pixel-perfect-software/tap/envrouter-cli`,
    or the release archive), then `envrouter install` and `envrouter shell on bash` (or your
-   shell). The `.deb` works too; its window opens on your Windows desktop through WSLg.
+   shell), and set up profiles [without the window](#-without-the-window). The `.deb` works too;
+   its window opens on your Windows desktop through WSLg.
 2. **Secrets go to the Windows Credential Manager.** A distro usually has no keyring of its own,
    so EnvRouter's Windows helper (`~/.envrouter/bin/envrouter-keychain.exe`, installed with the
    rest) keeps them on the Windows side, per distro. It needs WSL's Windows interop, which is on
-   by default.
+   by default. Store one with `envrouter secret set <ID>`, or in the window.
 3. **VS Code on Windows, connected to the distro,** runs the Claude Code extension inside WSL.
    Route it with `envrouter editor on remote-code` (or **Editors…** › **VS Code Server**), which
    sets the wrapper in the distro's server settings.
