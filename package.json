@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.4.0",
   "description": "Per-directory environment routing for developer CLIs",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,7 +13,8 @@
     "check-types": "tsc --noEmit",
     "test": "vitest run",
     "format-and-lint": "biome check .",
-    "format-and-lint:fix": "biome check . --write"
+    "format-and-lint:fix": "biome check . --write",
+    "notices": "node packaging/notices/render.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

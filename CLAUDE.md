@@ -19,6 +19,9 @@ macOS and Linux (x86_64, aarch64) builds, one release with `SHA256SUMS`, then
 `packaging/homebrew/render.sh` fills the cask and formula templates in `packaging/homebrew/` and
 pushes them to the separate `homebrew-tap` repo with the `TAP_TOKEN` secret (a fine-grained
 token, Contents read and write on `homebrew-tap` only), so the tap holds only generated files.
+EnvRouter is GPL-3.0-or-later; every bundle and CLI archive carries `LICENSE` and
+`THIRD-PARTY-NOTICES.txt` (`pnpm notices`, from `packaging/notices/`; CI runs it so a dependency
+with no licence text fails there, not at release). Dependencies stay permissive (`deny.toml`).
 The tag must equal `version` in `tauri.conf.json` and be on `main`.
 
 **How it works: shims, like mise or volta.** `~/.envrouter/shims/<tool>` is a symlink to

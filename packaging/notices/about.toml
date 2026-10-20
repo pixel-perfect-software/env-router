@@ -1,0 +1,22 @@
+# cargo-about, run by render.mjs: the licences of every crate built into a release. The accepted
+# list mirrors `[licenses] allow` in deny.toml; keep the two the same.
+accepted = [
+  "0BSD",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-3-Clause",
+  "CC0-1.0",
+  "ISC",
+  "MIT",
+  "MIT-0",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+]
+# Every target a release builds, so one file covers every download: the macOS app and CLI, the
+# Linux ones, and the Windows secrets helper that ships for WSL.
+targets = ["aarch64-apple-darwin", "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "x86_64-pc-windows-gnu"]
+ignore-dev-dependencies = true
+# The workspace's own crates are EnvRouter, under LICENSE.
+private = { ignore = true }

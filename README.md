@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/pixel-perfect-software/env-router/actions/workflows/ci.yml"><img src="https://github.com/pixel-perfect-software/env-router/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/pixel-perfect-software/env-router/releases/latest"><img src="https://img.shields.io/github/v/release/pixel-perfect-software/env-router?sort=semver&label=release" alt="Latest release" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow.svg" alt="License: MIT" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg" alt="License: GPL-3.0-or-later" /></a>
   <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20WSL%202-4C6EF5" alt="Platforms: macOS, Linux and WSL 2" />
   <a href="https://github.com/pixel-perfect-software/homebrew-tap"><img src="https://img.shields.io/badge/homebrew-pixel--perfect--software%2Ftap-FBB040?logo=homebrew&logoColor=white" alt="Homebrew tap: pixel-perfect-software/tap" /></a>
   <img src="https://img.shields.io/badge/agents-Claude%20Code%20%7C%20Copilot%20CLI-6E56CF" alt="Agents: Claude Code and Copilot CLI" />
@@ -428,4 +428,9 @@ UI safely in a browser, and the project layout.
 
 ## 📝 License
 
-MIT © [Tyler Robertson](https://github.com/TylerNRobertson) @ [Pixel Perfect Software Inc.](https://github.com/pixel-perfect-software). See [LICENSE](LICENSE).
+Copyright © 2026 [Tyler Robertson](https://github.com/TylerNRobertson) and [Pixel Perfect Software Inc.](https://github.com/pixel-perfect-software)
+
+EnvRouter is free software under the [GNU General Public License v3.0 or later](LICENSE). You can
+use, study, change and share it. If you distribute it, changed or not, you must share its
+source under the same licence, so nobody can ship a closed-source copy. Releases up to v0.4.0
+were published under the MIT licence.

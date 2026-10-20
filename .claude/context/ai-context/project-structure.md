@@ -50,8 +50,9 @@ env-router/
 │   │                          # verdict.ts (check wording, tested in verdict.test.ts), paths.ts, useFolderDrop.ts, confirm.ts
 │   └── dev/mockTauri.ts       # dev-only browser mock (?scenario=, ?platform=, ?check= and more; see docs/contributing.md); never bundled; mockTauri.test.ts pins it
 ├── packaging/homebrew/        # cask and CLI formula templates; render.sh fills them from a release's SHA256SUMS
+├── packaging/notices/         # `pnpm notices`: render.mjs and cargo-about's about.toml write THIRD-PARTY-NOTICES.txt for releases
 ├── dev/containers/            # compose.yaml (project envrouter-dev): Linux tests, app build, bundles, Windows helper under Wine
-├── README.md, LICENSE         # users: what it is, install per platform, WSL, getting started, troubleshooting, uninstall; MIT
+├── README.md, LICENSE         # users: what it is, install per platform, WSL, getting started, troubleshooting, uninstall; GPL-3.0-or-later
 ├── docs/contributing.md       # contributors: setup, commands, containers, mock scenarios, rules, releases, PRs
 ├── docs/images/               # README screenshots (browser mock, `mcp` scenario, light and dark)
 ├── .github/workflows/ci.yml   # Linux: lint, types, frontend tests, build, fmt, deny, machete, backend tests, keyring round trip, Windows helper lint; macOS: clippy and cargo test
