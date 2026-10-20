@@ -514,21 +514,24 @@ export default function App() {
           />
           {/* On Servers, the banner only shows when routing needs attention. */}
           {((view === 'profiles' && !welcome) || !['ok', 'loading', 'setup'].includes(health.kind)) && (
-            <HealthLine
-              health={health}
-              summary={summary}
-              quiet={view === 'servers'}
-              onNewProfile={() => setEditing('new')}
-              onEnableShell={enableShell}
-              onCheckFolder={pickAndCheck}
-              onReinstall={() => config && commit(config).catch((err) => setActionError(errorMessage(err)))}
-              onRecheck={(folder, shell, tool) => runCheck(folder, shell, null, tool)}
-              onOpenConfig={() => {
-                setOpenError(null)
-                openInEditor(`${home}/.envrouter/config.json`).catch((err) => setOpenError(errorMessage(err)))
-              }}
-              onDismissError={() => setActionError(null)}
-            />
+            // One live region for every health state, so a change is announced in place instead of a new region appearing.
+            <div role="status" className="shrink-0">
+              <HealthLine
+                health={health}
+                summary={summary}
+                quiet={view === 'servers'}
+                onNewProfile={() => setEditing('new')}
+                onEnableShell={enableShell}
+                onCheckFolder={pickAndCheck}
+                onReinstall={() => config && commit(config).catch((err) => setActionError(errorMessage(err)))}
+                onRecheck={(folder, shell, tool) => runCheck(folder, shell, null, tool)}
+                onOpenConfig={() => {
+                  setOpenError(null)
+                  openInEditor(`${home}/.envrouter/config.json`).catch((err) => setOpenError(errorMessage(err)))
+                }}
+                onDismissError={() => setActionError(null)}
+              />
+            </div>
           )}
           {shellsOpen && setup && <ShellsPopover setup={setup} home={home} onSet={setShell} onClose={closeShells} />}
           {editorsOpen && editors && <EditorsPopover editors={editors} home={home} onSet={setEditor} onClose={closeEditors} />}
@@ -555,7 +558,7 @@ export default function App() {
           {view === 'profiles' && (
             <>
               {welcome && health.kind === 'setup' ? (
-                <Welcome shell={health.shell?.shell ?? 'your shell'} onNewProfile={() => setEditing('new')} />
+                <Welcome shell={health.shell?.shell ?? 'your shell'} primary={!inspecting} onNewProfile={() => setEditing('new')} />
               ) : (
                 // A stable gutter on both sides: the scrollbar coming and going (a check result rising) never reflows the cards.
                 <main className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable_both-edges] [mask-image:linear-gradient(to_bottom,transparent,black_10px,black_calc(100%-18px),transparent)]">

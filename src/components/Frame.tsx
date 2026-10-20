@@ -34,7 +34,8 @@ function routedTools(profile: Profile): [string, string][] {
     .map(([command, t]) => [command, t.path.trim()])
 }
 
-const CARD = 'flex min-h-[176px] flex-col rounded-card bg-card shadow-card transition-[opacity,box-shadow,background-color] duration-150'
+const FRAME = 'flex min-h-[176px] flex-col rounded-card transition-[opacity,box-shadow,background-color] duration-150'
+const CARD = `${FRAME} bg-card shadow-card`
 // Outlines, not shadows: they can't be overridden by the card's own shadow utility.
 const TARGETED = 'bg-tint outline-2 outline-offset-2 outline-accent-ink'
 const SELECTED = 'outline-2 outline-offset-2 outline-accent-ink'
@@ -274,7 +275,7 @@ function NewProfileCard({ first, selected, onNew }: { first: boolean; selected: 
 
 function EverywhereElse({ slip, home, targeted }: { slip: Slip | null; home: string; targeted: boolean }) {
   return (
-    <section aria-label="Everywhere else" className={`${CARD} bg-card-muted shadow-[inset_0_0_0_1px_var(--er-rule)] ${targeted ? TARGETED : ''}`}>
+    <section aria-label="Everywhere else" className={`${FRAME} bg-card-muted shadow-[inset_0_0_0_1px_var(--er-rule)] ${targeted ? TARGETED : ''}`}>
       <header className="flex items-center gap-2 py-2.5 pr-2 pl-3.5">
         <span aria-hidden="true" className="size-2.5 shrink-0 rounded-full shadow-[inset_0_0_0_1.5px_var(--er-ink-3)]" />
         <h2 className="min-h-[26px] flex-1 content-center text-title font-semibold text-ink-2">Everywhere else</h2>

@@ -8,7 +8,8 @@ import { KNOWN_TOOLS } from '../lib/tools'
 import { SetupSteps } from './Chrome'
 import { Button } from './ui'
 
-export function Welcome({ shell, onNewProfile }: { shell: string; onNewProfile: () => void }) {
+/** `primary`: off while the inspector is open over it, so its Save stays the window's one accent button. */
+export function Welcome({ shell, primary, onNewProfile }: { shell: string; primary: boolean; onNewProfile: () => void }) {
   const platform = usePlatform()
   const commands = KNOWN_TOOLS.map((t) => t.command)
   return (
@@ -19,20 +20,20 @@ export function Welcome({ shell, onNewProfile }: { shell: string; onNewProfile: 
         <h2 id="welcome-title" className="mt-4 text-display [@media(max-height:520px)]:mt-2 font-semibold tracking-[-0.01em]">
           The folder decides
         </h2>
-        {/* The one rule, stated plainly: inside a profile's folders its settings apply, and nowhere else. */}
+        {/* The one rule, in one sentence: inside a profile's folders its settings apply, and nowhere else. */}
         <p className="mt-2 text-ink-2">
-          Give each account a profile and the folders it owns. In those folders,{' '}
+          In a profile's folders,{' '}
           {commands.map((command, i) => (
             <span key={command}>
               {i > 0 && (i === commands.length - 1 ? ' and ' : ', ')}
               <code className="font-mono text-small text-ink">{command}</code>
             </span>
           ))}{' '}
-          get that profile's account and MCP servers; everywhere else, their own defaults.
+          use that profile's account and MCP servers; everywhere else, their own defaults.
         </p>
         <SetupSteps step={1} shell={shell} className="mt-6 justify-center" />
         <div className="mt-5 flex items-center gap-2.5">
-          <Button kind="primary" size="large" onClick={onNewProfile} title={`New Profile (${shortcutLabel('n', platform)})`}>
+          <Button kind={primary ? 'primary' : 'push'} size="large" onClick={onNewProfile} title={`New Profile (${shortcutLabel('n', platform)})`}>
             New Profile
           </Button>
           <kbd className="font-sans text-caption text-ink-2">{shortcutLabel('n', platform)}</kbd>

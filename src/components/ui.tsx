@@ -177,7 +177,9 @@ export function Segmented<T extends string>({
     // Measured again whenever the track resizes, since the system font can arrive after the first frame.
     const place = () => {
       const chosen = el.querySelector<HTMLElement>('[aria-pressed="true"]')
-      if (chosen) setThumb({ left: chosen.offsetLeft, width: chosen.offsetWidth })
+      if (!chosen) return
+      const [left, width] = [chosen.offsetLeft, chosen.offsetWidth]
+      setThumb((t) => (t && t.left === left && t.width === width ? t : { left, width }))
     }
     place()
     const observer = new ResizeObserver(place)
@@ -334,7 +336,7 @@ export function StatusTile({ tone, size = 32, badge = false }: { tone: Tone; siz
         viewBox="0 0 16 16"
         fill="none"
         stroke="currentColor"
-        className={badge ? 'text-white forced-colors:text-[CanvasText]' : undefined}
+        className={badge ? 'text-white dark:text-window forced-colors:text-[CanvasText]' : undefined}
         strokeWidth={badge ? 2.4 : 1.8}
         strokeLinecap="round"
         strokeLinejoin="round"

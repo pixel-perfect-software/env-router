@@ -215,7 +215,7 @@ export function ProfileInspector({
           <fieldset>
             <legend className="mb-1.5 text-small font-medium text-ink-2">Trigger folders</legend>
             <div className="rounded-card bg-card shadow-card">
-              {folders.length === 0 && <p className="px-3 py-2.5 text-small text-ink-2">Each folder covers everything inside it.</p>}
+              {folders.length === 0 && <p className="px-3 py-2.5 text-small text-ink-2 italic">Each folder covers everything inside it.</p>}
               <ul>
                 {folders.map((row) => {
                   const { parent, leaf } = splitLeaf(row.path)
