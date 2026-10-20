@@ -10,6 +10,8 @@ pnpm install --frozen-lockfile >/dev/null
 # AppImage tooling is itself an AppImage, and containers have no FUSE.
 export APPIMAGE_EXTRACT_AND_RUN=1
 pnpm tauri build --config "{\"bundle\":{\"linux\":{\"deb\":{\"files\":{\"/usr/bin/envrouter-keychain.exe\":\"$exe\"}}}}}"
+# The output volume outlives each run; only this build's bundles go in it, so the checks below see one of each.
+rm -f /out/*.deb /out/*.AppImage
 cp /target/release/bundle/deb/*.deb /target/release/bundle/appimage/*.AppImage /out/ 2>/dev/null || true
 echo "== bundles"; ls -la /out
 echo "== the .deb's binaries"; dpkg-deb -c /out/*.deb | grep -E "usr/bin/" 
