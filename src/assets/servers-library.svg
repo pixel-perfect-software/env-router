@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="167 225 690 665" width="690" height="665">
+  <!-- An empty server library: the mark's folder handing its tracks to three servers (a plug, a command, a URL). Drawn on the
+       mark's 1024 grid and palette, without its plate, so it sits on a card in either theme. Glyphs are Lucide's (ISC). -->
+  <defs>
+    <linearGradient id="front" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#72b8fb"/><stop offset="1" stop-color="#3d8ff0"/>
+    </linearGradient>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a3754"/><stop offset="1" stop-color="#141c2e"/>
+    </linearGradient>
+    <radialGradient id="tile-glow" cx="0.5" cy="0" r="0.8">
+      <stop offset="0" stop-color="#9fb6ff" stop-opacity="0.12"/><stop offset="1" stop-color="#9fb6ff" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Navy-tinted and lighter than the icon's black shadows, which are drawn for its dark plate. -->
+    <filter id="drop" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#101830" flood-opacity="0.24"/>
+    </filter>
+    <filter id="contact" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#101830" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <!-- The tracks: the stem leaves the folder, forks at the pivot, and runs to each server. -->
+  <g fill="none" stroke-linecap="round" filter="url(#contact)">
+    <path d="M512,470 V598 C512,669 296,663 272,700" stroke="#4aa3e8" stroke-width="34"/>
+    <path d="M512,470 V700" stroke="#4aa3e8" stroke-width="34"/>
+    <path d="M512,470 V598 C512,669 728,663 752,700" stroke="#4aa3e8" stroke-width="34"/>
+  </g>
+  <g fill="none" stroke-linecap="round" stroke="#cfe8ff" stroke-opacity="0.55" stroke-width="8.2">
+    <path d="M512,598 C512,669 296,663 272,700"/>
+    <path d="M512,470 V700"/>
+    <path d="M512,598 C512,669 728,663 752,700"/>
+  </g>
+
+  <!-- The servers, as app-icon tiles. -->
+  <g filter="url(#contact)">
+    <rect x="187" y="690" width="170" height="170" rx="44" fill="url(#tile)"/>
+    <rect x="427" y="690" width="170" height="170" rx="44" fill="url(#tile)"/>
+    <rect x="667" y="690" width="170" height="170" rx="44" fill="url(#tile)"/>
+  </g>
+  <g fill="url(#tile-glow)" stroke="#9fb6ff" stroke-opacity="0.3" stroke-width="3">
+    <rect x="188.5" y="691.5" width="167" height="167" rx="42.5"/>
+    <rect x="428.5" y="691.5" width="167" height="167" rx="42.5"/>
+    <rect x="668.5" y="691.5" width="167" height="167" rx="42.5"/>
+  </g>
+  <g fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <!-- plug -->
+    <g transform="translate(221.6 724.6) scale(4.2)">
+      <path d="M12 22v-5"/><path d="M15 8V2"/><path d="M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z"/><path d="M9 8V2"/>
+    </g>
+    <!-- terminal -->
+    <g transform="translate(461.6 724.6) scale(4.2)">
+      <path d="M12 19h8"/><path d="m4 17 6-6-6-6"/>
+    </g>
+    <!-- globe -->
+    <g transform="translate(701.6 724.6) scale(4.2)">
+      <circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>
+    </g>
+  </g>
+
+  <!-- The mark's folder, a fifth smaller, standing on its own bottom edge. -->
+  <g filter="url(#drop)" transform="translate(512 486) scale(0.8) translate(-512 -486)">
+    <path d="M312,242.0 V199.2 Q312,186 325.2,186 H451.8 C465.8,186 468.6,220.0 484.0,220.0 H690.0 Q712,220.0 712,242.0 V464.0 Q712,486 690.0,486 H334.0 Q312,486 312,464.0 Z" fill="#2b7be0"/>
+    <rect x="312" y="253.0" width="400" height="14" rx="7" fill="#000" opacity="0.10"/>
+    <rect x="312" y="259.0" width="400" height="227.0" rx="22.0" fill="url(#front)"/>
+    <rect x="325.2" y="262.0" width="373.6" height="5" rx="2.5" fill="#fff" opacity="0.5"/>
+  </g>
+  <!-- The pivot, ringed in the lit route so it holds on a white card as well as a dark one. -->
+  <circle cx="512" cy="598" r="22" fill="#e9eef8" stroke="#4aa3e8" stroke-width="6" filter="url(#drop)"/>
+</svg>

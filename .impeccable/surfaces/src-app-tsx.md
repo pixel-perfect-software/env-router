@@ -19,6 +19,9 @@ The Sorting Frame (roll, seed 9c112fdb), code-led. On 2026-10-05 the user overro
 ## MCP servers (2026-10-19)
 Two views under one titlebar switch: Profiles (the Sorting Frame, below) and Servers (a list beside the server editor, with Catalog and Import in the same detail area). Assignment works from both sides: a profile's MCP checklist and tool filter, and a server's Used by toggles. Card footers link each server name to its editor; the check result lists the servers a run gets.
 
+## Native-current refinement (2026-10-20)
+The user asked for a design and UI/UX pass ("native support is always our goal but a touch of refinement", CleanMyMac and other modern desktop apps as inspiration) and chose native-current polish over expressive moments. Measured against macOS 27.2: 34pt capsule toolbar items in the 52pt band, the shell status merged into the Shells control, Editors… icon-only, a sliding-thumb view switch, popovers that hang from their button, 12px cards. Working routing is a quiet line on the ground with the map's counts; only states that need attention get a card. First run greets with the mark ("The folder decides") instead of an empty grid, and an empty server library starts from the mark too. Rejected in review: a floating inset inspector (macOS 27 runs inspectors edge to edge) and raised keycaps (shortcuts stay plain text). Both heroes then got illustrations drawn from the mark's own SVG (`src/assets/welcome.svg`, `src/assets/servers-library.svg`), at the user's request, rather than generated art.
+
 ## Unresolved
 App icon and tray glyph are decided (see the src-tauri-icons brief); the titlebar shows the icon's small cut before the app name. Agents offered: Claude Code and Copilot CLI (src/lib/agents.json); Codex and Gemini CLI are future add-ons. Saving creates missing agent folders inside home. opencode and Aider are excluded because their variables don't separate logins.
 

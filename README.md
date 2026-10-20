@@ -173,8 +173,9 @@ and then `target/release/envrouter install`. The first build takes a few minutes
    **Add Folder…**, and set a config folder for each agent you want to route, such as
    `~/.claude-work`. EnvRouter creates missing config folders inside your home folder when you
    save.
-2. **Turn on your shell.** Open **Shells…** and switch on the shells you use. This adds a marked
-   block to the end of each startup file that puts EnvRouter's shims first on `PATH`.
+2. **Turn on your shell.** Click the shell status in the toolbar (the `zsh` and `bash` dots) and
+   switch on the shells you use. This adds a marked block to the end of each startup file that
+   puts EnvRouter's shims first on `PATH`.
 3. **Open a new terminal window,** `cd` into a trigger folder and run `claude` or `copilot`.
    A new config folder starts logged out, so sign in once there as usual.
 4. **Check it.** Drop a folder on the window, or press ⌘O (Ctrl+O), to see which profile a new
@@ -182,11 +183,11 @@ and then `target/release/envrouter install`. The first build takes a few minutes
    does the same, and `ENVROUTER_EXPLAIN=1 claude` prints the route as JSON instead of running
    Claude.
 
-To route an editor extension, open **Editors…** and switch on the editor. It points the
-extension's process-wrapper setting (`claudeCode.claudeProcessWrapper` for Claude Code) at
-EnvRouter; new sessions in that editor then use the folder's profile. EnvRouter never replaces a
-wrapper you set yourself. **Editors…** appears once EnvRouter finds an editor with an agent
-extension it can route.
+To route an editor extension, open **Editors…** (the `</>` button in the toolbar) and switch on
+the editor. It points the extension's process-wrapper setting (`claudeCode.claudeProcessWrapper`
+for Claude Code) at EnvRouter; new sessions in that editor then use the folder's profile.
+EnvRouter never replaces a wrapper you set yourself. The button appears once EnvRouter finds an
+editor with an agent extension it can route.
 
 To start a profile from one you have, right-click its card and choose **Duplicate Profile…**
 (or **Duplicate** in its editor). The copy keeps the agents, servers and turned-off tools, but no
@@ -398,8 +399,8 @@ starts, it updates the shim and helpers in `~/.envrouter/bin` itself.
 
 ## 🗑️ Uninstall
 
-1. Turn every shell off, in **Shells…** or with `envrouter shell off <shell>`. This removes the
-   marked block from each startup file. You can also delete the lines between
+1. Turn every shell off, from the toolbar's shell status or with `envrouter shell off <shell>`.
+   This removes the marked block from each startup file. You can also delete the lines between
    `# >>> envrouter >>>` and `# <<< envrouter <<<` by hand.
 2. If you turned on an editor, turn it off (**Editors…**, or `envrouter editor off <editor>`).
    This removes `claudeCode.claudeProcessWrapper` from that editor's settings.

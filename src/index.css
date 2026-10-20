@@ -33,8 +33,11 @@
   --er-ok: #24a148;
   --er-warn: #c47f00;
   --er-problem: #c9332a;
-  --er-shadow-card: 0 1px 2px rgb(16 24 48 / 0.06), 0 0 0 0.5px var(--er-border);
+  --er-shadow-card: 0 0 0 0.5px var(--er-border), 0 1px 2px rgb(16 24 48 / 0.05), 0 3px 10px -4px rgb(16 24 48 / 0.08);
   --er-shadow-raised: 0 10px 30px -6px rgb(16 24 48 / 0.2), 0 2px 6px rgb(16 24 48 / 0.06), 0 0 0 0.5px var(--er-border);
+  /* Push buttons and the tiles that look like them: a hairline and a contact shadow; dark adds a lit top edge, as macOS controls have. */
+  --er-shadow-push: 0 0 0 0.5px rgb(0 0 0 / 0.14), 0 1px 2px rgb(0 0 0 / 0.08);
+  --er-shadow-primary: 0 1px 2px rgb(0 0 0 / 0.18), inset 0 0.5px 0 rgb(255 255 255 / 0.18);
   --er-tint: color-mix(in srgb, var(--er-accent) 9%, var(--er-card));
   /* How strongly a profile's colour washes its card header. */
   --er-wash: 7%;
@@ -56,15 +59,17 @@
     --er-track: rgb(0 0 0 / 0.32);
     --er-well: #31353e;
     --er-ink: #eef0f4;
-    --er-ink-2: #a0a5b0;
+    --er-ink-2: #a9aeb9;
     --er-ink-3: #6c717c;
     --er-accent: #2a6fd9;
     --er-accent-ink: #5aa2ff;
     --er-ok: #3ec46d;
     --er-warn: #e5a83a;
     --er-problem: #ff6b61;
-    --er-shadow-card: 0 1px 2px rgb(0 0 0 / 0.35), 0 0 0 0.5px var(--er-border);
+    --er-shadow-card: 0 0 0 0.5px var(--er-border), 0 1px 2px rgb(0 0 0 / 0.35), 0 3px 10px -4px rgb(0 0 0 / 0.3);
     --er-shadow-raised: 0 12px 32px -6px rgb(0 0 0 / 0.6), 0 0 0 0.5px var(--er-border);
+    --er-shadow-push: 0 0 0 0.5px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.3), inset 0 0.5px 0 rgb(255 255 255 / 0.12);
+    --er-shadow-primary: 0 0 0 0.5px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.3), inset 0 0.5px 0 rgb(255 255 255 / 0.22);
     --er-tint: color-mix(in srgb, var(--er-accent) 18%, var(--er-card));
     --er-wash: 12%;
   }
@@ -139,6 +144,11 @@
   --text-body--line-height: 18px;
   --text-title: 14px;
   --text-title--line-height: 19px;
+  /* Hero moments only: a welcome or an empty view's heading, at macOS's Title 2 and Title 1. */
+  --text-heading: 17px;
+  --text-heading--line-height: 22px;
+  --text-display: 22px;
+  --text-display--line-height: 28px;
 
   --color-window: var(--er-window);
   --color-card: var(--er-card);
@@ -161,11 +171,13 @@
   --color-problem: var(--er-problem);
   --color-tint: var(--er-tint);
 
-  --radius-card: 10px;
+  --radius-card: 12px;
   --radius-control: 6px;
 
   --shadow-card: var(--er-shadow-card);
   --shadow-raised: var(--er-shadow-raised);
+  --shadow-push: var(--er-shadow-push);
+  --shadow-primary: var(--er-shadow-primary);
 
   --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
 }

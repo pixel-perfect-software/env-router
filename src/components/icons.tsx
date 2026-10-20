@@ -5,6 +5,7 @@
 import {
   Activity,
   Bot,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ClipboardPaste,
@@ -43,13 +44,14 @@ export const PlusIcon = sized(Plus, 16)
 export const CloseIcon = sized(X, 16)
 export const BackIcon = sized(ChevronLeft, 16)
 export const ChevronIcon = sized(ChevronRight, 12)
+/** A toolbar control that opens a popover beneath it. */
+export const DisclosureIcon = sized(ChevronDown, 12)
 /** A folder dropping onto the window: the idle docket. */
 export const DropIcon = sized(FolderDown, 16)
 /** The inset carve-out marker: a nested trigger handed to another profile. */
 export const BranchIcon = sized(CornerDownRight, 12)
 export const FolderIcon = sized(Folder, 14)
 export const FolderCheckIcon = sized(FolderSearch, 16)
-export const ShellIcon = sized(SquareTerminal, 16)
 export const EditorIcon = sized(CodeXml, 16)
 /** MCP as a whole: the library, a card's server line, a profile's server list. */
 export const PlugIcon = sized(Plug, 14)

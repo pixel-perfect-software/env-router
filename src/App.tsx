@@ -10,6 +10,7 @@ import { type DropTarget, Frame, type Slip } from './components/Frame'
 import { ProfileInspector } from './components/ProfileInspector'
 import { type Detail, ServersView } from './components/Servers'
 import { profileColors } from './components/ui'
+import { Welcome } from './components/Welcome'
 import {
   checkFolder,
   errorMessage,
@@ -474,6 +475,15 @@ export default function App() {
   })()
   const health = healthOf(config, setup, loadError, setupError, actionError, home, checkedOnce, blocked, openError)
   const editingId = editing === 'new' ? newId : editing
+  // Before the first profile there's no map to show: the window greets instead.
+  const welcome = view === 'profiles' && health.kind === 'setup' && health.step === 1
+  const summary = config
+    ? {
+        profiles: config.profiles.length,
+        folders: config.profiles.reduce((n, p) => n + p.triggerPaths.length, 0),
+        servers: Object.keys(config.mcpServers).length,
+      }
+    : undefined
 
   return (
     <PlatformContext.Provider value={platform}>
@@ -503,9 +513,10 @@ export default function App() {
             onCheckFolder={pickAndCheck}
           />
           {/* On Servers, the banner only shows when routing needs attention. */}
-          {(view === 'profiles' || !['ok', 'loading', 'setup'].includes(health.kind)) && (
+          {((view === 'profiles' && !welcome) || !['ok', 'loading', 'setup'].includes(health.kind)) && (
             <HealthLine
               health={health}
+              summary={summary}
               quiet={view === 'servers'}
               onNewProfile={() => setEditing('new')}
               onEnableShell={enableShell}
@@ -543,21 +554,25 @@ export default function App() {
           )}
           {view === 'profiles' && (
             <>
-              {/* A stable gutter on both sides: the scrollbar coming and going (a check result rising) never reflows the cards. */}
-              <main className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable_both-edges] [mask-image:linear-gradient(to_bottom,transparent,black_10px,black_calc(100%-18px),transparent)]">
-                {config && (
-                  <Frame
-                    profiles={config.profiles}
-                    home={home}
-                    editing={editing}
-                    slip={slip}
-                    dropTarget={dropTarget}
-                    onEdit={setEditing}
-                    onContextMenu={showSlotMenu}
-                    onOpenServer={openServer}
-                  />
-                )}
-              </main>
+              {welcome && health.kind === 'setup' ? (
+                <Welcome shell={health.shell?.shell ?? 'your shell'} onNewProfile={() => setEditing('new')} />
+              ) : (
+                // A stable gutter on both sides: the scrollbar coming and going (a check result rising) never reflows the cards.
+                <main className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable_both-edges] [mask-image:linear-gradient(to_bottom,transparent,black_10px,black_calc(100%-18px),transparent)]">
+                  {config && (
+                    <Frame
+                      profiles={config.profiles}
+                      home={home}
+                      editing={editing}
+                      slip={slip}
+                      dropTarget={dropTarget}
+                      onEdit={setEditing}
+                      onContextMenu={showSlotMenu}
+                      onOpenServer={openServer}
+                    />
+                  )}
+                </main>
+              )}
               {/* With nothing to check against, no drop zone invites one. */}
               {canCheck && (
                 <Docket

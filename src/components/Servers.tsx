@@ -2,16 +2,19 @@
 // Catalog and Import open in the same place as the editor, so nothing drills more than one level
 // deep. Which profiles load a server is set here (Used by) or in a profile's own editor.
 
-import { useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
+// The mark's folder handing its tracks to three servers: an empty library's hero.
+import libraryArt from '../assets/servers-library.svg'
 import { getMcpTools } from '../lib/api'
 import { confirmDiscardServer } from '../lib/confirm'
 import { duplicateDraft, type ProfileChip, profilesUsing, type ServerDraft, TRANSPORTS } from '../lib/mcp'
+import { KNOWN_TOOLS } from '../lib/tools'
 import type { ConfigState, McpServer, ToolInfo } from '../lib/types'
 import { CatalogIcon, ImportIcon, PasteIcon, TransportIcon } from './icons'
 import { ServerEditor } from './ServerEditor'
 import { ServerMark } from './ServerMark'
 import { CatalogView, ImportView, type PastedServers, PasteView } from './ServerSources'
-import { Button, IconButton, PlusIcon, ProfileDot } from './ui'
+import { ChevronIcon, IconButton, PlugIcon, PlusIcon, ProfileDot } from './ui'
 
 /** What the detail side shows. `name` null: a new server, blank or from `template`. */
 export type Detail =
@@ -240,30 +243,58 @@ function toolsOffIn(config: ConfigState, server: string, profiles: ProfileChip[]
   return off
 }
 
-/** The detail side with nothing chosen: the three ways a server gets here. */
+/** The detail side with nothing chosen: the ways a server gets here, each saying what it starts from. */
 function NoServer({ empty, onPick }: { empty: boolean; onPick: (detail: Detail) => void }) {
+  // The agents whose own MCP files Import reads.
+  const importers = KNOWN_TOOLS.filter((t) => t.mcpFiles)
+    .map((t) => t.label)
+    .join(' and ')
+  const ways: [Detail, string, string, ReactNode][] = [
+    [{ kind: 'catalog' }, 'Add from Catalog…', "Well-known servers, from each vendor's README", <CatalogIcon key="c" />],
+    [{ kind: 'import' }, 'Import from Your Agents…', `Servers ${importers} already define`, <ImportIcon key="i" />],
+    [{ kind: 'paste' }, 'Paste JSON…', "A config from a README or an agent's file", <PasteIcon key="p" />],
+    [{ kind: 'edit', name: null }, 'Add by Hand…', 'A command to run, or a URL to connect to', <PlusIcon key="h" />],
+  ]
   return (
-    <div className="grid flex-1 place-items-center p-6">
-      <div className="flex max-w-[300px] flex-col items-center gap-3 text-center">
-        <p className="text-small text-ink-2">{empty ? 'Add the MCP servers your agents should load.' : 'Choose a server, or add another.'}</p>
-        <div className="flex flex-col gap-2">
-          <Button onClick={() => onPick({ kind: 'catalog' })}>
-            <CatalogIcon />
-            Add from Catalog…
-          </Button>
-          <Button onClick={() => onPick({ kind: 'import' })}>
-            <ImportIcon />
-            Import from Your Agents…
-          </Button>
-          <Button onClick={() => onPick({ kind: 'paste' })}>
-            <PasteIcon />
-            Paste JSON…
-          </Button>
-          <Button onClick={() => onPick({ kind: 'edit', name: null })}>
-            <PlusIcon />
-            Add by Hand…
-          </Button>
-        </div>
+    <div className="grid flex-1 place-items-center overflow-y-auto p-6">
+      <div className="flex w-full max-w-[420px] animate-[er-fade_160ms_var(--ease-settle)] flex-col items-center text-center">
+        {/* An empty library gets its illustration, as first run does; with servers in the list, the plug stands for MCP. */}
+        {empty ? (
+          <img src={libraryArt} alt="" width={112} height={108} draggable={false} className="mb-1 h-auto [@media(max-height:520px)]:w-[80px]" />
+        ) : (
+          <span aria-hidden="true" className="grid size-12 place-items-center rounded-[12px] bg-track text-ink-2">
+            <PlugIcon size={24} />
+          </span>
+        )}
+        <h2 className="mt-3 text-heading font-semibold">{empty ? 'Add your first server' : 'Add a server'}</h2>
+        <p className="mt-1 text-small text-ink-2">
+          {empty ? 'Profiles hand MCP servers to the agents in their folders.' : 'Or pick one in the list to edit it.'}
+        </p>
+        <ul className="mt-5 w-full overflow-hidden rounded-[10px] bg-well text-left">
+          {ways.map(([detail, label, description, icon]) => (
+            <li key={label} className="[&+&]:hair-t">
+              <button
+                type="button"
+                onClick={() => onPick(detail)}
+                className="group flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)] focus-visible:rounded-[10px] focus-visible:outline-offset-[-2px]"
+              >
+                <span
+                  aria-hidden="true"
+                  className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-card text-ink-2 shadow-push group-hover:text-ink"
+                >
+                  {icon}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium">{label}</span>
+                  <span className="block text-small text-ink-2">{description}</span>
+                </span>
+                <span className="text-ink-2">
+                  <ChevronIcon />
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   )
