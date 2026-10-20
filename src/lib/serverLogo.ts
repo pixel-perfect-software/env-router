@@ -140,6 +140,9 @@ const words = (text: string) =>
     .split(/[^a-z0-9]+/)
     .filter(Boolean)
 
+const LOOKS_LIKE_PATH = /^(~|\.{0,2}\/|[A-Za-z]:[\\/])/
+const DIST_TAG = /(?<=[^\s@])@[\w.-]+$/
+
 const brandIn = (text: string) => BRANDS.find(([names]) => words(text).some((w) => names.includes(w)))?.[1]
 
 /** The server's logo, or null for none: a monogram stands in. */
@@ -155,7 +158,10 @@ export function serverLogo(name: string, server: McpServer): SimpleIcon | null {
   }
   const parts = [server.command, ...server.args.filter((a): a is string => typeof a === 'string')]
   for (const part of parts) {
-    const brand = brandIn(part)
+    // A folder argument names the user's project (`~/dev/my-next-app`), not the server's vendor.
+    if (part !== server.command && LOOKS_LIKE_PATH.test(part)) continue
+    // A dist-tag (`foo-mcp@next`) isn't a brand either; a scope (`@next/mcp`) still is.
+    const brand = brandIn(part.replace(DIST_TAG, ''))
     if (brand) return brand
   }
   // The protocol's own reference servers (filesystem, fetch, memory…) wear its mark.

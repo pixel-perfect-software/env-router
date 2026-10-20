@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { draftOf, plainCredentials } from './mcp'
+import { draftOf, plainCredentials, SECRET_NAME } from './mcp'
 import { accessOf, catalog, filterCatalog, isLocal } from './mcpCatalog'
 import { serverLogo } from './serverLogo'
 
@@ -21,6 +21,8 @@ describe('the catalog', () => {
       expect(plainCredentials(draftOf(entry.name, server)), entry.name).toEqual([])
       // A secret entry has its own label; a sign-in entry doesn't also take one.
       expect(Boolean(entry.secrets && entry.signIn)).toBe(false)
+      // A pasted or imported copy of the same server must lock the same value, so its name has to read as a credential.
+      for (const key of Object.keys(entry.secrets ?? {})) expect(SECRET_NAME.test(key), `${entry.name}: ${key}`).toBe(true)
     }
   })
 

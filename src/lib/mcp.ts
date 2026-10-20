@@ -36,8 +36,11 @@ export type DraftValue = McpValue | { secret: string; value: string }
 
 export const isPending = (value: DraftValue): value is { secret: string; value: string } => typeof value !== 'string' && 'value' in value
 
-/** Names that usually hold a credential; a new value under one starts out headed for the Keychain. */
-export const SECRET_NAME = /KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|CREDENTIAL|COOKIE/i
+/**
+ * Names that usually hold a credential; a new value under one starts out headed for the Keychain.
+ * `_PWD` (Redis's `REDIS_PWD`) counts, but not a bare `PWD`, which is the shell's working folder.
+ */
+export const SECRET_NAME = /KEY|TOKEN|SECRET|PASSWORD|PASSWD|_PWD(?![A-Z])|AUTH|CREDENTIAL|COOKIE|CONNECTION_STRING/i
 
 /** A fresh secret id: uppercase hex, as `config::is_secret_id` requires. */
 export const newSecretId = () =>
@@ -132,7 +135,7 @@ const TOKEN_SHAPE =
   /^(sk[-_]|pk_live_|rk_live_|ghp_|gho_|ghs_|github_pat_|glpat-|xox[abpr]-|AKIA[0-9A-Z]{12}|AIza|pplx-|fc-|ntn_|hf_)|\b(Bearer|Basic) \S/
 
 /** A word in an option's name that says its value is a credential: `--api-key`, `--auth-token`. */
-const CREDENTIAL_WORD = /key|token|secret|passw(or)?d|auth|credential/i
+const CREDENTIAL_WORD = /key|token|secret|passw(or)?d|[a-z0-9][-_]pwd\b|auth|credential/i
 
 /** Whether a value itself looks like a credential, whatever it's called. */
 export const looksLikeCredential = (value: string) => URL_WITH_PASSWORD.test(value.trim()) || TOKEN_SHAPE.test(value.trim())

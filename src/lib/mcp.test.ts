@@ -123,6 +123,22 @@ describe('imports and the catalog', () => {
     expect('secrets' in built && Object.values(built.secrets)).toEqual(['ghp_x'])
   })
 
+  it('reads a vendor-specific password name as a credential, but not the shell working folder', () => {
+    const server: McpServer = {
+      transport: 'stdio',
+      command: 'uvx',
+      args: [],
+      env: { REDIS_PWD: 'hunter2', MDB_MCP_CONNECTION_STRING: 'mongodb+srv://cluster', PWD: '/srv', OLDPWD: '/tmp' },
+    }
+    const locked = withSecretsLocked(draftOf('redis', server))
+    expect(Object.fromEntries(locked.env.map((row) => [row.key, isPending(row.value)]))).toEqual({
+      REDIS_PWD: true,
+      MDB_MCP_CONNECTION_STRING: true,
+      PWD: false,
+      OLDPWD: false,
+    })
+  })
+
   it('leaves catalog secrets empty with a hint, so saving asks for them', () => {
     const draft = draftFromCatalog(
       'github',
