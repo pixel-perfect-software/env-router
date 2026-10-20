@@ -2,7 +2,7 @@
 // the health banner beneath it, and the Shells and Editors popovers.
 
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-// The small cut: it's drawn for 64 px and under, and the titlebar shows it at 18.
+// The small cut: it's drawn for 64 px and under, and the titlebar shows it at 22.
 import appIcon from '../../src-tauri/icons/app-icon-small.svg'
 import { errorMessage } from '../lib/api'
 import { tildify } from '../lib/paths'
@@ -47,12 +47,16 @@ export function TitleBand({
   const platform = usePlatform()
   const shells = setup?.shells.filter((s) => s.available) ?? []
   return (
-    <div data-tauri-drag-region data-titlebar className={`flex h-[52px] shrink-0 items-center gap-3 pr-4 ${platform.isMac ? 'pl-[86px]' : 'pl-4'}`}>
+    <div
+      data-tauri-drag-region
+      data-titlebar
+      className={`flex h-[52px] shrink-0 items-center gap-3 pr-4 max-[760px]:gap-2 ${platform.isMac ? 'pl-[86px]' : 'pl-4'}`}
+    >
       {/* On macOS the band is the title bar, beside the traffic lights. Elsewhere the system's own title bar already names the app, so
           the band is just the toolbar; the name stays for screen readers. */}
       {platform.isMac ? (
         <div data-tauri-drag-region className="flex items-center gap-2">
-          <img data-tauri-drag-region src={appIcon} alt="" width={18} height={18} draggable={false} className="shrink-0" />
+          <img data-tauri-drag-region src={appIcon} alt="" width={22} height={22} draggable={false} className="shrink-0" />
           {/* A narrow window keeps the icon; the name stays for screen readers. */}
           <h1 data-tauri-drag-region className="text-body font-bold max-[900px]:sr-only">
             EnvRouter
@@ -165,6 +169,28 @@ export type Health =
   /** The last check in this shell found something stopping the shim from running. */
   | { kind: 'blocked'; shell: Shell; tool: string; headline: string; folder: string }
 
+/**
+ * A backend message with its values set in mono: paths under home, tildified, and `quoted` tokens (serde_json quotes
+ * them so), which keep quotes because a lone `,` in mono is easy to misread.
+ */
+function ValueText({ text, home }: { text: string; home: string }) {
+  const homePath = home ? `|${home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:/[^\\s:]*)?` : ''
+  return text.split(new RegExp(`(\`[^\`]+\`${homePath})`)).map((part, i) => {
+    if (i % 2 === 0) return part
+    return part.startsWith('`') ? (
+      // biome-ignore lint/suspicious/noArrayIndexKey: the parts of one fixed string
+      <span key={i}>
+        “<code className="font-mono">{part.slice(1, -1)}</code>”
+      </span>
+    ) : (
+      // biome-ignore lint/suspicious/noArrayIndexKey: the parts of one fixed string
+      <code key={i} className="font-mono">
+        {tildify(part, home)}
+      </code>
+    )
+  })
+}
+
 function Banner({ tone, title, detail, action }: { tone: Tone; title: string; detail?: ReactNode; action?: ReactNode }) {
   return (
     <div className="mx-4 flex shrink-0 items-center gap-3 rounded-card bg-card p-3 shadow-card">
@@ -181,6 +207,7 @@ function Banner({ tone, title, detail, action }: { tone: Tone; title: string; de
 export function HealthLine({
   health,
   summary,
+  home,
   quiet = false,
   onNewProfile,
   onEnableShell,
@@ -191,6 +218,8 @@ export function HealthLine({
   onDismissError,
 }: {
   health: Health
+  /** Tildifies paths in the backend's messages. */
+  home: string
   /** Shown beside working routing's line. */
   summary?: Summary
   /** On Servers the editor's Save is the accent, so the banner's action stands down to a push button. */
@@ -207,7 +236,7 @@ export function HealthLine({
   if (health.kind === 'loading') {
     // Holds the place of the line working routing gets, the likeliest answer.
     return (
-      <div className="mx-4 flex h-7 shrink-0 items-center">
+      <div className="mx-4 flex h-5 shrink-0 items-center">
         <div className="h-3 w-48 rounded-full bg-track motion-safe:animate-pulse" />
       </div>
     )
@@ -243,7 +272,7 @@ export function HealthLine({
         <Banner
           tone="problem"
           title="Something went wrong"
-          detail={health.message}
+          detail={<ValueText text={health.message} home={home} />}
           action={
             health.dismissible ? (
               <IconButton label="Dismiss" onClick={onDismissError}>
@@ -261,11 +290,11 @@ export function HealthLine({
           detail={
             health.openError ? (
               <>
-                {health.message}
+                <ValueText text={health.message} home={home} />
                 <span className="block text-problem">{health.openError}</span>
               </>
             ) : (
-              health.message
+              <ValueText text={health.message} home={home} />
             )
           }
           action={
@@ -328,7 +357,7 @@ export function HealthLine({
     case 'ok':
       // Working routing doesn't ask for attention: a quiet line on the ground, not a card.
       return (
-        <div className="mx-4 flex h-7 shrink-0 items-center gap-2 pr-1 pl-0.5 text-small">
+        <div className="mx-4 flex h-5 shrink-0 items-center gap-2 px-0.5 text-small">
           <StatusTile tone="ok" size={16} badge />
           <p className="min-w-0 truncate font-medium">Routing is on in {health.on.join(' and ')}</p>
           {summary && <p className="ml-auto shrink-0 text-ink-2 tabular-nums">{summaryLine(summary)}</p>}

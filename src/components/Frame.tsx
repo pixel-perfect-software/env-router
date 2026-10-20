@@ -161,7 +161,7 @@ function ProfileCard({
           </button>
         </h2>
         {selected ? (
-          <span className="pr-1.5 text-small font-medium text-accent-ink">Editing</span>
+          <span className="inline-flex h-[26px] items-center pr-1.5 text-small font-medium text-accent-ink">Editing</span>
         ) : (
           <IconButton label={`Edit ${profile.name}`} onClick={onEdit}>
             <PencilIcon />
@@ -185,7 +185,7 @@ function ProfileCard({
                 <BranchIcon />
                 <span className="min-w-0 truncate font-mono">{c.rel}</span>
                 <span className="ml-auto flex shrink-0 items-center gap-1 pr-1.5">
-                  <ProfileDot color={c.color} className="size-2" />
+                  <ProfileDot color={c.color} size={2} />
                   {c.profile.name}
                 </span>
               </div>
@@ -195,7 +195,10 @@ function ProfileCard({
       </ul>
 
       <footer className="px-3.5 py-2 hair-t">
-        {routedTools(profile).length === 0 && <p className="text-small text-ink-2 italic">Every agent uses its default config</p>}
+        {/* Above the servers' line it takes the value column, so the two lines start together. */}
+        {routedTools(profile).length === 0 && (
+          <p className={`text-small text-ink-2 italic ${servers.length > 0 ? 'mb-1 pl-[22px]' : ''}`}>Every agent uses its default config</p>
+        )}
         {/* One line per thing the profile hands out: an agent's mark and its config folder, then the plug and its MCP servers. */}
         <dl className="grid grid-cols-[14px_minmax(0,1fr)] items-center gap-x-2 gap-y-1 text-small">
           {routedTools(profile).map(([command, path]) => (

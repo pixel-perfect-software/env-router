@@ -515,9 +515,10 @@ export default function App() {
           {/* On Servers, the banner only shows when routing needs attention. */}
           {((view === 'profiles' && !welcome) || !['ok', 'loading', 'setup'].includes(health.kind)) && (
             // One live region for every health state, so a change is announced in place instead of a new region appearing.
-            <div role="status" className="shrink-0">
+            <div role="status" className="shrink-0 pt-2">
               <HealthLine
                 health={health}
+                home={home}
                 summary={summary}
                 quiet={view === 'servers'}
                 onNewProfile={() => setEditing('new')}

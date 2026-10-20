@@ -190,7 +190,7 @@ export function ProfileInspector({
         }}
       >
         <header className="flex items-center gap-2.5 px-5 pt-5 pb-3">
-          <ProfileDot color={color} className="size-3" />
+          <ProfileDot color={color} size={3} />
           <h2 className="min-w-0 flex-1 truncate text-title font-semibold">{profile ? profile.name : 'New Profile'}</h2>
           <IconButton label="Close" onClick={close} disabled={saving}>
             <CloseIcon />
@@ -265,7 +265,7 @@ export function ProfileInspector({
                     <span className="font-medium">{tool.label}</span>
                     <code className="font-mono text-caption text-ink-2">{tool.envVar}</code>
                   </label>
-                  <div className="flex gap-1.5">
+                  <div className="flex items-center gap-1.5">
                     <TextField
                       mono
                       id={`tool-${tool.command}`}

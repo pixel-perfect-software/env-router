@@ -760,7 +760,7 @@
           "figures": false,
           "railSheen": null,
           "idleCoin": "#5e6a87 to #4e5a76",
-          "inWindow": ["titlebar 18px"]
+          "inWindow": ["titlebar 22px"]
         }
       ],
       "coinRim": "4px #e6f3ff, 90% to 0 at 60% height, lit coin only",
@@ -832,9 +832,9 @@
       "name": "Health Line",
       "kind": "custom",
       "refersTo": "health-line",
-      "description": "Working routing as a quiet 28px line on the ground: a 16px status badge, the routing line at 500, and what the map holds in secondary ink.",
+      "description": "Working routing as a quiet 20px line on the ground: a 16px status badge, the routing line at 500, and what the map holds in secondary ink.",
       "html": "<div class=\"ds-hl\" role=\"status\"><span class=\"ds-hl-b\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3.5 8.4l2.8 2.8 6.2-6.4\"/></svg></span><p>Routing is on in zsh and bash</p><p class=\"ds-hl-s\">4 profiles · 6 folders · 6 MCP servers</p></div>",
-      "css": ".ds-hl{display:flex;align-items:center;gap:8px;height:28px;width:560px;padding:0 4px 0 2px;font:400 12px/16px -apple-system,BlinkMacSystemFont,\"SF Pro Text\",sans-serif;color:var(--er-ink)}.ds-hl p{margin:0;font-weight:500}.ds-hl-b{display:grid;place-items:center;width:16px;height:16px;border-radius:9999px;background:var(--er-ok)}.ds-hl .ds-hl-s{margin-left:auto;font-weight:400;color:var(--er-ink-2);font-variant-numeric:tabular-nums}"
+      "css": ".ds-hl{display:flex;align-items:center;gap:8px;height:20px;width:560px;padding:0 4px 0 2px;font:400 12px/16px -apple-system,BlinkMacSystemFont,\"SF Pro Text\",sans-serif;color:var(--er-ink)}.ds-hl p{margin:0;font-weight:500}.ds-hl-b{display:grid;place-items:center;width:16px;height:16px;border-radius:9999px;background:var(--er-ok)}.ds-hl .ds-hl-s{margin-left:auto;font-weight:400;color:var(--er-ink-2);font-variant-numeric:tabular-nums}"
     },
     {
       "name": "Plain Button",
@@ -1067,7 +1067,7 @@
       "Do keep server brand colour inside its ServerMark tile, and give an unbranded server its monogram on the track colour.",
       "Do set paths, names, variables and values in mono and keep them selectable; everything else stays system sans and unselectable.",
       "Do draw the titlebar's controls as 34px toolbar capsules, keep form buttons at 26px and fields at 28px, and give a hero's one action the 28px large capsule.",
-      "Do show working routing as the quiet 28px line on the ground; a card is for a state that needs attention.",
+      "Do show working routing as the quiet 20px line on the ground; a card is for a state that needs attention.",
       "Do edit profiles in the right-side inspector, with the view visible behind it and the edited card outlined.",
       "Do edit servers in the Servers view's detail card beside the list, and open Catalog and Import in that same card.",
       "Do keep server assignment editable from both the profile inspector and the server's Used by chips.",

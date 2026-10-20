@@ -310,8 +310,10 @@ export function profileColors(ids: string[]): Map<string, string> {
   return colors
 }
 
-export function ProfileDot({ color, className = '' }: { color: string; className?: string }) {
-  return <span aria-hidden="true" className={`inline-block size-2.5 shrink-0 rounded-full ${className}`} style={{ background: color }} />
+const DOT_SIZE = { 2: 'size-2', 2.5: 'size-2.5', 3: 'size-3' }
+
+export function ProfileDot({ color, size = 2.5, className = '' }: { color: string; size?: keyof typeof DOT_SIZE; className?: string }) {
+  return <span aria-hidden="true" className={`inline-block ${DOT_SIZE[size]} shrink-0 rounded-full ${className}`} style={{ background: color }} />
 }
 
 export type Tone = 'ok' | 'warn' | 'problem' | 'neutral' | 'pending'
