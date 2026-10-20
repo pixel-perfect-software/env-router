@@ -48,11 +48,12 @@ export function Docket({
   onDismiss: () => void
 }) {
   const platform = usePlatform()
+  // Each state renders the same footer, a polite live region throughout, so a result is announced as it replaces the drop zone.
   const base = 'mx-4 mb-4 flex min-h-[60px] shrink-0 items-center gap-x-4 gap-y-2.5 rounded-card px-4 py-3'
 
   if (hovering) {
     return (
-      <footer className={`${base} bg-tint text-accent-ink shadow-[0_0_0_1.5px_var(--er-accent-ink)]`}>
+      <footer aria-live="polite" className={`${base} bg-tint text-accent-ink shadow-[0_0_0_1.5px_var(--er-accent-ink)]`}>
         <DropIcon />
         <p className="min-w-0 truncate">
           Release to check <span className="font-mono text-small">{tildify(hovering, home)}</span>
@@ -64,7 +65,7 @@ export function Docket({
   if (!check) {
     const shell = shells.find((s) => s.isDefault && s.available) ?? shells.find((s) => s.available)
     return (
-      <footer className={`${base} border-[1.5px] border-dashed border-ink-3/45 text-ink-2`}>
+      <footer aria-live="polite" className={`${base} border-[1.5px] border-dashed border-ink-3/45 text-ink-2`}>
         <span className="shrink-0">
           <DropIcon />
         </span>

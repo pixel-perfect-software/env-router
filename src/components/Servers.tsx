@@ -8,7 +8,6 @@ import libraryArt from '../assets/servers-library.svg'
 import { getMcpTools } from '../lib/api'
 import { confirmDiscardServer } from '../lib/confirm'
 import { duplicateDraft, type ProfileChip, profilesUsing, type ServerDraft, TRANSPORTS } from '../lib/mcp'
-import { KNOWN_TOOLS } from '../lib/tools'
 import type { ConfigState, McpServer, ToolInfo } from '../lib/types'
 import { CatalogIcon, ImportIcon, PasteIcon, TransportIcon } from './icons'
 import { ServerEditor } from './ServerEditor'
@@ -69,6 +68,13 @@ export function ServersView({
     onDetail(next)
   }
   const selected = detail.kind === 'edit' ? detail.name : null
+  /** Leaves Catalog, Paste or Import with focus on the header button that opens it, rather than on the page. */
+  const back = (opener: string) => {
+    onDetail({ kind: 'none' })
+    requestAnimationFrame(() => {
+      if (document.activeElement === document.body) document.querySelector<HTMLElement>(`aside [aria-label="${opener}"]`)?.focus()
+    })
+  }
 
   return (
     <main aria-label="MCP Servers" className="flex min-h-0 flex-1 gap-3 px-4 pt-1 pb-4">
@@ -80,20 +86,25 @@ export function ServersView({
           <IconButton label="Add Server" onClick={() => go({ kind: 'edit', name: null })}>
             <PlusIcon />
           </IconButton>
-          <IconButton label="Add from Catalog" aria-pressed={detail.kind === 'catalog'} onClick={() => go({ kind: 'catalog' })}>
+          {/* Each opens its view in the detail card, and pressed again, closes it. */}
+          <IconButton
+            label="Add from Catalog"
+            aria-pressed={detail.kind === 'catalog'}
+            onClick={() => go(detail.kind === 'catalog' ? { kind: 'none' } : { kind: 'catalog' })}
+          >
             <CatalogIcon />
           </IconButton>
           <IconButton
             label="Import from Your Agents"
             aria-pressed={detail.kind === 'import' && !detail.pasted}
-            onClick={() => go({ kind: 'import' })}
+            onClick={() => go(detail.kind === 'import' && !detail.pasted ? { kind: 'none' } : { kind: 'import' })}
           >
             <ImportIcon />
           </IconButton>
           <IconButton
             label="Paste JSON"
             aria-pressed={detail.kind === 'paste' || (detail.kind === 'import' && Boolean(detail.pasted))}
-            onClick={() => go({ kind: 'paste' })}
+            onClick={() => go(detail.kind === 'paste' || (detail.kind === 'import' && detail.pasted) ? { kind: 'none' } : { kind: 'paste' })}
           >
             <PasteIcon />
           </IconButton>
@@ -151,14 +162,14 @@ export function ServersView({
             home={home}
             taken={names}
             library={config.mcpServers}
-            onBack={() => onDetail({ kind: 'none' })}
+            onBack={() => back('Add from Catalog')}
             onPick={(template) => onDetail({ kind: 'edit', name: null, template })}
           />
         )}
         {detail.kind === 'paste' && (
           <PasteView
             taken={names}
-            onBack={() => onDetail({ kind: 'none' })}
+            onBack={() => back('Paste JSON')}
             onOne={(template) => onDetail({ kind: 'edit', name: null, template })}
             onMany={(pasted) => onDetail({ kind: 'import', pasted })}
           />
@@ -170,7 +181,7 @@ export function ServersView({
             config={config}
             home={home}
             pasted={detail.pasted}
-            onBack={() => onDetail({ kind: 'none' })}
+            onBack={() => back(detail.pasted ? 'Paste JSON' : 'Import from Your Agents')}
             onElsewhere={(where) => onDetail({ kind: where })}
             onImport={async (servers, secrets) => {
               await onImport(servers, secrets)
@@ -245,14 +256,10 @@ function toolsOffIn(config: ConfigState, server: string, profiles: ProfileChip[]
 
 /** The detail side with nothing chosen: the ways a server gets here, each saying what it starts from. */
 function NoServer({ empty, onPick }: { empty: boolean; onPick: (detail: Detail) => void }) {
-  // The agents whose own MCP files Import reads.
-  const importers = KNOWN_TOOLS.filter((t) => t.mcpFiles)
-    .map((t) => t.label)
-    .join(' and ')
   const ways: [Detail, string, string, ReactNode][] = [
-    [{ kind: 'catalog' }, 'Add from Catalog…', "Well-known servers, from each vendor's README", <CatalogIcon key="c" />],
-    [{ kind: 'import' }, 'Import from Your Agents…', `Servers ${importers} already define`, <ImportIcon key="i" />],
-    [{ kind: 'paste' }, 'Paste JSON…', "A config from a README or an agent's file", <PasteIcon key="p" />],
+    [{ kind: 'catalog' }, 'Add from Catalog…', "Vendors' own servers, ready to fill in", <CatalogIcon key="c" />],
+    [{ kind: 'import' }, 'Import from Your Agents…', 'Servers your agents already define', <ImportIcon key="i" />],
+    [{ kind: 'paste' }, 'Paste JSON…', 'A config from a README or agent file', <PasteIcon key="p" />],
     [{ kind: 'edit', name: null }, 'Add by Hand…', 'A command to run, or a URL to connect to', <PlusIcon key="h" />],
   ]
   return (
@@ -260,9 +267,9 @@ function NoServer({ empty, onPick }: { empty: boolean; onPick: (detail: Detail) 
       <div className="flex w-full max-w-[420px] animate-[er-fade_160ms_var(--ease-settle)] flex-col items-center text-center">
         {/* An empty library gets its illustration, as first run does; with servers in the list, the plug stands for MCP. */}
         {empty ? (
-          <img src={libraryArt} alt="" width={112} height={108} draggable={false} className="mb-1 h-auto [@media(max-height:520px)]:w-[80px]" />
+          <img src={libraryArt} alt="" width={112} height={108} draggable={false} className="mb-1 h-auto [@media(max-height:520px)]:w-[64px]" />
         ) : (
-          <span aria-hidden="true" className="grid size-12 place-items-center rounded-[12px] bg-track text-ink-2">
+          <span aria-hidden="true" className="grid size-12 place-items-center rounded-[12px] bg-track text-ink-2 [@media(max-height:520px)]:size-10">
             <PlugIcon size={24} />
           </span>
         )}
@@ -270,23 +277,23 @@ function NoServer({ empty, onPick }: { empty: boolean; onPick: (detail: Detail) 
         <p className="mt-1 text-small text-ink-2">
           {empty ? 'Profiles hand MCP servers to the agents in their folders.' : 'Or pick one in the list to edit it.'}
         </p>
-        <ul className="mt-5 w-full overflow-hidden rounded-[10px] bg-well text-left">
+        <ul className="mt-5 w-full overflow-hidden rounded-[10px] bg-well text-left [@media(max-height:520px)]:mt-3">
           {ways.map(([detail, label, description, icon]) => (
             <li key={label} className="[&+&]:hair-t">
               <button
                 type="button"
                 onClick={() => onPick(detail)}
-                className="group flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)] focus-visible:rounded-[10px] focus-visible:outline-offset-[-2px]"
+                className="group flex w-full items-center gap-3 px-3 py-2.5 text-left [@media(max-height:520px)]:py-2 hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)] focus-visible:rounded-[10px] focus-visible:outline-offset-[-2px]"
               >
                 <span
                   aria-hidden="true"
-                  className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-card text-ink-2 shadow-push group-hover:text-ink"
+                  className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-button text-ink-2 shadow-push group-hover:text-ink"
                 >
                   {icon}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block font-medium">{label}</span>
-                  <span className="block text-small text-ink-2">{description}</span>
+                  <span className="block text-small text-pretty text-ink-2">{description}</span>
                 </span>
                 <span className="text-ink-2">
                   <ChevronIcon />

@@ -1,7 +1,7 @@
 // The top of the window: the titlebar (traffic lights, app icon and name, shell status, Shells…, Editors…, Check Folder…),
 // the health banner beneath it, and the Shells and Editors popovers.
 
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 // The small cut: it's drawn for 64 px and under, and the titlebar shows it at 18.
 import appIcon from '../../src-tauri/icons/app-icon-small.svg'
 import { errorMessage } from '../lib/api'
@@ -71,7 +71,7 @@ export function TitleBand({
         value={view}
         onChange={onView}
       />
-      <div data-tauri-drag-region className="ml-auto flex items-center gap-2">
+      <div data-tauri-drag-region className="ml-auto flex min-w-0 items-center gap-2">
         {/* Each shell's state lives in the control that changes it: the dots open the Shells popover. */}
         {shells.length > 0 && (
           <Button
@@ -81,18 +81,18 @@ export function TitleBand({
             aria-controls="shells-panel"
             onClick={onToggleShells}
             title="Shells…"
-            className="gap-2.5 pr-2.5 text-small"
+            className="min-w-0 gap-2 pr-2.5 text-small !shrink"
           >
             {shells.map((s) => (
-              <span key={s.shell} className="flex items-center gap-1.5">
+              <span key={s.shell} className="flex min-w-0 items-center gap-1.5">
                 {s.shell === blockedShell ? (
-                  <svg aria-hidden="true" width="9" height="9" viewBox="0 0 10 10" className="text-problem">
+                  <svg aria-hidden="true" width="9" height="9" viewBox="0 0 10 10" className="shrink-0 text-problem">
                     <path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                   </svg>
                 ) : (
                   <span
                     aria-hidden="true"
-                    className={`size-[7px] rounded-full ${
+                    className={`size-[7px] shrink-0 rounded-full ${
                       s.installed
                         ? 'bg-ok forced-colors:bg-[CanvasText] forced-colors:forced-color-adjust-none'
                         : 'shadow-[inset_0_0_0_1.2px_var(--er-ink-2)] forced-colors:border forced-colors:border-[CanvasText]'
@@ -100,10 +100,12 @@ export function TitleBand({
                   />
                 )}
                 {/* Three shells in a narrow window keep their dots; the names stay for screen readers and in the popover. */}
-                <span className={`${shells.length > 2 ? 'max-[760px]:sr-only' : ''} ${s.installed ? 'text-ink' : 'text-ink-2'}`}>{s.shell}</span>
+                <span className={`truncate ${shells.length > 2 ? 'max-[760px]:sr-only' : ''} ${s.installed ? 'text-ink' : 'text-ink-2'}`}>
+                  {s.shell}
+                </span>
               </span>
             ))}
-            <span className="-ml-0.5 text-ink-2">
+            <span className="-ml-0.5 shrink-0 text-ink-2">
               <DisclosureIcon />
             </span>
             {/* After the visible names, so the accessible name starts with what's on screen (WCAG 2.5.3). */}
@@ -136,7 +138,13 @@ export function TitleBand({
           className="pl-2.5"
         >
           <FolderCheckIcon />
-          Check Folder…
+          {/* Accent or not, the label keeps the accent's width, so the toolbar doesn't shift when it stands down. */}
+          <span className="grid">
+            <span className="col-start-1 row-start-1">Check Folder…</span>
+            <span aria-hidden="true" className="invisible col-start-1 row-start-1 font-medium">
+              Check Folder…
+            </span>
+          </span>
         </Button>
       </div>
     </div>
@@ -159,7 +167,7 @@ export type Health =
 
 function Banner({ tone, title, detail, action }: { tone: Tone; title: string; detail?: ReactNode; action?: ReactNode }) {
   return (
-    <div role="status" className="mx-4 flex shrink-0 items-center gap-3 rounded-card bg-card p-3 shadow-card">
+    <div className="mx-4 flex shrink-0 items-center gap-3 rounded-card bg-card p-3 shadow-card">
       <StatusTile tone={tone} />
       <div className="min-w-0 flex-1">
         <p className="font-medium">{title}</p>
@@ -320,7 +328,7 @@ export function HealthLine({
     case 'ok':
       // Working routing doesn't ask for attention: a quiet line on the ground, not a card.
       return (
-        <div role="status" className="mx-4 flex h-7 shrink-0 items-center gap-2 pr-1 pl-0.5 text-small">
+        <div className="mx-4 flex h-7 shrink-0 items-center gap-2 pr-1 pl-0.5 text-small">
           <StatusTile tone="ok" size={16} badge />
           <p className="min-w-0 truncate font-medium">Routing is on in {health.on.join(' and ')}</p>
           {summary && <p className="ml-auto shrink-0 text-ink-2 tabular-nums">{summaryLine(summary)}</p>}
@@ -361,7 +369,7 @@ export function SetupSteps({ step, shell, className = '' }: { step: 1 | 2 | 3; s
             <span
               className={`grid size-[18px] place-items-center rounded-full text-caption font-semibold tabular-nums ${
                 done
-                  ? 'bg-ok text-white forced-colors:border forced-colors:border-[CanvasText]'
+                  ? 'bg-ok text-white dark:text-window forced-colors:border forced-colors:border-[CanvasText]'
                   : current
                     ? 'bg-accent text-on-accent forced-colors:bg-[Highlight] forced-colors:text-[HighlightText] forced-colors:forced-color-adjust-none'
                     : 'shadow-[inset_0_0_0_1px_var(--er-field-edge)] forced-colors:border forced-colors:border-[CanvasText]'
@@ -406,18 +414,35 @@ function TitlePopover({ id, label, onClose, children }: { id: string; label: str
   const panel = useRef<HTMLElement>(null)
   // Hangs from its own button, right edges aligned, as a native popover does; the window's edge still holds it in.
   const [right, setRight] = useState(16)
-  useLayoutEffect(() => {
-    const place = () => {
-      const button = document.querySelector<HTMLElement>(`[aria-controls="${id}"]`)
-      const width = panel.current?.offsetWidth ?? 0
-      if (!button) return
-      const fromRight = window.innerWidth - button.getBoundingClientRect().right
-      setRight(Math.max(16, Math.min(fromRight, window.innerWidth - width - 16)))
-    }
-    place()
+  const place = useCallback(() => {
+    const button = document.querySelector<HTMLElement>(`[aria-controls="${id}"]`)
+    const width = panel.current?.offsetWidth ?? 0
+    if (!button) return
+    const fromRight = window.innerWidth - button.getBoundingClientRect().right
+    setRight(Math.max(16, Math.min(fromRight, window.innerWidth - width - 16)))
+  }, [id])
+  // Every render, not just the first: the toolbar can rearrange while it's open (Editors… appears once the editors are read).
+  useLayoutEffect(place)
+  useEffect(() => {
     window.addEventListener('resize', place)
     return () => window.removeEventListener('resize', place)
-  }, [id])
+  }, [place])
+
+  // Opening moves focus into the panel, as a native popover takes it; Tab past either end leaves and closes it, so focus is
+  // never on a control the panel covers.
+  useEffect(() => {
+    const el = panel.current
+    if (!el) return
+    el.querySelector<HTMLElement>('button:not(:disabled), input:not(:disabled), [href]')?.focus()
+    const onFocusOut = (e: FocusEvent) => {
+      const next = e.relatedTarget as Node | null
+      // No next element: the window lost focus, or a control inside turned itself off. Neither is leaving.
+      if (!next || el.contains(next) || document.querySelector(`[aria-controls="${id}"]`)?.contains(next)) return
+      onClose()
+    }
+    el.addEventListener('focusout', onFocusOut)
+    return () => el.removeEventListener('focusout', onFocusOut)
+  }, [id, onClose])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -587,10 +612,7 @@ const shortSettingsPath = (file: string) => file.replace('/Library/Application S
 /** A popover's closing note under a hairline; a failed switch's error takes its place. */
 function Note({ error, children }: { error: string | null; children: ReactNode }) {
   return (
-    <p
-      role={error ? 'alert' : undefined}
-      className={`mx-2.5 mt-1 mb-1.5 border-t border-rule pt-2 text-small ${error ? 'text-problem' : 'text-ink-2'}`}
-    >
+    <p role={error ? 'alert' : undefined} className={`mx-2.5 mt-1 mb-1.5 pt-2 text-small hair-t ${error ? 'text-problem' : 'text-ink-2'}`}>
       {error ?? children}
     </p>
   )
