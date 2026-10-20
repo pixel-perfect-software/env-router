@@ -32,11 +32,14 @@ export function Welcome({ shell, primary, onNewProfile }: { shell: string; prima
           use that profile's account and MCP servers; everywhere else, their own defaults.
         </p>
         <SetupSteps step={1} shell={shell} className="mt-6 justify-center" />
-        <div className="mt-5 flex items-center gap-2.5">
+        {/* The hint hangs off the button, so the button sits on the column's axis with the art and heading. */}
+        <div className="relative mt-5">
           <Button kind={primary ? 'primary' : 'push'} size="large" onClick={onNewProfile} title={`New Profile (${shortcutLabel('n', platform)})`}>
             New Profile
           </Button>
-          <kbd className="font-sans text-caption text-ink-2">{shortcutLabel('n', platform)}</kbd>
+          <kbd className="absolute top-1/2 left-full ml-2.5 -translate-y-1/2 font-sans text-caption whitespace-nowrap text-ink-2">
+            {shortcutLabel('n', platform)}
+          </kbd>
         </div>
       </div>
     </main>

@@ -77,7 +77,7 @@ export function ServersView({
   }
 
   return (
-    <main aria-label="MCP Servers" className="flex min-h-0 flex-1 gap-3 px-4 pt-1 pb-4">
+    <main aria-label="MCP Servers" className="flex min-h-0 flex-1 gap-3 px-4 pt-2 pb-4">
       <aside aria-label="MCP servers" className="flex w-[232px] shrink-0 flex-col rounded-card bg-card shadow-card min-[820px]:w-[264px]">
         <header className="flex items-center gap-1 py-2 pr-2 pl-3.5 hair-b">
           <h2 className="min-w-0 flex-1 truncate text-title font-semibold">
@@ -141,7 +141,7 @@ export function ServersView({
                       {users.length > 0 && (
                         <span className="flex shrink-0 items-center gap-0.5" title={`Used by ${users.map((p) => p.name).join(', ')}`}>
                           {users.slice(0, 4).map((p) => (
-                            <ProfileDot key={p.id} color={colors.get(p.id) ?? ''} className="size-2" />
+                            <ProfileDot key={p.id} color={colors.get(p.id) ?? ''} size={2} />
                           ))}
                           <span className="sr-only">Used by {users.map((p) => p.name).join(', ')}</span>
                         </span>

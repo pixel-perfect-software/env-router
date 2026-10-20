@@ -141,7 +141,7 @@ export function CheckSection({
                   <span className="flex shrink-0 items-center gap-1 text-caption text-ink-2" title={`Off in ${off.map((p) => p.name).join(', ')}`}>
                     off in
                     {off.map((p) => (
-                      <ProfileDot key={p.id} color={p.color} className="size-2" />
+                      <ProfileDot key={p.id} color={p.color} size={2} />
                     ))}
                     <span className="sr-only">{off.map((p) => p.name).join(', ')}</span>
                   </span>

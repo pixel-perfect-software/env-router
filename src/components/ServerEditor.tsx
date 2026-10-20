@@ -182,7 +182,7 @@ export function ServerEditor({
                       on ? { background: `color-mix(in srgb, ${p.color} 16%, var(--er-card))`, boxShadow: `inset 0 0 0 1.5px ${p.color}` } : undefined
                     }
                   >
-                    <ProfileDot color={p.color} className={`size-2 ${on ? '' : 'opacity-70'}`} />
+                    <ProfileDot color={p.color} size={2} className={on ? '' : 'opacity-70'} />
                     {p.name}
                   </button>
                 )
