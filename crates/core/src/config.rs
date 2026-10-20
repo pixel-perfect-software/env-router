@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 
-const CONFIG_FILE: &str = "config.json";
+pub const CONFIG_FILE: &str = "config.json";
 
 /// Bump when the file's shape changes, and migrate older versions in [`load`].
 ///
@@ -114,7 +114,8 @@ pub enum McpValue {
 }
 
 /// What EnvRouter knows about an agent beyond its variable. The window writes these from its
-/// registry (`src/lib/tools.ts`) on every save, so Rust never needs an agent's name.
+/// registry (`src/lib/agents.json`) on every save, and the CLI fills them from the same file
+/// ([`crate::agents`]), so Rust never needs an agent's name.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentDef {
@@ -125,7 +126,7 @@ pub struct AgentDef {
     #[serde(default)]
     pub mcp_files: Option<McpFiles>,
     /// How the agent's editor extension can be told to run through the shim. Added in version
-    /// 3; older configs have none until the window saves.
+    /// 3; older configs have none until the window or the CLI saves.
     #[serde(default)]
     pub ide: Option<IdeHook>,
 }
@@ -313,11 +314,18 @@ fn write_through_temp(path: &Path, contents: &[u8], mode: Option<u32>) -> Result
 
 /// The ids of every Keychain secret the server library refers to.
 pub fn secret_ids(config: &ConfigState) -> BTreeSet<&str> {
-    config
-        .mcp_servers
-        .values()
-        .flat_map(McpServer::secret_ids)
-        .collect()
+    secret_users(config).into_keys().collect()
+}
+
+/// Each secret the server library refers to, with the names of the servers that use it.
+pub fn secret_users(config: &ConfigState) -> BTreeMap<&str, Vec<&str>> {
+    let mut users: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for (name, server) in &config.mcp_servers {
+        for id in server.secret_ids() {
+            users.entry(id).or_default().push(name);
+        }
+    }
+    users
 }
 
 /// Every command at least one profile routes, by its variable or by handing it MCP servers.

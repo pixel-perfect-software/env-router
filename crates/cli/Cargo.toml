@@ -16,6 +16,8 @@ envrouter-ops.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 clap = { version = "4.6", features = ["derive"] }
+# Already in the graph through envrouter-ops; `term` turns echo off while a secret is typed.
+nix = { workspace = true, features = ["signal", "term"] }
 tokio = { version = "1", features = ["rt"] }
 
 [lints]

@@ -3,14 +3,16 @@
 //! manage another machine. Every command is one of `envrouter_ops::commands`, the same code the
 //! window runs.
 
-use std::io::{self, BufRead, Write};
+use std::collections::HashMap;
+use std::io::{self, BufRead, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use envrouter_core::config;
 use envrouter_core::platform::Platform;
-use envrouter_core::{paths, Error, Result};
-use envrouter_ops::commands;
+use envrouter_core::{agents, paths, Error, Result};
+use envrouter_ops::commands::{self, SecretUse};
 use envrouter_ops::editors::{Editor, EditorStatus};
 use envrouter_ops::shell::{FolderCheck, Shell, ShellStatus};
 use envrouter_ops::{rpc, shims};
@@ -68,8 +70,23 @@ enum Command {
     /// Validate ~/.envrouter/config.json after editing it by hand, and render its MCP files and
     /// shims, as saving in the window does.
     Apply,
+    /// Store the value of an MCP server's secret, or list the secrets the config refers to.
+    Secret {
+        #[command(subcommand)]
+        action: SecretAction,
+    },
     /// Answer the window's commands as JSON lines on stdin and stdout.
     Rpc,
+}
+
+#[derive(Subcommand)]
+enum SecretAction {
+    /// Store the value of a secret a server refers to as {"secret": "ID"} in its env or
+    /// headers. The value is read from stdin, or typed without echo at a terminal, never from
+    /// the command line.
+    Set { id: String },
+    /// Each secret the config refers to, the servers that use it, and whether it's stored.
+    List,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -145,7 +162,7 @@ fn main() -> ExitCode {
 fn run(cli: &Cli, home: &Path) -> Result<ExitCode> {
     match cli.command.as_ref().unwrap_or(&Command::Status) {
         Command::Status => status(cli, home),
-        Command::Install => install(home),
+        Command::Install => install(cli, home),
         Command::Shell { switch, shell } => {
             let status = commands::set_shell_integration(
                 home,
@@ -168,7 +185,7 @@ fn run(cli: &Cli, home: &Path) -> Result<ExitCode> {
                 None if hooks.len() == 1 => hooks.iter().next().expect("one hook"),
                 None if hooks.is_empty() => {
                     return Err(Error::Invalid(
-                        "The config names no agent with an editor extension. Save once in the EnvRouter window, or add one to agents in config.json.".into(),
+                        "The config names no agent with an editor extension. Add one to agents in config.json.".into(),
                     ))
                 }
                 None => {
@@ -231,16 +248,35 @@ fn run(cli: &Cli, home: &Path) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         Command::Apply => {
-            let config = commands::get_config(home)?;
-            commands::save_config(home, &config, &std::collections::HashMap::new())?;
-            if !cli.json {
-                println!(
+            let config = agents::with_agents(commands::get_config(home)?);
+            commands::save_config_from_cli(home, &config, &HashMap::new())?;
+            let file = paths::root(home).join(config::CONFIG_FILE);
+            let applied = serde_json::json!({
+                "config": file.display().to_string(),
+                "profiles": config.profiles.len(),
+                "mcpServers": config.mcp_servers.len(),
+            });
+            print(cli, &applied, || {
+                format!(
                     "Applied {}: {} profile(s), {} MCP server(s).",
-                    tilde(&paths::root(home).join("config.json"), home),
+                    tilde(&file, home),
                     config.profiles.len(),
                     config.mcp_servers.len()
-                );
+                )
+            });
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Secret {
+            action: SecretAction::Set { id },
+        } => set_secret(cli, home, id),
+        Command::Secret {
+            action: SecretAction::List,
+        } => {
+            let (secrets, problem) = commands::secrets(home)?;
+            if let Some(problem) = problem {
+                eprintln!("envrouter: couldn't read the secret store ({problem}), so it's not known which are stored.");
             }
+            print(cli, &secrets, || secret_lines(&secrets));
             Ok(ExitCode::SUCCESS)
         }
         Command::Rpc => {
@@ -264,7 +300,7 @@ fn status(cli: &Cli, home: &Path) -> Result<ExitCode> {
     let config = commands::get_config(home)?;
     println!(
         "Config  {} ({} profile(s), {} MCP server(s))",
-        tilde(&paths::root(home).join("config.json"), home),
+        tilde(&paths::root(home).join(config::CONFIG_FILE), home),
         config.profiles.len(),
         config.mcp_servers.len()
     );
@@ -297,27 +333,139 @@ fn status(cli: &Cli, home: &Path) -> Result<ExitCode> {
 }
 
 /// Installs from the files beside this command, as a release's archive lays them out.
-fn install(home: &Path) -> Result<ExitCode> {
+fn install(cli: &Cli, home: &Path) -> Result<ExitCode> {
     let me = std::env::current_exe().map_err(|source| Error::Io {
         path: PathBuf::from("current executable"),
         source,
     })?;
     let changed = shims::install_bundled(home)? | shims::install_cli(home, &me)?;
-    shims::sync(home, &commands::get_config(home)?)?;
-    println!(
-        "{} {}",
-        if changed {
-            "Installed in"
-        } else {
-            "Already up to date in"
-        },
-        tilde(&paths::root(home).join("bin"), home)
-    );
-    println!(
-        "Next: `envrouter shell on {}` puts the shims first on PATH in new terminals.",
-        Shell::from_name(login_shell(home).name()).map_or("bash", Shell::name)
-    );
+    // In memory: install changes no config. `apply` (or the window) saves the filled agents.
+    shims::sync(home, &agents::with_agents(commands::get_config(home)?))?;
+    let bin = paths::root(home).join("bin");
+    let installed = serde_json::json!({ "changed": changed, "binDir": bin.display().to_string() });
+    print(cli, &installed, || {
+        format!(
+            "{} {}\nNext: `envrouter shell on {}` puts the shims first on PATH in new terminals.",
+            if changed {
+                "Installed in"
+            } else {
+                "Already up to date in"
+            },
+            tilde(&bin, home),
+            Shell::from_name(login_shell(home).name()).map_or("bash", Shell::name)
+        )
+    });
     Ok(ExitCode::SUCCESS)
+}
+
+/// Stores one secret through the same save the window makes, so it's checked and pruned the
+/// same way.
+fn set_secret(cli: &Cli, home: &Path, id: &str) -> Result<ExitCode> {
+    let config = agents::with_agents(commands::get_config(home)?);
+    // Asked before the value is typed, so nobody types a secret only to have it refused.
+    let Some(servers) = config::secret_users(&config)
+        .remove(id)
+        .map(|servers| servers.into_iter().map(str::to_string).collect::<Vec<_>>())
+    else {
+        return Err(Error::Invalid(format!(
+            "No server uses a secret named {id}. Refer to it as {{\"secret\": \"{id}\"}} in a server's env or headers in config.json first."
+        )));
+    };
+    let value = read_secret(id)?;
+    commands::save_config_from_cli(home, &config, &HashMap::from([(id.to_string(), value)]))?;
+    let stored = SecretUse {
+        id: id.to_string(),
+        servers,
+        stored: Some(true),
+    };
+    print(cli, &stored, || {
+        format!(
+            "Stored {id} in the {}, for {}.",
+            Platform::current().secret_store_name(),
+            stored.servers.join(", ")
+        )
+    });
+    Ok(ExitCode::SUCCESS)
+}
+
+/// A secret's value: typed without echo at a terminal, otherwise all of stdin. One trailing
+/// line break is dropped, since `echo` and the Return key add one.
+fn read_secret(id: &str) -> Result<String> {
+    let stdin = io::stdin();
+    let read_err = |err: io::Error| Error::Command(format!("couldn't read the value: {err}"));
+    let mut value = String::new();
+    if stdin.is_terminal() {
+        eprint!("Value for {id} (not shown): ");
+        let _ = io::stderr().flush();
+        let echo = Echo::off(&stdin);
+        let line = stdin.lock().read_line(&mut value);
+        drop(echo);
+        eprintln!();
+        line.map_err(read_err)?;
+    } else {
+        stdin.lock().read_to_string(&mut value).map_err(read_err)?;
+    }
+    let value = value.strip_suffix('\n').map_or(value.as_str(), |line| {
+        line.strip_suffix('\r').unwrap_or(line)
+    });
+    if value.is_empty() {
+        return Err(Error::Invalid(format!("No value given for {id}.")));
+    }
+    Ok(value.to_string())
+}
+
+/// Turns the terminal's echo off until dropped. Where it can't, typing still works, visibly.
+/// Ctrl-C (or a hangup or kill) would end the process before `Drop` runs and leave the shell
+/// typing blind, so those signals are blocked and a thread waits for them instead: it puts echo
+/// back, then exits as the signal would have.
+struct Echo<'a> {
+    stdin: &'a io::Stdin,
+    saved: Option<nix::sys::termios::Termios>,
+}
+
+impl<'a> Echo<'a> {
+    fn off(stdin: &'a io::Stdin) -> Self {
+        use nix::sys::signal::{SigSet, Signal};
+        use nix::sys::termios::{tcgetattr, tcsetattr, LocalFlags, SetArg};
+        let Ok(saved) = tcgetattr(stdin) else {
+            return Echo { stdin, saved: None };
+        };
+        let mut endings = SigSet::empty();
+        for signal in [
+            Signal::SIGINT,
+            Signal::SIGTERM,
+            Signal::SIGHUP,
+            Signal::SIGQUIT,
+        ] {
+            endings.add(signal);
+        }
+        // Blocked before the thread starts, so it inherits the mask and only `wait` sees them.
+        if endings.thread_block().is_ok() {
+            let restore = saved.clone();
+            std::thread::spawn(move || {
+                if let Ok(signal) = endings.wait() {
+                    let _ = tcsetattr(io::stdin(), SetArg::TCSANOW, &restore);
+                    eprintln!();
+                    std::process::exit(128 + signal as i32);
+                }
+            });
+        }
+        let mut quiet = saved.clone();
+        quiet.local_flags.remove(LocalFlags::ECHO);
+        let saved = tcsetattr(stdin, SetArg::TCSANOW, &quiet)
+            .is_ok()
+            .then_some(saved);
+        Echo { stdin, saved }
+    }
+}
+
+impl Drop for Echo<'_> {
+    fn drop(&mut self) {
+        if let Some(saved) = &self.saved {
+            let _ =
+                nix::sys::termios::tcsetattr(self.stdin, nix::sys::termios::SetArg::TCSANOW, saved);
+        }
+    }
 }
 
 /// One request per line in, one answer per line out, until stdin closes.
@@ -351,6 +499,29 @@ fn print<T: serde::Serialize>(cli: &Cli, value: &T, human: impl FnOnce() -> Stri
     } else {
         println!("{}", human());
     }
+}
+
+fn secret_lines(secrets: &[SecretUse]) -> String {
+    if secrets.is_empty() {
+        return "No server uses a secret.".into();
+    }
+    let width = secrets.iter().map(|s| s.id.len()).max().unwrap_or(0);
+    secrets
+        .iter()
+        .map(|secret| {
+            format!(
+                "{:<width$}  {:<7}  {}",
+                secret.id,
+                match secret.stored {
+                    Some(true) => "stored",
+                    Some(false) => "missing",
+                    None => "unknown",
+                },
+                secret.servers.join(", ")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn shell_line(status: &ShellStatus, home: &Path) -> String {

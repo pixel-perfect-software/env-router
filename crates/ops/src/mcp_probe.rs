@@ -13,6 +13,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use envrouter_core::config::{self, ConfigState, McpServer, McpValue};
+use envrouter_core::platform::Platform;
 use envrouter_core::{paths, Error, Result};
 use nix::sys::signal::Signal;
 use process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop, ProcessGroup};
@@ -76,8 +77,8 @@ impl ServerCheck {
     }
 }
 
-/// Checks `server`, using `typed` for secrets entered since the last save and the Keychain for
-/// the rest. `path` is the login shell's PATH.
+/// Checks `server`, using `typed` for secrets entered since the last save and the secret store
+/// for the rest. `path` is the login shell's PATH.
 pub async fn check(
     server: &McpServer,
     typed: &HashMap<String, String>,
@@ -115,7 +116,10 @@ fn resolve_values(
         .map_err(|err| format!("Couldn't read the secrets: {err}."))?;
     stored.extend(typed.iter().map(|(k, v)| (k.clone(), v.clone())));
     match ids.iter().find(|id| !stored.contains_key(**id)) {
-        Some(_) => Err("A secret this server needs isn't in the Keychain. Enter it again.".into()),
+        Some(_) => Err(format!(
+            "A secret this server needs isn't in the {}. Enter it again.",
+            Platform::current().secret_store_name()
+        )),
         None => Ok(stored),
     }
 }

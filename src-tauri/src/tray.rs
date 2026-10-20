@@ -1,13 +1,17 @@
 //! The menu bar icon and menu. The window is opened occasionally; the menu bar is where
 //! EnvRouter stays visible, so its first line always says whether routing is on.
 
+use std::sync::mpsc::{sync_channel, SyncSender};
+use std::sync::OnceLock;
+
 use envrouter_core::{config, paths};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 #[cfg(target_os = "macos")]
 use tauri::ActivationPolicy;
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
+use envrouter_ops::commands::SetupStatus;
 use envrouter_ops::shell::{self, Shell};
 
 const TRAY_ID: &str = "main";
@@ -32,17 +36,61 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             "quit" => app.exit(0),
             _ => {}
         })
+        // The pointer reaching the icon is the warning a click is coming, so the menu catches
+        // up with changes made outside the window (the CLI, a hand edit) before it opens.
+        // macOS and Windows report it; a Linux tray doesn't, so there the window's focus does.
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Enter { .. } = event {
+                refresh_in_background(tray.app_handle());
+            }
+        })
         .build(app)?;
-    // The status lines ask zsh where its startup files live. That happens off the main
-    // thread, so a slow `.zshenv` can't hold up launch.
-    let handle = app.clone();
-    std::thread::spawn(move || refresh(&handle));
+    refresh_in_background(app);
     Ok(())
+}
+
+/// The one thread that refreshes in the background, fed by a channel of one: an ask while it
+/// runs queues a single refresh after it, and any more are dropped, so hovering the icon never
+/// piles up probes or lets an older answer land last.
+static REFRESHER: OnceLock<SyncSender<()>> = OnceLock::new();
+
+/// [`refresh`] off the main thread: the status lines ask zsh where its startup files live, and
+/// a slow `.zshenv` mustn't hold up launch or the menu bar.
+pub fn refresh_in_background(app: &AppHandle) {
+    let refresher = REFRESHER.get_or_init(|| {
+        let (asks, asked) = sync_channel::<()>(1);
+        let handle = app.clone();
+        std::thread::spawn(move || {
+            while asked.recv().is_ok() {
+                refresh(&handle);
+            }
+        });
+        asks
+    });
+    let _ = refresher.try_send(());
 }
 
 /// Rebuilds the menu after anything its status lines depend on changes.
 pub fn refresh(app: &AppHandle) {
-    let summary = summary(app);
+    let home = app.path().home_dir().ok();
+    let on = Shell::ALL.into_iter().filter(move |&shell| {
+        home.as_deref()
+            .is_some_and(|home| shell::status(shell, home).installed)
+    });
+    set_menu(app, summary(app, on));
+}
+
+/// [`refresh`] from a status the window just read, so its focus doesn't probe the shells twice.
+pub fn refresh_from(app: &AppHandle, status: &SetupStatus) {
+    let on = status
+        .shells
+        .iter()
+        .filter(|s| s.installed)
+        .map(|s| s.shell);
+    set_menu(app, summary(app, on));
+}
+
+fn set_menu(app: &AppHandle, summary: (String, Option<String>)) {
     if let (Some(tray), Ok(menu)) = (app.tray_by_id(TRAY_ID), menu(app, summary)) {
         let _ = tray.set_menu(Some(menu));
     }
@@ -114,7 +162,8 @@ fn menu(app: &AppHandle, (status, profiles): (String, Option<String>)) -> tauri:
 }
 
 /// The status line and, once there are profiles, how many.
-fn summary(app: &AppHandle) -> (String, Option<String>) {
+/// The status lines, given the shells routing is on in (asked lazily: not when nothing's set up).
+fn summary(app: &AppHandle, on: impl Iterator<Item = Shell>) -> (String, Option<String>) {
     let Ok(home) = app.path().home_dir() else {
         return ("EnvRouter".into(), None);
     };
@@ -125,11 +174,7 @@ fn summary(app: &AppHandle) -> (String, Option<String>) {
     if count == 0 {
         return ("Not set up yet".into(), None);
     }
-    let on: Vec<&str> = Shell::ALL
-        .iter()
-        .filter(|&&shell| shell::status(shell, &home).installed)
-        .map(|shell| shell.name())
-        .collect();
+    let on: Vec<&str> = on.map(Shell::name).collect();
     let status = if on.is_empty() {
         "Routing is off".to_string()
     } else {

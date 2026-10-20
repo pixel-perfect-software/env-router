@@ -52,7 +52,13 @@ async fn save_config(
 #[tauri::command]
 async fn get_setup_status(app: AppHandle) -> Result<SetupStatus> {
     let home = home(&app)?;
-    blocking(move || commands::setup_status(&home)).await
+    // The window reads this whenever it gains focus; the menu bar catches up from the same answer.
+    blocking(move || {
+        let status = commands::setup_status(&home)?;
+        tray::refresh_from(&app, &status);
+        Ok(status)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -150,13 +156,45 @@ async fn preview_folder(
     tool: String,
 ) -> Result<Preview> {
     let home = home(&app)?;
-    Ok(commands::preview_folder(
-        &home,
-        &payload,
-        Path::new(&folder),
-        &tool,
-    ))
+    blocking(move || {
+        Ok(commands::preview_folder(
+            &home,
+            &payload,
+            Path::new(&folder),
+            &tool,
+        ))
+    })
+    .await
 }
+
+/// Lists the window's commands once, for Tauri's handler and for the test that holds
+/// `envrouter rpc` to the same set.
+macro_rules! window_commands {
+    ($($command:ident),* $(,)?) => {
+        #[cfg(test)]
+        const WINDOW_COMMANDS: &[&str] = &[$(stringify!($command)),*];
+
+        fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+            tauri::generate_handler![$($command),*]
+        }
+    };
+}
+
+window_commands![
+    get_config,
+    save_config,
+    get_setup_status,
+    set_shell_integration,
+    get_editor_status,
+    set_editor_integration,
+    check_folder,
+    preview_folder,
+    open_in_editor,
+    check_mcp_server,
+    get_mcp_tools,
+    import_candidates,
+    parse_mcp_json,
+];
 
 pub fn run() {
     let app = tauri::Builder::default()
@@ -187,29 +225,14 @@ pub fn run() {
         // On macOS, closing the window keeps EnvRouter in the menu bar; Quit lives in its menu.
         // Elsewhere closing quits: a Linux desktop may show no tray icon (GNOME has none by
         // default), and a hidden window would leave no way back.
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                if cfg!(target_os = "macos") {
-                    api.prevent_close();
-                    tray::hide_window(window.app_handle());
-                }
+        .on_window_event(|window, event| match event {
+            WindowEvent::CloseRequested { api, .. } if cfg!(target_os = "macos") => {
+                api.prevent_close();
+                tray::hide_window(window.app_handle());
             }
+            _ => {}
         })
-        .invoke_handler(tauri::generate_handler![
-            get_config,
-            save_config,
-            get_setup_status,
-            set_shell_integration,
-            get_editor_status,
-            set_editor_integration,
-            check_folder,
-            preview_folder,
-            open_in_editor,
-            check_mcp_server,
-            get_mcp_tools,
-            import_candidates,
-            parse_mcp_json
-        ])
+        .invoke_handler(invoke_handler())
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
@@ -220,4 +243,24 @@ pub fn run() {
             tray::show_window(_app);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A remote window (a WSL distro's, over `envrouter rpc`) must be able to make every call
+    /// the local one makes, except opening a file, which would open it on the other machine.
+    #[test]
+    fn rpc_serves_every_window_command_but_open_in_editor() {
+        let mut window: Vec<&str> = WINDOW_COMMANDS
+            .iter()
+            .copied()
+            .filter(|&command| command != "open_in_editor")
+            .collect();
+        let mut served = envrouter_ops::rpc::COMMANDS.to_vec();
+        window.sort_unstable();
+        served.sort_unstable();
+        assert_eq!(window, served);
+    }
 }

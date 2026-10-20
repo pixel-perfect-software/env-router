@@ -1176,6 +1176,7 @@ dependencies = [
  "clap",
  "envrouter-core",
  "envrouter-ops",
+ "nix",
  "serde",
  "serde_json",
  "tokio",

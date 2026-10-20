@@ -21,6 +21,23 @@ use crate::commands;
 use crate::editors::Editor;
 use crate::shell::{self, Shell};
 
+/// Every command this serves: the window's, but `open_in_editor`. The app's tests hold it to
+/// the Tauri handler's list.
+pub const COMMANDS: &[&str] = &[
+    "get_config",
+    "save_config",
+    "get_setup_status",
+    "set_shell_integration",
+    "get_editor_status",
+    "set_editor_integration",
+    "check_folder",
+    "preview_folder",
+    "check_mcp_server",
+    "get_mcp_tools",
+    "import_candidates",
+    "parse_mcp_json",
+];
+
 #[derive(Debug, Deserialize)]
 pub struct Request {
     /// Anything; echoed back so a caller can match answers to requests.
@@ -284,5 +301,25 @@ mod tests {
         let junk = answer(home, "not json");
         assert_eq!(junk["id"], Value::Null);
         assert!(junk["error"].as_str().unwrap().starts_with("not a request"));
+    }
+
+    /// `COMMANDS` is what the app's test compares with the window's; this keeps it honest about
+    /// what `dispatch` answers. Empty arguments fail to parse before anything runs, and the
+    /// commands that take none only read the scratch home.
+    #[test]
+    fn dispatches_every_listed_command() {
+        let home = tempfile::tempdir().unwrap();
+        for command in COMMANDS {
+            let answer = answer(
+                home.path(),
+                &json!({ "id": 1, "command": command, "args": {} }).to_string(),
+            );
+            assert!(
+                !answer["error"]
+                    .as_str()
+                    .is_some_and(|e| e.starts_with("unknown command")),
+                "{command}: {answer}"
+            );
+        }
     }
 }
