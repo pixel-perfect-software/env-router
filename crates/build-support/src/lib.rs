@@ -14,9 +14,9 @@ pub struct Helpers {
 /// Builds both helpers and returns where they are. Call it from a build script; `workspace` is
 /// the repository root.
 ///
-/// It's always a release build, whatever the calling build's profile. Every profile shares one
-/// build, so a debug build can't leave a debug shim where `tauri build` would bundle it, and
-/// development runs the shim users get.
+/// It's always the `helpers` profile (release, with whole-program LTO), whatever the calling
+/// build's profile. Every profile shares one build, so a debug build can't leave a debug shim
+/// where `tauri build` would bundle it, and development runs the shim users get.
 pub fn build_helpers(workspace: &Path) -> Helpers {
     let target = env::var("TARGET").unwrap();
     // The outer build holds the lock on the main target dir, so the helpers get their own,
@@ -29,7 +29,8 @@ pub fn build_helpers(workspace: &Path) -> Helpers {
         .current_dir(workspace)
         .args([
             "build",
-            "--release",
+            "--profile",
+            "helpers",
             "--package",
             "envrouter-shim",
             "--package",
@@ -54,7 +55,7 @@ pub fn build_helpers(workspace: &Path) -> Helpers {
         println!("cargo:rerun-if-changed={}", path.display());
     }
 
-    let built = |name: &str| target_dir.join(&target).join("release").join(name);
+    let built = |name: &str| target_dir.join(&target).join("helpers").join(name);
     Helpers {
         shim: built("envrouter-shim"),
         keychain: built("envrouter-keychain"),
