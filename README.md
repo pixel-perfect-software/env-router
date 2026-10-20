@@ -47,7 +47,7 @@ selection of MCP servers from a library you keep in the app:
 - 🔌 **Per-folder MCP servers.** Keep one server library and choose which profiles load each
   server. Turn off individual tools per profile once a check has listed them.
 - 📥 **Import, paste and catalog.** Bring in the servers your agents already define (EnvRouter only
-  reads their files), paste a server's JSON straight from its README, search a catalog of 50-odd
+  reads their files), paste a server's JSON straight from its README, search a catalog of nearly 90
   vendors' own servers (hosted or local, and what each needs to sign in), or add one by hand.
   Duplicate a server or a profile to start from one you have.
 - 🔑 **Secrets in your system's store.** API keys and tokens you enter go to the macOS Keychain,
