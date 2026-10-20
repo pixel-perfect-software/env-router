@@ -114,13 +114,13 @@ export const catalog = (home: string): CatalogEntry[] => [
   {
     name: 'bigquery',
     label: 'BigQuery',
-    description: 'Datasets, schemas and SQL in the project set in BIGQUERY_PROJECT, signed in with gcloud auth application-default login.',
+    description: 'Datasets, schemas and SQL in a BigQuery project; change your-project-id. Signs in with gcloud auth application-default login.',
     signIn: 'own',
     server: {
       transport: 'stdio',
       command: 'npx',
       args: ['-y', '@toolbox-sdk/server', '--prebuilt=bigquery', '--stdio'],
-      env: { BIGQUERY_PROJECT: '' },
+      env: { BIGQUERY_PROJECT: 'your-project-id' },
     },
   },
   {
