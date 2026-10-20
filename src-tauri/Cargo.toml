@@ -1,6 +1,6 @@
 [package]
 name = "envrouter"
-version = "0.4.0"
+version = "0.5.0"
 description = "Per-directory environment routing for developer CLIs"
 authors = ["Tyler Robertson"]
 license = "GPL-3.0-or-later"
