@@ -91,8 +91,20 @@ shell startup files. Two ways to avoid that:
   | `shadowed` | A folder check where a shell function gets in the way |
   | `broken` | A `config.json` that can't be read |
 
+  Add any of these to reach the states a real machine can be in:
+
+  | Parameter | Shows |
+  |---|---|
+  | `&platform=linux` | A Linux desktop: `/home/sam`, bash reading `.bashrc`, `~/.config` editor settings, the keyring |
+  | `&platform=wsl` | A WSL distro: bash reading `.profile` and `.bashrc`, no zsh, the Credential Manager, VS Code Server and Cursor Server |
+  | `&check=<result>` | Forces a folder check's answer (use it with `populated` or `mcp`): `routed` (the default, worked out from the config), `shadowedOnPath`, `byPromptHook`, `shadowedByShell`, `notFound`, `notInstalled`, `shimFailed`, or the failures `timeout` and `noPath` |
+  | `&shim=stale` | The shim missing or out of date; any save or switch reinstalls it |
+  | `&store=off` | No secret store: a save that adds or drops a secret fails as it would there |
+
+  The `mcp` library also holds a server named `slow`, whose check times out, and Import there
+  reads realistic agent files, so a server already in the library shows as such.
   `window.__mockDrop('/Users/sam/dev/work/api', 400, 300)` in the console simulates dropping a
-  folder from Finder. When you change a command's behaviour, keep the mock answering the way the
+  folder from Finder (`/home/sam/…` with `platform=linux` or `wsl`). When you change a command's behaviour, keep the mock answering the way the
   real backend does.
 - **A scratch home folder**, for the real app. Build it, then launch the binary with `HOME`
   pointing somewhere disposable:
@@ -122,9 +134,10 @@ crates/keychain/   MCP secrets in the platform's store (src/store/), and the env
                    helper the shim runs.
 src-tauri/         The desktop app (Tauri 2): command wrappers, the menu bar, the window.
 src/               The window: React, TypeScript, Tailwind CSS 4.
-src/lib/tools.ts   The agent registry: each agent's variable, MCP dialect and editor hook.
+src/lib/agents.json  The agent registry: each agent's variable, MCP dialect and editor hook,
+                   read by the window (src/lib/tools.ts) and the CLI (crates/core/src/agents.rs).
 packaging/         The Homebrew cask and formula templates.
-dev/               The browser mock (in src/dev/) and the containers.
+dev/containers/    The Linux and Windows check containers (the browser mock is in src/dev/).
 ```
 
 `.claude/context/ai-context/project-structure.md` has a fuller tree and a table of every
@@ -143,7 +156,7 @@ command. A new window command goes in `crates/ops/src/commands.rs`, gets a Tauri
   window asks `usePlatform()` in `src/lib/platform.ts`. Don't check the OS inline.
 - **Compare canonical paths,** never `$PWD` text.
 - **Agents are data.** Nothing in Rust branches on an agent's name. Adding an agent is one entry
-  in `src/lib/tools.ts`, after checking that its variable relocates logins too, not only
+  in `src/lib/agents.json`, after checking that its variable relocates logins too, not only
   settings.
 - **Config changes are versioned.** Any change to the shape of `config.json` bumps
   `CONFIG_VERSION` in `crates/core/src/config.rs` and migrates older versions in `config::load`.
@@ -178,7 +191,7 @@ The app icon and menu bar glyph are drawn as SVG in `src-tauri/icons/`, and ever
 source and loses the small-size cut.
 
 The README screenshots in `docs/images/` come from the browser mock's `mcp` scenario at
-960 × 640 and 2× scale, in light and dark.
+1020 × 700 and 2× scale, in light and dark: a folder check of `~/dev/work/api` for `check-*.png`, and `github` selected in MCP Servers for `servers-*.png`.
 
 ## 📦 Releases
 
