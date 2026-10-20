@@ -1,0 +1,10 @@
+{
+  "$schema": "https://raw.githubusercontent.com/pixel-perfect-software/always-up-to-date/main/schema/config.schema.json",
+  "allowMinorUpdates": true,
+  "allowMajorUpdates": false,
+  "debug": false,
+  "silent": false,
+  "updateAllowlist": [],
+  "updateDenylist": [],
+  "cooldown": 0
+}
