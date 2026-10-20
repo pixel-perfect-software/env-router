@@ -17,6 +17,7 @@ use envrouter_core::platform::Platform;
 use envrouter_core::{paths, Error, Result};
 use nix::sys::signal::Signal;
 use process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop, ProcessGroup};
+use rmcp::model::{ClientConfig, ProtocolVersion};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use rmcp::transport::StreamableHttpClientTransport;
 use rmcp::ServiceExt;
@@ -291,7 +292,13 @@ where
     T: rmcp::transport::IntoTransport<rmcp::RoleClient, E, A>,
     E: std::error::Error + Send + Sync + 'static,
 {
-    let client = ().serve(transport).await.map_err(|err| chain(&err))?;
+    // `serve` opens with `initialize`, but on its own it asks for rmcp's newest protocol
+    // version, 2026-07-28, which has no `initialize`: a server that knows that version (MCP
+    // Toolbox 1.14) answers "invalid method initialize". Ask for the newest one that has it;
+    // a server that only knows older versions still answers with one of its own.
+    let info =
+        ClientConfig::default().with_protocol_version(ProtocolVersion::LATEST_WITH_INITIALIZE);
+    let client = info.serve(transport).await.map_err(|err| chain(&err))?;
     let tools = client.list_all_tools().await.map_err(|err| chain(&err));
     let _ = client.cancel().await;
     Ok(tools?
@@ -389,11 +396,15 @@ mod tests {
         fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
-    /// A stdio MCP server in POSIX sh: answers `initialize` and `tools/list`, echoing ids.
+    /// A stdio MCP server in POSIX sh: answers `initialize` and `tools/list`, echoing ids. Like
+    /// MCP Toolbox 1.14, it knows protocol 2026-07-28, which has no `initialize`, so it rejects
+    /// an `initialize` asking for it.
     const FAKE_SERVER: &str = r#"#!/bin/sh
 while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
   case "$line" in
+    *'"method":"initialize"'*'"protocolVersion":"2026-07-28"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":"invalid method initialize"}}\n' "$id" ;;
     *'"method":"initialize"'*)
       printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"fake","version":"1"}}}\n' "$id" ;;
     *'"method":"tools/list"'*)
