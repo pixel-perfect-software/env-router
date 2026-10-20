@@ -322,14 +322,14 @@ Rejected, by the user: a web-app look, the System Settings sidebar-and-switches 
 - Servers wear their own logo in a brand-tinted tile; brand colour stays in the tile.
 - System sans for everything; mono only for paths, names and values.
 - Focus rings and field edges hold 3:1.
-- Damped motion around 140 to 300ms on one settle curve; reduced motion respected.
+- Damped motion around 140 to 300ms on one settle curve; reduced motion keeps the fades and drops the movement.
 - One mark in two cuts (128 px and up, 64 px and under) plus an alpha-only menu bar template.
 
 ## Colors
 
 A cool, navy-tinted grey ground with white (dark: navy graphite) cards, one system accent, three status hues, eight profile hues that never borrow from status, and server brand colours confined to their logo tiles.
 
-**How theming is applied.** Light and dark follow the system through a `prefers-color-scheme: dark` media query that redefines the `--er-*` custom properties on `:root` (`color-scheme: light dark` is set, so native controls and scrollbars follow too). There is no in-app toggle and no class or stored preference. Where WebKit supports it (`@supports (color: AccentColor)`), the accent is derived from the `AccentColor` system keyword and on-accent text becomes `AccentColorText`, so the accent tracks the user's macOS accent. System accents are bright (blue under white text is 4.0:1), so the window holds them to contrast: the fill (`system-accent`) is the accent mixed 15% toward black, and the ink (`accent-ink`) 20% toward black in light and 35% toward white in dark. `system-accent`, `system-accent-dark`, `accent-ink` and `accent-ink-dark` are the fallbacks. A reviewer checks both themes by switching macOS appearance, and should check at least one non-blue system accent.
+**How theming is applied.** Light and dark follow the system through a `prefers-color-scheme: dark` media query that redefines the `--er-*` custom properties on `:root` (`color-scheme: light dark` is set, so native controls and scrollbars follow too). There is no in-app toggle and no class or stored preference. The accent is derived from the `AccentColor` system keyword, so it tracks the user's macOS accent, but held to contrast, since system accents are bright (blue under white text is 4.0:1, yellow far less). Where WebKit has relative colour (`@supports (color: oklch(from AccentColor min(l, 0.5) c h))`), the accent's OKLCH lightness is clamped, keeping its hue: the fill (`system-accent`) at most 0.5 under white on-accent text, and the ink (`accent-ink`) at most 0.48 in light and at least 0.82 in dark. Measured across every macOS accent, that holds 5.2:1 for text on the fill and 4.5:1 for ink on the card, the tint and the well. Older WebKit mixes `AccentColor` instead (the fill 15% toward black with `AccentColorText` on it, the ink 20% toward black in light and 35% toward white in dark), which holds for blue but not the lightest accents. `system-accent`, `system-accent-dark`, `accent-ink` and `accent-ink-dark` are the fallbacks without `AccentColor`. A reviewer checks both themes by switching macOS appearance, and should check at least one non-blue system accent.
 
 **How vibrancy is applied.** The Tauri window is transparent with macOS's `underWindowBackground` effect (following the window's active state, `macOSPrivateApi` on). Only inside the app (`main.tsx` sets `data-vibrant` on `<html>` when Tauri is present) the body ground becomes `window-ground` at 76% over the vibrancy, and the titlebar band (`data-titlebar`) `window-ground` at 90%, so text on the ground keeps its contrast over any wallpaper. Cards, raised surfaces and fields stay opaque. In the browser preview there is no `data-vibrant` and the ground is solid.
 
@@ -536,7 +536,7 @@ Shown in the server detail card, each with a header (title and a close button th
 **The Both Sides Rule.** Which profiles load a server is editable from both ends: a profile's MCP checklist and tool filter in the inspector, and a server's Used by chips in the editor. Both write the same profile data; keep both doors, and keep the result visible on the cards (the footer's server links) and on the server rows (the profile dots).
 
 ### Status Tile
-The shared status mark for the banner (32px) and the check result and Tools section (28px): an 8px-rounded tile washed with 14% of the status colour, holding a 1.8px stroke glyph whose shape states the result. Check is ok, bang is warn, cross is problem, dash is neutral (no profile owns the folder; a server not checked), and a dashed circle pulsing at 1.1s is pending. A new verdict stamps in (scale 1.35 to 1, 180ms). Under reduced motion the pending pulse holds still at 60% opacity.
+The shared status mark for the banner (32px) and the check result and Tools section (28px): an 8px-rounded tile washed with 14% of the status colour, holding a 1.8px stroke glyph whose shape states the result. Check is ok, bang is warn, cross is problem, dash is neutral (no profile owns the folder; a server not checked), and a dashed circle pulsing at 1.1s is pending. A new verdict stamps in (scale 1.35 to 1, 180ms). Under reduced motion the stamp is a fade, and the pending pulse holds still at 60% opacity.
 
 ### Docket
 The floating check result along the bottom of Profiles, one complete state at a time, never a log.
@@ -591,7 +591,8 @@ The app icon and menu bar glyph, drawn by hand as SVG in `src-tauri/icons/` and 
 - **Do** keep cards and raised surfaces opaque; only the ground and titlebar band let vibrancy through.
 - **Do** take icons from `src/components/icons.tsx` (Lucide at a true 1.5px stroke, agent marks from Simple Icons), and add a new one there rather than drawing it inline.
 - **Do** show the idle docket as a dashed drop zone, and the result as a single raised card.
-- **Do** keep motion on the settle curve (`cubic-bezier(0.16, 1, 0.3, 1)`) between 140 and 300ms, and let reduced motion collapse it, with pending marks holding still.
+- **Do** keep motion on the settle curve (`cubic-bezier(0.16, 1, 0.3, 1)`) between 140 and 300ms. Under reduced motion keep the fades and drop the movement: the slide, drop, rise and stamp keyframes become fades, transitions skip transforms (a switch's knob and a chevron jump), scrolling is instant, and pending marks hold still.
+- **Do** keep every edge and state visible under forced colours (`forced-colors: active`), where shadows and tints drop out: cards and raised surfaces get a 1px `CanvasText` outline, buttons and fields a `ButtonText` border, and a control whose state is a fill (a switch, the selected segment, a checked box, an on shell's dot) takes `Highlight` with `forced-color-adjust: none`.
 - **Do** verify both views in both themes and a non-blue system accent at 900 × 620 and 680 × 460, and check vibrancy in the real app window.
 - **Do** render each icon raster from its SVG at its exact pixel size: the small cut for 64 px and under, the regular cut for 128 px and up, and `tray.svg` at 36 px.
 - **Do** make every inner shape of the menu bar glyph a mask cutout: full for the lit branch and its coin, half (alpha 0.5) for the idle branch.

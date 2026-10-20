@@ -517,7 +517,7 @@ export function PasteView({
           placeholder={
             '{\n  "mcpServers": {\n    "github": {\n      "command": "npx",\n      "args": ["-y", "@modelcontextprotocol/server-github"]\n    }\n  }\n}'
           }
-          className="min-h-[180px] flex-1 resize-none rounded-control bg-field px-2.5 py-2 font-mono text-small text-ink select-text shadow-[inset_0_0_0_1px_var(--er-field-edge)] placeholder:text-ink-2 placeholder:italic focus:shadow-[inset_0_0_0_1.5px_var(--er-accent-ink)] focus:outline-none"
+          className="min-h-[180px] flex-1 resize-none rounded-control bg-field px-2.5 py-2 font-mono text-small text-ink select-text shadow-[inset_0_0_0_1px_var(--er-field-edge)] placeholder:text-ink-2 placeholder:italic focus:shadow-[inset_0_0_0_1.5px_var(--er-accent-ink)] focus:outline-none forced-colors:border forced-colors:border-[ButtonText]"
         />
         <p id="paste-note" className="mt-1.5 text-caption text-ink-2">
           An mcpServers block from a README or an agent's file, VS Code's servers, or one server on its own.

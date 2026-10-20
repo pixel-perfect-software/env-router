@@ -30,7 +30,7 @@ export function Button({
       type="button"
       aria-disabled={busy || undefined}
       onClick={(e) => (busy ? e.preventDefault() : onClick?.(e))}
-      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-body disabled:pointer-events-none disabled:opacity-45 aria-disabled:opacity-45 ${BUTTON[kind]} ${className}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-body disabled:pointer-events-none disabled:opacity-45 aria-disabled:opacity-45 ${kind === 'plain' ? '' : 'forced-colors:border forced-colors:border-[ButtonText]'} ${BUTTON[kind]} ${className}`}
       {...props}
     />
   )
@@ -95,11 +95,11 @@ export function Switch({
       className={`relative h-[16px] w-[28px] shrink-0 rounded-full transition-colors duration-150 disabled:opacity-45 ${
         // Off, the track carries a field edge so the control's bounds hold 3:1 (WCAG 1.4.11).
         checked ? 'bg-accent' : 'bg-[color-mix(in_srgb,var(--er-ink)_18%,transparent)] shadow-[inset_0_0_0_1px_var(--er-field-edge)]'
-      }`}
+      } forced-colors:border forced-colors:border-[ButtonText] forced-colors:forced-color-adjust-none ${checked ? 'forced-colors:bg-[Highlight]' : 'forced-colors:bg-[Canvas]'}`}
     >
       <span
         className={`absolute top-[1.5px] left-[1.5px] size-[13px] rounded-full bg-white shadow-[0_0.5px_1.5px_rgb(0_0_0/0.3)] transition-transform duration-150 ease-settle ${
-          checked ? 'translate-x-[12px]' : ''
+          checked ? 'translate-x-[12px] forced-colors:bg-[HighlightText]' : 'forced-colors:bg-[ButtonText]'
         }`}
       />
     </button>
@@ -112,7 +112,9 @@ export function CheckBox({ checked }: { checked: boolean }) {
     <span
       aria-hidden="true"
       className={`grid size-[14px] shrink-0 place-items-center rounded-[4px] transition-colors duration-100 ${
-        checked ? 'bg-accent text-on-accent shadow-[0_0.5px_1px_rgb(0_0_0/0.2)]' : 'bg-field shadow-[inset_0_0_0_1px_var(--er-field-edge)]'
+        checked
+          ? 'bg-accent text-on-accent shadow-[0_0.5px_1px_rgb(0_0_0/0.2)] forced-colors:bg-[Highlight] forced-colors:text-[HighlightText] forced-colors:forced-color-adjust-none'
+          : 'bg-field shadow-[inset_0_0_0_1px_var(--er-field-edge)] forced-colors:border forced-colors:border-[ButtonText]'
       }`}
     >
       {checked && (
@@ -159,7 +161,9 @@ export function Segmented<T extends string>({
           aria-pressed={option === value}
           onClick={() => onChange(option)}
           className={`flex items-center gap-1.5 rounded-[5px] whitespace-nowrap ${size === 'toolbar' ? 'h-[24px] px-3 text-body' : 'h-[22px] px-2.5 text-small'} ${
-            option === value ? 'bg-button text-ink shadow-[0_0.5px_1.5px_rgb(0_0_0/0.18)]' : 'text-ink-2 hover:text-ink'
+            option === value
+              ? 'bg-button text-ink shadow-[0_0.5px_1.5px_rgb(0_0_0/0.18)] forced-colors:bg-[Highlight] forced-colors:text-[HighlightText] forced-colors:forced-color-adjust-none'
+              : 'text-ink-2 hover:text-ink'
           }`}
         >
           {icon}
@@ -180,7 +184,7 @@ export const TextField = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLIn
       spellCheck={false}
       autoCorrect="off"
       autoCapitalize="off"
-      className={`h-[28px] min-w-0 text-ellipsis rounded-control bg-field px-2 text-ink select-text shadow-[inset_0_0_0_1px_var(--er-field-edge)] placeholder:text-ink-2 placeholder:italic focus:shadow-[inset_0_0_0_1.5px_var(--er-accent-ink)] focus:outline-none ${
+      className={`h-[28px] min-w-0 text-ellipsis rounded-control bg-field px-2 text-ink select-text shadow-[inset_0_0_0_1px_var(--er-field-edge)] placeholder:text-ink-2 placeholder:italic focus:shadow-[inset_0_0_0_1.5px_var(--er-accent-ink)] focus:outline-none forced-colors:border forced-colors:border-[ButtonText] ${
         mono ? 'font-mono text-small' : 'text-body'
       } ${className}`}
       {...props}

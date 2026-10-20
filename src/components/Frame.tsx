@@ -310,8 +310,9 @@ function SlipRow({ slip, home }: { slip: Slip; home: string }) {
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
-    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-    if (!slip.origin || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    el.scrollIntoView({ block: 'nearest', behavior: still ? 'auto' : 'smooth' })
+    if (!slip.origin || still) return
     const box = el.getBoundingClientRect()
     el.animate(
       [
