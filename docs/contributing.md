@@ -43,6 +43,9 @@ recommends its extension and turns on format-on-save.
 | Type check | `pnpm check-types` |
 | Format and lint the frontend | `pnpm format-and-lint:fix` |
 | Format and lint the Rust | `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings` |
+| See which frontend dependencies have updates | `pnpm check-deps` |
+| Take minor and patch updates, once a release is 2 days old (patch) or a week (minor), per `.always-up-to-date.json` | `pnpm update-deps` |
+| Update Tauri, which `update-deps` leaves alone, since the Tauri CLI refuses an npm package and its crate on different minor versions | Move each `@tauri-apps/*` package in `package.json` and its crate (`cargo update -p tauri -p tauri-plugin-dialog -p tauri-plugin-opener`) to the same minor version together |
 | Licences and RustSec advisories | `cargo deny check` |
 | Third-party notices, as a release ships them (needs `cargo install --locked --features cli cargo-about`) | `pnpm notices`, which writes `target/notices/THIRD-PARTY-NOTICES.txt` |
 | Unused Rust dependencies | `cargo machete` |
