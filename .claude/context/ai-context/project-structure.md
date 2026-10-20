@@ -42,8 +42,9 @@ env-router/
 ├── src/                       # React frontend (Vite)
 │   ├── App.tsx                # state, health derivation, check flow, shortcuts (⌘ or Ctrl + N, O, 1, 2)
 │   ├── index.css              # design tokens (light/dark, system accent), hairline utilities
+│   ├── assets/                # illustrations drawn from the mark's SVG: the first-run welcome and the empty server library
 │   ├── components/            # Chrome (titlebar, health line, Shells and Editors popovers), Frame (slots),
-│   │                          # ProfileInspector (slide-in editor), Servers (the MCP Servers view: list beside editor), ServerSources (Catalog and Import), ServerMark (server logos),
+│   │                          # ProfileInspector (slide-in editor), Servers (the MCP Servers view: list beside editor), ServerSources (Catalog and Import), ServerMark (server logos), Welcome (first run),
 │   │                          # Docket (check result), ui (controls, status), icons (Lucide and agent marks)
 │   ├── lib/                   # api.ts (typed commands), types.ts (wire types), agents.json (the agent registry: variables, MCP descriptors, editor hooks; also read by crates/core/src/agents.rs), tools.ts (KNOWN_TOOLS from it, withAgents), platform.ts (usePlatform: shortcuts, store name),
 │   │                          # mcp.ts (server drafts, rename/remove, secret locking), mcpCatalog.ts (well-known servers), serverLogo.ts (logo matching),

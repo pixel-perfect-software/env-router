@@ -1,7 +1,7 @@
 // The top of the window: the titlebar (traffic lights, app icon and name, shell status, Shells…, Editors…, Check Folder…),
 // the health banner beneath it, and the Shells and Editors popovers.
 
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 // The small cut: it's drawn for 64 px and under, and the titlebar shows it at 18.
 import appIcon from '../../src-tauri/icons/app-icon-small.svg'
 import { errorMessage } from '../lib/api'
@@ -9,7 +9,7 @@ import { tildify } from '../lib/paths'
 import { shortcutLabel, usePlatform } from '../lib/platform'
 import { toolLabel } from '../lib/tools'
 import type { Editor, EditorStatus, SetupStatus, Shell, ShellStatus } from '../lib/types'
-import { AgentMark, EditorIcon, FolderCheckIcon, PlugIcon, ShellIcon } from './icons'
+import { AgentMark, DisclosureIcon, EditorIcon, FolderCheckIcon, PlugIcon } from './icons'
 import { Button, CloseIcon, FolderIcon, IconButton, Segmented, StatusTile, Switch, type Tone } from './ui'
 
 export function TitleBand({
@@ -54,7 +54,7 @@ export function TitleBand({
         <div data-tauri-drag-region className="flex items-center gap-2">
           <img data-tauri-drag-region src={appIcon} alt="" width={18} height={18} draggable={false} className="shrink-0" />
           {/* A narrow window keeps the icon; the name stays for screen readers. */}
-          <h1 data-tauri-drag-region className="text-title font-semibold max-[900px]:sr-only">
+          <h1 data-tauri-drag-region className="text-body font-bold max-[900px]:sr-only">
             EnvRouter
           </h1>
         </div>
@@ -72,49 +72,68 @@ export function TitleBand({
         onChange={onView}
       />
       <div data-tauri-drag-region className="ml-auto flex items-center gap-2">
+        {/* Each shell's state lives in the control that changes it: the dots open the Shells popover. */}
         {shells.length > 0 && (
-          <>
-            <ul className="mr-1 flex items-center gap-3 text-small text-ink-2" aria-label="EnvRouter by shell">
-              {shells.map((s) => (
-                <li key={s.shell} className="flex items-center gap-1.5">
-                  {s.shell === blockedShell ? (
-                    <svg aria-hidden="true" width="9" height="9" viewBox="0 0 10 10" className="text-problem">
-                      <path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                    </svg>
-                  ) : (
-                    <span
-                      aria-hidden="true"
-                      className={`size-[7px] rounded-full ${
-                        s.installed
-                          ? 'bg-ok forced-colors:bg-[CanvasText] forced-colors:forced-color-adjust-none'
-                          : 'shadow-[inset_0_0_0_1.2px_var(--er-ink-3)] forced-colors:border forced-colors:border-[CanvasText]'
-                      }`}
-                    />
-                  )}
-                  <span className={s.installed ? 'text-ink' : ''}>{s.shell}</span>
-                  <span className="sr-only">{s.shell === blockedShell ? 'blocked' : s.installed ? 'on' : 'off'}</span>
-                </li>
-              ))}
-            </ul>
-            <Button aria-expanded={shellsOpen} aria-haspopup="dialog" aria-controls="shells-panel" onClick={onToggleShells} title="Shells…">
-              <ShellIcon />
-              {/* A narrow window keeps the icon; the name stays as the tooltip and accessible label. */}
-              <span className="max-[820px]:sr-only">Shells…</span>
-            </Button>
-          </>
+          <Button
+            size="toolbar"
+            aria-expanded={shellsOpen}
+            aria-haspopup="dialog"
+            aria-controls="shells-panel"
+            onClick={onToggleShells}
+            title="Shells…"
+            className="gap-2.5 pr-2.5 text-small"
+          >
+            {shells.map((s) => (
+              <span key={s.shell} className="flex items-center gap-1.5">
+                {s.shell === blockedShell ? (
+                  <svg aria-hidden="true" width="9" height="9" viewBox="0 0 10 10" className="text-problem">
+                    <path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  </svg>
+                ) : (
+                  <span
+                    aria-hidden="true"
+                    className={`size-[7px] rounded-full ${
+                      s.installed
+                        ? 'bg-ok forced-colors:bg-[CanvasText] forced-colors:forced-color-adjust-none'
+                        : 'shadow-[inset_0_0_0_1.2px_var(--er-ink-2)] forced-colors:border forced-colors:border-[CanvasText]'
+                    }`}
+                  />
+                )}
+                {/* Three shells in a narrow window keep their dots; the names stay for screen readers and in the popover. */}
+                <span className={`${shells.length > 2 ? 'max-[760px]:sr-only' : ''} ${s.installed ? 'text-ink' : 'text-ink-2'}`}>{s.shell}</span>
+              </span>
+            ))}
+            <span className="-ml-0.5 text-ink-2">
+              <DisclosureIcon />
+            </span>
+            {/* After the visible names, so the accessible name starts with what's on screen (WCAG 2.5.3). */}
+            <span className="sr-only">
+              , Shells: {shells.map((s) => `${s.shell} ${s.shell === blockedShell ? 'blocked' : s.installed ? 'on' : 'off'}`).join(', ')}
+            </span>
+          </Button>
         )}
         {editorsShown && (
-          <Button aria-expanded={editorsOpen} aria-haspopup="dialog" aria-controls="editors-panel" onClick={onToggleEditors} title="Editors…">
+          <Button
+            size="toolbar"
+            aria-expanded={editorsOpen}
+            aria-haspopup="dialog"
+            aria-controls="editors-panel"
+            aria-label="Editors…"
+            onClick={onToggleEditors}
+            title="Editors…"
+            className="w-[34px] justify-center !px-0"
+          >
             <EditorIcon />
-            <span className="max-[820px]:sr-only">Editors…</span>
           </Button>
         )}
         <Button
           id="check-folder"
+          size="toolbar"
           kind={primary ? 'primary' : 'push'}
           disabled={!canCheck}
           onClick={onCheckFolder}
           title={`Check Folder… (${shortcutLabel('o', platform)})`}
+          className="pl-2.5"
         >
           <FolderCheckIcon />
           Check Folder…
@@ -153,6 +172,7 @@ function Banner({ tone, title, detail, action }: { tone: Tone; title: string; de
 
 export function HealthLine({
   health,
+  summary,
   quiet = false,
   onNewProfile,
   onEnableShell,
@@ -163,6 +183,8 @@ export function HealthLine({
   onDismissError,
 }: {
   health: Health
+  /** Shown beside working routing's line. */
+  summary?: Summary
   /** On Servers the editor's Save is the accent, so the banner's action stands down to a push button. */
   quiet?: boolean
   onNewProfile: () => void
@@ -175,12 +197,16 @@ export function HealthLine({
 }) {
   const accent = quiet ? 'push' : 'primary'
   if (health.kind === 'loading') {
-    return <div className="mx-4 h-[58px] shrink-0 animate-pulse rounded-card bg-card-muted" />
+    // Holds the place of the line working routing gets, the likeliest answer.
+    return (
+      <div className="mx-4 flex h-7 shrink-0 items-center">
+        <div className="h-3 w-48 rounded-full bg-track motion-safe:animate-pulse" />
+      </div>
+    )
   }
 
   if (health.kind === 'setup') {
     const shellName = health.shell?.shell ?? 'your shell'
-    const steps = ['Create a profile', `Turn on ${shellName}`, 'Check a folder']
     const actions = [
       <Button key="1" kind={accent} onClick={onNewProfile}>
         New Profile
@@ -196,38 +222,7 @@ export function HealthLine({
       <div className="mx-4 flex shrink-0 items-center gap-4 rounded-card bg-card p-3 pl-4 shadow-card">
         <div className="min-w-0 flex-1">
           <p className="font-medium">Set up EnvRouter</p>
-          <ol className="mt-1.5 flex flex-wrap items-center gap-x-5 gap-y-1">
-            {steps.map((label, i) => {
-              const n = i + 1
-              const done = n < health.step
-              const current = n === health.step
-              return (
-                <li
-                  key={label}
-                  className={`flex items-center gap-2 text-small ${current ? 'text-ink' : 'text-ink-2'}`}
-                  aria-current={current ? 'step' : undefined}
-                >
-                  <span
-                    className={`grid size-[18px] place-items-center rounded-full text-caption font-semibold tabular-nums ${
-                      done ? 'bg-ok text-white' : current ? 'bg-accent text-on-accent' : 'shadow-[inset_0_0_0_1px_var(--er-rule)]'
-                    }`}
-                  >
-                    {done ? (
-                      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-                        <path d="M2 5.2l2 2L8 3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    ) : (
-                      n
-                    )}
-                  </span>
-                  <span className={current ? 'font-medium' : ''}>
-                    {label}
-                    {done && <span className="sr-only"> (done)</span>}
-                  </span>
-                </li>
-              )
-            })}
-          </ol>
+          <SetupSteps step={health.step} shell={shellName} className="mt-1.5" />
         </div>
         {actions[health.step - 1]}
       </div>
@@ -323,8 +318,72 @@ export function HealthLine({
         />
       )
     case 'ok':
-      return <Banner tone="ok" title={`Routing is on in ${health.on.join(' and ')}`} />
+      // Working routing doesn't ask for attention: a quiet line on the ground, not a card.
+      return (
+        <div role="status" className="mx-4 flex h-7 shrink-0 items-center gap-2 pr-1 pl-0.5 text-small">
+          <StatusTile tone="ok" size={16} badge />
+          <p className="min-w-0 truncate font-medium">Routing is on in {health.on.join(' and ')}</p>
+          {summary && <p className="ml-auto shrink-0 text-ink-2 tabular-nums">{summaryLine(summary)}</p>}
+        </div>
+      )
   }
+}
+
+/** What the map holds, at a glance: "4 profiles · 6 folders · 6 MCP servers". */
+export interface Summary {
+  profiles: number
+  folders: number
+  servers: number
+}
+
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+const summaryLine = (s: Summary) =>
+  [count(s.profiles, 'profile', 'profiles'), count(s.folders, 'folder', 'folders'), s.servers > 0 && count(s.servers, 'MCP server', 'MCP servers')]
+    .filter(Boolean)
+    .join(' · ')
+
+/** First run's three steps: done ones green with a check, the current one accent, the rest a ring. */
+export function SetupSteps({ step, shell, className = '' }: { step: 1 | 2 | 3; shell: string; className?: string }) {
+  const steps = ['Create a profile', `Turn on ${shell}`, 'Check a folder']
+  return (
+    <ol className={`flex flex-wrap items-center gap-x-5 gap-y-1 ${className}`}>
+      {steps.map((label, i) => {
+        const n = i + 1
+        const done = n < step
+        const current = n === step
+        return (
+          <li
+            key={label}
+            className={`flex items-center gap-2 text-small ${current ? 'text-ink' : 'text-ink-2'}`}
+            aria-current={current ? 'step' : undefined}
+          >
+            <span
+              className={`grid size-[18px] place-items-center rounded-full text-caption font-semibold tabular-nums ${
+                done
+                  ? 'bg-ok text-white forced-colors:border forced-colors:border-[CanvasText]'
+                  : current
+                    ? 'bg-accent text-on-accent forced-colors:bg-[Highlight] forced-colors:text-[HighlightText] forced-colors:forced-color-adjust-none'
+                    : 'shadow-[inset_0_0_0_1px_var(--er-field-edge)] forced-colors:border forced-colors:border-[CanvasText]'
+              }`}
+            >
+              {done ? (
+                <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                  <path d="M2 5.2l2 2L8 3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : (
+                n
+              )}
+            </span>
+            <span className={current ? 'font-medium' : ''}>
+              {label}
+              {done && <span className="sr-only"> (done)</span>}
+            </span>
+          </li>
+        )
+      })}
+    </ol>
+  )
 }
 
 const EDITOR_LABEL: Record<Editor, string> = {
@@ -345,6 +404,20 @@ export const editorsToShow = (editors: EditorStatus[] | null) => editors?.filter
 /** A titlebar popover, anchored under its button at the right. Escape or a click outside closes it, except on its own button, which toggles it. */
 function TitlePopover({ id, label, onClose, children }: { id: string; label: string; onClose: () => void; children: ReactNode }) {
   const panel = useRef<HTMLElement>(null)
+  // Hangs from its own button, right edges aligned, as a native popover does; the window's edge still holds it in.
+  const [right, setRight] = useState(16)
+  useLayoutEffect(() => {
+    const place = () => {
+      const button = document.querySelector<HTMLElement>(`[aria-controls="${id}"]`)
+      const width = panel.current?.offsetWidth ?? 0
+      if (!button) return
+      const fromRight = window.innerWidth - button.getBoundingClientRect().right
+      setRight(Math.max(16, Math.min(fromRight, window.innerWidth - width - 16)))
+    }
+    place()
+    window.addEventListener('resize', place)
+    return () => window.removeEventListener('resize', place)
+  }, [id])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -371,7 +444,8 @@ function TitlePopover({ id, label, onClose, children }: { id: string; label: str
       id={id}
       role="dialog"
       aria-label={label}
-      className="absolute top-[46px] right-4 z-30 w-[min(440px,calc(100vw-32px))] animate-[er-open_140ms_var(--ease-settle)] rounded-card bg-raised p-1.5 shadow-raised"
+      style={{ right }}
+      className="absolute top-[46px] z-30 w-[min(440px,calc(100vw-32px))] origin-top-right animate-[er-open_140ms_var(--ease-settle)] rounded-card bg-raised p-1.5 shadow-raised"
     >
       {children}
     </section>

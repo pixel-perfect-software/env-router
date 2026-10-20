@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="124 160 776 720" width="776" height="720">
+  <!-- First run: the mark opened up. The folder's track forks to two accounts and lights the one a terminal in it gets.
+       Drawn on the mark's 1024 grid and palette, without its plate, so it sits on the window's ground in either theme;
+       the idle branch takes the small cut's lighter grey so it still reads on the dark ground. -->
+  <defs>
+    <linearGradient id="front" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#72b8fb"/><stop offset="1" stop-color="#3d8ff0"/>
+    </linearGradient>
+    <linearGradient id="coin-lit-fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6cbcf6"/><stop offset="1" stop-color="#3d93e0"/>
+    </linearGradient>
+    <linearGradient id="coin-rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e6f3ff" stop-opacity="0.9"/><stop offset="0.6" stop-color="#e6f3ff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="idle" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5e6a87"/><stop offset="1" stop-color="#4e5a76"/>
+    </linearGradient>
+    <linearGradient id="window" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a3754"/><stop offset="1" stop-color="#141c2e"/>
+    </linearGradient>
+    <clipPath id="coin-idle"><circle cx="330" cy="790" r="46"/></clipPath>
+    <clipPath id="coin-lit"><circle cx="694" cy="790" r="46"/></clipPath>
+    <filter id="drop" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#101830" flood-opacity="0.24"/>
+    </filter>
+    <filter id="contact" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#101830" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <!-- A terminal window, its prompt in the lit route's blue: a command run in this folder. -->
+  <g filter="url(#drop)">
+    <rect x="620" y="500" width="260" height="190" rx="24" fill="url(#window)"/>
+  </g>
+  <rect x="621.5" y="501.5" width="257" height="187" rx="22.5" fill="none" stroke="#9fb6ff" stroke-opacity="0.3" stroke-width="3"/>
+  <g fill="#56627f">
+    <circle cx="652" cy="530" r="8"/><circle cx="678" cy="530" r="8"/><circle cx="704" cy="530" r="8"/>
+  </g>
+  <path d="M652,580 l24,20 l-24,20" fill="none" stroke="#4aa3e8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="692" y="614" width="34" height="10" rx="5" fill="#cfe8ff"/>
+  <rect x="652" y="648" width="150" height="10" rx="5" fill="#56627f"/>
+
+  <!-- The tracks: the idle branch first, then the lit one over the shared stem. -->
+  <g fill="none" stroke-linecap="round" filter="url(#contact)">
+    <path d="M512,470 V598 C512,703.6 352,694.96 334,750" stroke="#56627f" stroke-width="34"/>
+    <path d="M512,470 V598 C512,703.6 672,694.96 690,750" stroke="#4aa3e8" stroke-width="34"/>
+    <path d="M512,470 V598 C512,703.6 672,694.96 690,750" stroke="#cfe8ff" stroke-opacity="0.55" stroke-width="8.2"/>
+  </g>
+
+  <!-- The two accounts. -->
+  <circle cx="330" cy="790" r="58" fill="url(#idle)" filter="url(#contact)"/>
+  <g clip-path="url(#coin-idle)"><circle cx="330" cy="778.4" r="17.5" fill="#2b3550"/><path d="M298.7,849.2 V827.1 A31.3,27.6 0 0 1 361.3,827.1 V849.2 Z" fill="#2b3550"/></g>
+  <circle cx="694" cy="790" r="58" fill="url(#coin-lit-fill)" filter="url(#contact)"/>
+  <circle cx="694" cy="790" r="56" fill="none" stroke="url(#coin-rim)" stroke-width="4"/>
+  <g clip-path="url(#coin-lit)"><circle cx="694" cy="778.4" r="17.5" fill="#0d1320"/><path d="M662.7,849.2 V827.1 A31.3,27.6 0 0 1 725.3,827.1 V849.2 Z" fill="#0d1320"/></g>
+
+  <!-- The mark's folder. -->
+  <g filter="url(#drop)">
+    <path d="M312,242.0 V199.2 Q312,186 325.2,186 H451.8 C465.8,186 468.6,220.0 484.0,220.0 H690.0 Q712,220.0 712,242.0 V464.0 Q712,486 690.0,486 H334.0 Q312,486 312,464.0 Z" fill="#2b7be0"/>
+    <rect x="312" y="253.0" width="400" height="14" rx="7" fill="#000" opacity="0.10"/>
+    <rect x="312" y="259.0" width="400" height="227.0" rx="22.0" fill="url(#front)"/>
+    <rect x="325.2" y="262.0" width="373.6" height="5" rx="2.5" fill="#fff" opacity="0.5"/>
+  </g>
+  <circle cx="512" cy="598" r="22" fill="#e9eef8" stroke="#4aa3e8" stroke-width="6" filter="url(#drop)"/>
+</svg>

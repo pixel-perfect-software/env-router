@@ -2,16 +2,27 @@
 // and profile colours. Everything else composes these.
 
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
-import { forwardRef } from 'react'
+import { forwardRef, useLayoutEffect, useRef, useState } from 'react'
 
 type ButtonKind = 'push' | 'primary' | 'plain'
+type ButtonSize = 'regular' | 'large' | 'toolbar'
 
 const BUTTON: Record<ButtonKind, string> = {
   // Held open (a popover it opened, aria-expanded) it stays pressed, hovered or not.
-  push: 'h-[26px] px-3 rounded-control bg-button text-ink shadow-[0_0_0_0.5px_rgb(0_0_0/0.14),0_1px_2px_rgb(0_0_0/0.08)] hover:brightness-[0.97] active:brightness-90 aria-expanded:brightness-90 aria-expanded:hover:brightness-90',
-  primary:
-    'h-[26px] px-3 rounded-control bg-accent text-on-accent font-medium shadow-[0_1px_2px_rgb(0_0_0/0.18)] hover:brightness-105 active:brightness-90',
-  plain: 'h-[26px] px-2 -mx-2 rounded-control text-accent-ink hover:bg-tint active:brightness-90',
+  push: 'bg-button text-ink shadow-push hover:brightness-[0.97] active:brightness-90 aria-expanded:brightness-90 aria-expanded:hover:brightness-90',
+  primary: 'bg-accent text-on-accent font-medium shadow-primary hover:brightness-105 active:brightness-90',
+  plain: 'px-2 -mx-2 text-accent-ink hover:bg-tint active:brightness-90',
+}
+
+/**
+ * Regular is the form control: a rounded rectangle at 26px. Large (a hero's one action, 28px) and
+ * toolbar (the titlebar's controls) are capsules, as macOS 26 and later draw their bigger controls.
+ */
+const SIZE: Record<ButtonSize, string> = {
+  regular: 'h-[26px] px-3 rounded-control',
+  large: 'h-[28px] px-4 rounded-full',
+  // macOS 27's toolbar items: 34pt pills in the 52pt band (measured).
+  toolbar: 'h-[34px] px-3.5 rounded-full',
 }
 
 /**
@@ -20,17 +31,18 @@ const BUTTON: Record<ButtonKind, string> = {
  */
 export function Button({
   kind = 'push',
+  size = 'regular',
   busy = false,
   className = '',
   onClick,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { kind?: ButtonKind; busy?: boolean }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { kind?: ButtonKind; size?: ButtonSize; busy?: boolean }) {
   return (
     <button
       type="button"
       aria-disabled={busy || undefined}
       onClick={(e) => (busy ? e.preventDefault() : onClick?.(e))}
-      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-body disabled:pointer-events-none disabled:opacity-45 aria-disabled:opacity-45 ${kind === 'plain' ? '' : 'forced-colors:border forced-colors:border-[ButtonText]'} ${BUTTON[kind]} ${className}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-body disabled:pointer-events-none disabled:opacity-45 aria-disabled:opacity-45 ${kind === 'plain' ? 'h-[26px] rounded-control' : `${SIZE[size]} forced-colors:border forced-colors:border-[ButtonText]`} ${BUTTON[kind]} ${className}`}
       {...props}
     />
   )
@@ -135,7 +147,11 @@ export function CheckBox({ checked }: { checked: boolean }) {
   )
 }
 
-/** A segmented control: a 7% ink track, the chosen segment raised on it. */
+/**
+ * A segmented control: a 7% ink track, the chosen segment raised on it. The toolbar's view switch
+ * is a capsule like the controls beside it, and its raised thumb slides to the chosen segment, as
+ * macOS 27's tabs do; in a form it stays a rounded rectangle and the chosen segment simply lifts.
+ */
 export function Segmented<T extends string>({
   label,
   options,
@@ -144,25 +160,50 @@ export function Segmented<T extends string>({
   size = 'small',
 }: {
   label: string
-  /** `toolbar`: the titlebar's view switch, at push-button height. */
+  /** `toolbar`: the titlebar's view switch, at toolbar-item height. */
   size?: 'small' | 'toolbar'
   /** Value, label, and an optional leading icon. */
   options: [T, string, ReactNode?][]
   value: T
   onChange: (value: T) => void
 }) {
+  const toolbar = size === 'toolbar'
+  const track = useRef<HTMLFieldSetElement>(null)
+  const [thumb, setThumb] = useState<{ left: number; width: number } | null>(null)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the chosen segment moves with the value and the labels
+  useLayoutEffect(() => {
+    const el = track.current
+    if (!toolbar || !el) return
+    // Measured again whenever the track resizes, since the system font can arrive after the first frame.
+    const place = () => {
+      const chosen = el.querySelector<HTMLElement>('[aria-pressed="true"]')
+      if (chosen) setThumb({ left: chosen.offsetLeft, width: chosen.offsetWidth })
+    }
+    place()
+    const observer = new ResizeObserver(place)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [toolbar, value, options.length])
+  const raised = 'bg-button shadow-[0_0.5px_1.5px_rgb(0_0_0/0.18)] forced-colors:bg-[Highlight] forced-colors:forced-color-adjust-none'
   return (
-    <fieldset className="flex w-fit shrink-0 rounded-[7px] bg-track p-[2px]">
+    <fieldset ref={track} className={`relative flex w-fit shrink-0 bg-track p-[2px] ${toolbar ? 'rounded-full' : 'rounded-[7px]'}`}>
       <legend className="sr-only">{label}</legend>
+      {toolbar && thumb && (
+        <span
+          aria-hidden="true"
+          className={`absolute top-[2px] bottom-[2px] left-0 rounded-full transition-[translate,width] duration-200 ease-settle ${raised}`}
+          style={{ width: thumb.width, translate: `${thumb.left}px 0` }}
+        />
+      )}
       {options.map(([option, text, icon]) => (
         <button
           key={option}
           type="button"
           aria-pressed={option === value}
           onClick={() => onChange(option)}
-          className={`flex items-center gap-1.5 rounded-[5px] whitespace-nowrap ${size === 'toolbar' ? 'h-[24px] px-3 text-body' : 'h-[22px] px-2.5 text-small'} ${
+          className={`relative flex items-center gap-1.5 whitespace-nowrap transition-colors duration-150 ${toolbar ? 'h-[30px] rounded-full px-3.5 text-body' : 'h-[22px] rounded-[5px] px-2.5 text-small'} ${
             option === value
-              ? 'bg-button text-ink shadow-[0_0.5px_1.5px_rgb(0_0_0/0.18)] forced-colors:bg-[Highlight] forced-colors:text-[HighlightText] forced-colors:forced-color-adjust-none'
+              ? `text-ink forced-colors:text-[HighlightText] forced-colors:forced-color-adjust-none ${toolbar ? '' : raised}`
               : 'text-ink-2 hover:text-ink'
           }`}
         >
@@ -279,20 +320,22 @@ const TONE_TEXT: Record<Tone, string> = { ok: 'text-ok', warn: 'text-warn', prob
  * The status icon shared by the health banner and the check result: a tinted tile with a
  * glyph whose shape, not only its colour, says the state.
  */
-export function StatusTile({ tone, size = 32 }: { tone: Tone; size?: number }) {
+export function StatusTile({ tone, size = 32, badge = false }: { tone: Tone; size?: number; badge?: boolean }) {
+  // `badge`: a small solid disc with a white glyph, for a one-line status where a pale tile would wash out.
   return (
     <span
       aria-hidden="true"
-      className={`grid shrink-0 place-items-center rounded-[8px] ${TONE_TEXT[tone]} ${tone === 'pending' ? 'animate-[er-pending_1.1s_ease-in-out_infinite]' : 'animate-[er-stamp_180ms_var(--ease-settle)]'}`}
-      style={{ width: size, height: size, background: 'color-mix(in srgb, currentColor 14%, transparent)' }}
+      className={`grid shrink-0 place-items-center ${badge ? 'rounded-full forced-colors:border forced-colors:border-[CanvasText]' : 'rounded-[8px]'} ${TONE_TEXT[tone]} ${tone === 'pending' ? 'animate-[er-pending_1.1s_ease-in-out_infinite]' : 'animate-[er-stamp_180ms_var(--ease-settle)]'}`}
+      style={{ width: size, height: size, background: badge ? 'currentColor' : 'color-mix(in srgb, currentColor 14%, transparent)' }}
     >
       <svg
-        width={size / 2}
-        height={size / 2}
+        width={badge ? size * 0.62 : size / 2}
+        height={badge ? size * 0.62 : size / 2}
         viewBox="0 0 16 16"
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.8"
+        className={badge ? 'text-white forced-colors:text-[CanvasText]' : undefined}
+        strokeWidth={badge ? 2.4 : 1.8}
         strokeLinecap="round"
         strokeLinejoin="round"
       >

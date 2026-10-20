@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-19T12:00:00+00:00",
+  "generatedAt": "2026-10-20T12:00:00+00:00",
   "title": "Design System: EnvRouter",
   "extensions": {
     "theming": {
@@ -289,9 +289,10 @@
         "role": "neutral",
         "displayName": "Secondary Ink (dark)",
         "theme": "dark",
-        "canonical": "#a0a5b0",
-        "oklch": "oklch(72.1% 0.017 266.2)",
-        "tonalRamp": ["#080b12", "#21252d", "#3e424b", "#5d616b", "#7e828d", "#a0a5b0", "#c4c9d5", "#e9effa"]
+        "canonical": "#a9aeb9",
+        "oklch": "oklch(75.0% 0.017 266.2)",
+        "tonalRamp": ["#080b12", "#21252d", "#3e424b", "#5d616b", "#7e828d", "#a9aeb9", "#c4c9d5", "#e9effa"],
+        "note": "Raised from #a0a5b0 so it holds 4.5:1 on the dark push button (#3a3f4a)."
       },
       "ink-tertiary-dark": {
         "role": "neutral",
@@ -515,9 +516,17 @@
       }
     },
     "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Hero moments only: the first-run welcome heading."
+      },
+      "heading": {
+        "displayName": "Heading",
+        "purpose": "Hero moments only: the Servers detail heading when nothing is selected."
+      },
       "title": {
         "displayName": "Title",
-        "purpose": "Card names, app title, inspector and server-list headings; the server editor heading in mono at this size."
+        "purpose": "Card names, inspector and server-list headings; the server editor heading in mono at this size."
       },
       "body": {
         "displayName": "Body",
@@ -542,35 +551,43 @@
       "mono": {
         "displayName": "Mono",
         "purpose": "Paths, names and values only (server and tool names, commands, URLs); selectable; parent segment secondary, leaf primary."
+      },
+      "app-name": {
+        "displayName": "App Name",
+        "purpose": "The titlebar's app name, body size at 700, as macOS 27 sets a toolbar title."
       }
     },
     "shadows": [
       {
         "name": "card",
-        "value": "0 1px 2px rgb(16 24 48 / 0.06), 0 0 0 0.5px var(--er-border)",
-        "dark": "0 1px 2px rgb(0 0 0 / 0.35), 0 0 0 0.5px var(--er-border)",
+        "value": "0 0 0 0.5px var(--er-border), 0 1px 2px rgb(16 24 48 / 0.05), 0 3px 10px -4px rgb(16 24 48 / 0.08)",
+        "dark": "0 0 0 0.5px var(--er-border), 0 1px 2px rgb(0 0 0 / 0.35), 0 3px 10px -4px rgb(0 0 0 / 0.3)",
         "purpose": "Cards on the window ground: profile cards, banner, setup card, server list and detail, the inspector's lists."
       },
       {
         "name": "raised",
         "value": "0 10px 30px -6px rgb(16 24 48 / 0.2), 0 2px 6px rgb(16 24 48 / 0.06), 0 0 0 0.5px var(--er-border)",
         "dark": "0 12px 32px -6px rgb(0 0 0 / 0.6), 0 0 0 0.5px var(--er-border)",
-        "purpose": "Shells popover, profile inspector, docket check result."
+        "purpose": "Shells and Editors popovers, profile inspector, docket check result."
       },
       {
-        "name": "push-control",
+        "name": "push",
         "value": "0 0 0 0.5px rgb(0 0 0 / 0.14), 0 1px 2px rgb(0 0 0 / 0.08)",
-        "purpose": "Push buttons."
+        "purpose": "Push buttons at every size, and the Servers empty state's icon tiles; dark adds a lit top edge.",
+        "token": "--er-shadow-push (Tailwind shadow-push)",
+        "dark": "0 0 0 0.5px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.3), inset 0 0.5px 0 rgb(255 255 255 / 0.12)"
       },
       {
-        "name": "primary-control",
-        "value": "0 1px 2px rgb(0 0 0 / 0.18)",
-        "purpose": "The primary (accent) button."
+        "name": "primary",
+        "value": "0 1px 2px rgb(0 0 0 / 0.18), inset 0 0.5px 0 rgb(255 255 255 / 0.18)",
+        "purpose": "The accent button, with a 0.5px lit top edge.",
+        "token": "--er-shadow-primary (Tailwind shadow-primary)",
+        "dark": "0 0 0 0.5px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.3), inset 0 0.5px 0 rgb(255 255 255 / 0.22)"
       },
       {
         "name": "contact",
         "value": "0 0.5px 1.5px rgb(0 0 0 / 0.3)",
-        "purpose": "Switch knob; selected segment uses 0 0.5px 1.5px rgb(0 0 0 / 0.18); checked checkbox 0 0.5px 1px rgb(0 0 0 / 0.2)."
+        "purpose": "Switch knob; the selected segment and the toolbar thumb use 0 0.5px 1.5px rgb(0 0 0 / 0.18); checked checkbox 0 0.5px 1px rgb(0 0 0 / 0.2)."
       },
       {
         "name": "scrim",
@@ -619,7 +636,7 @@
       {
         "name": "popover-open",
         "value": "140ms ease-settle, from translateY(-4px) opacity 0",
-        "purpose": "Shells popover."
+        "purpose": "Shells and Editors popovers, from their top-right corner."
       },
       {
         "name": "scrim-fade",
@@ -652,6 +669,16 @@
         "purpose": "Server editor, Catalog and Import appearing in the detail card."
       },
       {
+        "name": "thumb-slide",
+        "value": "200ms ease-settle, translate and width",
+        "purpose": "The toolbar view switch's raised thumb sliding to the chosen segment; jumps under reduced motion."
+      },
+      {
+        "name": "welcome-rise",
+        "value": "300ms ease-settle (er-rise)",
+        "purpose": "The first-run welcome arriving."
+      },
+      {
         "name": "disclosure",
         "value": "150ms ease-settle, chevron rotate 90deg",
         "purpose": "Tool list and tool filter disclosures."
@@ -659,7 +686,7 @@
       {
         "name": "pending",
         "value": "1.1s ease-in-out infinite, opacity to 0.35",
-        "purpose": "Pending mark and tile."
+        "purpose": "Pending mark and tile; the loading line's bar pulses only when motion is allowed (motion-safe)."
       },
       {
         "name": "reduced-motion",
@@ -680,8 +707,8 @@
       },
       {
         "name": "narrow-titlebar",
-        "value": "max-width 760px",
-        "note": "App name and Shells… collapse to their icon (kept for screen readers and as tooltip)."
+        "value": "max-width 900px / 760px",
+        "note": "Under 900px the app name hides (kept for screen readers); with three shells, under 760px the Shells control's names hide and its dots stay. Editors… is icon-only at every width."
       },
       {
         "name": "server-list-wide",
@@ -718,7 +745,8 @@
           "figureFill": {
             "idle": "#1a2236",
             "lit": "#0d1320"
-          }
+          },
+          "inWindow": []
         },
         {
           "name": "small",
@@ -731,7 +759,8 @@
           "coins": "r 96 at (312, 800) idle and (712, 800) lit",
           "figures": false,
           "railSheen": null,
-          "idleCoin": "#5e6a87 to #4e5a76"
+          "idleCoin": "#5e6a87 to #4e5a76",
+          "inWindow": ["titlebar 18px"]
         }
       ],
       "coinRim": "4px #e6f3ff, 90% to 0 at 60% height, lit coin only",
@@ -769,8 +798,8 @@
     },
     "views": {
       "switch": "Titlebar segmented control (toolbar size): Profiles (folder icon) | Servers (plug icon); ⌘1 / ⌘2; stands down while the profile inspector is open.",
-      "profiles": "Banner or setup card, the Sorting Frame grid, the docket.",
-      "servers": "Banner only when routing needs attention; list card (232/264px) beside a detail card holding the editor, Catalog, Import or the empty state.",
+      "profiles": "Health line (working routing) or banner, or setup card for steps 2 and 3, then the Sorting Frame grid and the docket; before the first profile the Welcome replaces banner and grid.",
+      "servers": "Banner only when routing needs attention; list card (232/264px) beside a detail card holding the editor, Catalog, Import, Paste JSON or the nothing-selected hero.",
       "assignment": "Two-sided: profile inspector MCP checklist + tool filter, and the server editor's Used by chips; card footers link each server to its editor."
     }
   },
@@ -780,8 +809,8 @@
       "kind": "button",
       "refersTo": "button-push",
       "description": "Default action button; most actions in the window.",
-      "html": "<button class=\"ds-btn-push\">Shells…</button>",
-      "css": ".ds-btn-push{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 12px;border:0;border-radius:6px;background:var(--er-button);color:var(--er-ink);font:400 13px/18px -apple-system,BlinkMacSystemFont,\"SF Pro Text\",sans-serif;box-shadow:0 0 0 0.5px rgb(0 0 0/0.14),0 1px 2px rgb(0 0 0/0.08);white-space:nowrap}.ds-btn-push:hover{filter:brightness(0.97)}.ds-btn-push:active{filter:brightness(0.9)}.ds-btn-push:focus-visible{outline:2px solid var(--er-accent);outline-offset:2px}"
+      "html": "<button class=\"ds-btn-push\">Add Folder…</button>",
+      "css": ".ds-btn-push{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 12px;border:0;border-radius:6px;background:var(--er-button);color:var(--er-ink);font:400 13px/18px -apple-system,BlinkMacSystemFont,\"SF Pro Text\",sans-serif;box-shadow:var(--er-shadow-push);white-space:nowrap}.ds-btn-push:hover{filter:brightness(0.97)}.ds-btn-push:active{filter:brightness(0.9)}.ds-btn-push:focus-visible{outline:2px solid var(--er-accent);outline-offset:2px}"
     },
     {
       "name": "Primary Button",
@@ -789,7 +818,23 @@
       "refersTo": "button-primary",
       "description": "The single accent action for the current window state.",
       "html": "<button class=\"ds-btn-primary\">Check Folder…</button>",
-      "css": ".ds-btn-primary{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 12px;border:0;border-radius:6px;background:var(--er-accent);color:var(--er-on-accent);font:500 13px/18px -apple-system,BlinkMacSystemFont,\"SF Pro Text\",sans-serif;box-shadow:0 1px 2px rgb(0 0 0/0.18);white-space:nowrap}.ds-btn-primary:hover{filter:brightness(1.05)}.ds-btn-primary:active{filter:brightness(0.9)}.ds-btn-primary:focus-visible{outline:2px solid var(--er-accent);outline-offset:2px}"
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 12px;border:0;border-radius:6px;background:var(--er-accent);color:var(--er-on-accent);font:500 13px/18px -apple-system,BlinkMacSystemFont,\"SF Pro Text\",sans-serif;box-shadow:var(--er-shadow-primary);white-space:nowrap}.ds-btn-primary:hover{filter:brightness(1.05)}.ds-btn-primary:active{filter:brightness(0.9)}.ds-btn-primary:focus-visible{outline:2px solid var(--er-accent);outline-offset:2px}"
+    },
+    {
+      "name": "Toolbar Controls",
+      "kind": "nav",
+      "refersTo": "button-toolbar",
+      "description": "The titlebar's 34px capsules: the Shells control (each shell's dot and name, a disclosure chevron), Editors… icon-only, Check Folder… with its label.",
+      "html": "<div class=\"ds-tb\"><button class=\"ds-tbb ds-shells\" aria-label=\"zsh bash, Shells: zsh on, bash off\"><span><i class=\"ds-on\"></i>zsh</span><span class=\"ds-off-n\"><i class=\"ds-off\"></i>bash</span><span class=\"ds-chev\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m6 9 6 6 6-6\"/></svg></span></button><button class=\"ds-tbb ds-icon\" aria-label=\"Editors…\" title=\"Editors…\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m16 18 6-6-6-6\"/><path d=\"m8 6-6 6 6 6\"/></svg></button><button class=\"ds-tbb ds-tbp\">Check Folder…</button></div>",
+      "css": ".ds-tb{display:flex;gap:8px;align-items:center}.ds-tbb{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border:0;border-radius:9999px;background:var(--er-button);color:var(--er-ink);font:400 13px/18px -apple-system,BlinkMacSystemFont,\"SF Pro Text\",sans-serif;box-shadow:var(--er-shadow-push);white-space:nowrap}.ds-tbb:hover{filter:brightness(0.97)}.ds-tbb:active,.ds-tbb[aria-expanded=\"true\"]{filter:brightness(0.9)}.ds-tbb:focus-visible{outline:2px solid var(--er-accent);outline-offset:2px}.ds-shells{gap:10px;padding-right:10px;font-size:12px;line-height:16px}.ds-shells span{display:flex;align-items:center;gap:6px}.ds-shells i{width:7px;height:7px;border-radius:9999px}.ds-on{background:var(--er-ok)}.ds-off{box-shadow:inset 0 0 0 1.2px var(--er-ink-2)}.ds-off-n,.ds-chev{color:var(--er-ink-2)}.ds-chev{margin-left:-2px}.ds-icon{width:34px;padding:0;justify-content:center}.ds-tbp{background:var(--er-accent);color:var(--er-on-accent);font-weight:500;box-shadow:var(--er-shadow-primary)}.ds-tbp:hover{filter:brightness(1.05)}"
+    },
+    {
+      "name": "Health Line",
+      "kind": "custom",
+      "refersTo": "health-line",
+      "description": "Working routing as a quiet 28px line on the ground: a 16px status badge, the routing line at 500, and what the map holds in secondary ink.",
+      "html": "<div class=\"ds-hl\" role=\"status\"><span class=\"ds-hl-b\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3.5 8.4l2.8 2.8 6.2-6.4\"/></svg></span><p>Routing is on in zsh and bash</p><p class=\"ds-hl-s\">4 profiles · 6 folders · 6 MCP servers</p></div>",
+      "css": ".ds-hl{display:flex;align-items:center;gap:8px;height:28px;width:560px;padding:0 4px 0 2px;font:400 12px/16px -apple-system,BlinkMacSystemFont,\"SF Pro Text\",sans-serif;color:var(--er-ink)}.ds-hl p{margin:0;font-weight:500}.ds-hl-b{display:grid;place-items:center;width:16px;height:16px;border-radius:9999px;background:var(--er-ok)}.ds-hl .ds-hl-s{margin-left:auto;font-weight:400;color:var(--er-ink-2);font-variant-numeric:tabular-nums}"
     },
     {
       "name": "Plain Button",
@@ -821,15 +866,15 @@
       "refersTo": "profile-card",
       "description": "One card per profile: a header washed with its colour, the folders it owns, carve-outs, and a footer of agent paths and linked server names.",
       "html": "<section class=\"ds-card\"><header style=\"background:color-mix(in srgb,#7a5af0 7%,transparent)\"><span class=\"ds-dot\" style=\"background:#7a5af0\"></span><h2>Personal</h2></header><ul><li><svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M2 4.5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z\"/></svg><span class=\"ds-mono\">~/<b>dev</b></span></li><li class=\"ds-carve\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 2.5v5.5h8M9.5 5.5L12 8l-2.5 2.5\"/></svg><span class=\"ds-mono\">work</span><span class=\"ds-owner\"><span class=\"ds-dot\" style=\"background:#c45ab8;width:8px;height:8px\"></span>Work</span></li></ul><footer><span>Claude Code</span><code class=\"ds-mono\">~/.claude-personal</code><span>MCP</span><code class=\"ds-mono\"><a class=\"ds-link\" href=\"#\">github</a>, <a class=\"ds-link\" href=\"#\">linear</a> <a class=\"ds-link ds-more\" href=\"#\">+2</a></code></footer></section>",
-      "css": ".ds-card{display:flex;flex-direction:column;min-height:176px;width:260px;border-radius:10px;background:var(--er-card);color:var(--er-ink);box-shadow:var(--er-shadow-card);font:400 13px/18px -apple-system,BlinkMacSystemFont,sans-serif;transition:box-shadow 150ms,background-color 150ms}.ds-card:hover{outline:2px solid var(--er-accent);outline-offset:2px}.ds-card header{border-radius:10px 10px 0 0}.ds-card header{display:flex;align-items:center;gap:8px;padding:10px 8px 10px 14px}.ds-card h2{margin:0;font:600 14px/19px -apple-system,BlinkMacSystemFont,sans-serif}.ds-dot{display:inline-block;width:10px;height:10px;border-radius:9999px;flex-shrink:0}.ds-card ul{flex:1;list-style:none;margin:0;padding:0 8px 8px}.ds-card li{display:flex;align-items:center;gap:8px;padding:4px 6px;color:var(--er-ink-2)}.ds-card li b{font-weight:400;color:var(--er-ink)}.ds-mono{font:400 12px/16px ui-monospace,\"SF Mono\",Menlo,monospace}.ds-card .ds-carve{margin-left:13px;padding:2px 0 2px 10px;gap:6px;font-size:12px;border-left:1px solid var(--er-rule)}.ds-owner{margin-left:auto;display:flex;align-items:center;gap:4px;padding-right:6px}.ds-card footer{display:grid;grid-template-columns:auto 1fr;column-gap:8px;row-gap:4px;gap:8px;align-items:baseline;padding:8px 14px;border-top:1px solid var(--er-rule);font-size:12px;line-height:16px}.ds-card footer span{color:var(--er-ink-2)}.ds-link{color:var(--er-ink);text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--er-ink) 28%,transparent);text-underline-offset:3px;border-radius:3px}.ds-link:hover{color:var(--er-accent);text-decoration-color:currentColor}.ds-more{color:var(--er-ink-2)}.ds-link:focus-visible{outline:2px solid var(--er-accent);outline-offset:2px}"
+      "css": ".ds-card{display:flex;flex-direction:column;min-height:176px;width:260px;border-radius:12px;background:var(--er-card);color:var(--er-ink);box-shadow:var(--er-shadow-card);font:400 13px/18px -apple-system,BlinkMacSystemFont,sans-serif;transition:box-shadow 150ms,background-color 150ms}.ds-card:hover{outline:2px solid var(--er-accent);outline-offset:2px}.ds-card header{border-radius:12px 12px 0 0}.ds-card header{display:flex;align-items:center;gap:8px;padding:10px 8px 10px 14px}.ds-card h2{margin:0;font:600 14px/19px -apple-system,BlinkMacSystemFont,sans-serif}.ds-dot{display:inline-block;width:10px;height:10px;border-radius:9999px;flex-shrink:0}.ds-card ul{flex:1;list-style:none;margin:0;padding:0 8px 8px}.ds-card li{display:flex;align-items:center;gap:8px;padding:4px 6px;color:var(--er-ink-2)}.ds-card li b{font-weight:400;color:var(--er-ink)}.ds-mono{font:400 12px/16px ui-monospace,\"SF Mono\",Menlo,monospace}.ds-card .ds-carve{margin-left:13px;padding:2px 0 2px 10px;gap:6px;font-size:12px;border-left:1px solid var(--er-rule)}.ds-owner{margin-left:auto;display:flex;align-items:center;gap:4px;padding-right:6px}.ds-card footer{display:grid;grid-template-columns:auto 1fr;column-gap:8px;row-gap:4px;gap:8px;align-items:baseline;padding:8px 14px;border-top:1px solid var(--er-rule);font-size:12px;line-height:16px}.ds-card footer span{color:var(--er-ink-2)}.ds-link{color:var(--er-ink);text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--er-ink) 28%,transparent);text-underline-offset:3px;border-radius:3px}.ds-link:hover{color:var(--er-accent);text-decoration-color:currentColor}.ds-more{color:var(--er-ink-2)}.ds-link:focus-visible{outline:2px solid var(--er-accent);outline-offset:2px}"
     },
     {
       "name": "View Switch",
       "kind": "nav",
       "refersTo": "segmented-toolbar-selected",
-      "description": "The titlebar's Profiles | Servers switch: toolbar-size segmented control, 24px segments with leading icons. ⌘1 / ⌘2.",
-      "html": "<fieldset class=\"ds-vs\"><button aria-pressed=\"false\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z\"/></svg>Profiles</button><button aria-pressed=\"true\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 22v-5\"/><path d=\"M9 8V2\"/><path d=\"M15 8V2\"/><path d=\"M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z\"/></svg>Servers</button></fieldset>",
-      "css": ".ds-vs{display:inline-flex;margin:0;padding:2px;border:0;border-radius:7px;background:var(--er-track)}.ds-vs button{display:flex;align-items:center;gap:6px;height:24px;padding:0 12px;border:0;border-radius:5px;background:transparent;color:var(--er-ink-2);font:400 13px/18px -apple-system,BlinkMacSystemFont,\\\"SF Pro Text\\\",sans-serif}.ds-vs button:hover{color:var(--er-ink)}.ds-vs button[aria-pressed=\"true\"]{background:var(--er-button);color:var(--er-ink);box-shadow:0 0.5px 1.5px rgb(0 0 0/0.18)}.ds-vs button:focus-visible{outline:2px solid var(--er-accent);outline-offset:2px}"
+      "description": "The titlebar's Profiles | Servers switch: a capsule track of 30px capsule segments with leading icons, and one raised thumb that slides to the chosen segment (200ms, settle curve). ⌘1 / ⌘2.",
+      "html": "<fieldset class=\"ds-vs\"><span class=\"ds-vs-thumb\" aria-hidden=\"true\"></span><button aria-pressed=\"false\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z\"/></svg>Profiles</button><button aria-pressed=\"true\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 22v-5\"/><path d=\"M9 8V2\"/><path d=\"M15 8V2\"/><path d=\"M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z\"/></svg>Servers</button></fieldset>",
+      "css": ".ds-vs{position:relative;display:inline-flex;margin:0;padding:2px;border:0;border-radius:9999px;background:var(--er-track)}.ds-vs-thumb{position:absolute;top:2px;bottom:2px;left:0;width:110px;translate:94px 0;border-radius:9999px;background:var(--er-button);box-shadow:0 0.5px 1.5px rgb(0 0 0/0.18);transition:translate 200ms cubic-bezier(0.16,1,0.3,1),width 200ms cubic-bezier(0.16,1,0.3,1)}.ds-vs:has(button:first-of-type:hover) .ds-vs-thumb{translate:2px 0;width:92px}.ds-vs button{position:relative;display:flex;align-items:center;gap:6px;height:30px;padding:0 14px;border:0;border-radius:9999px;background:transparent;color:var(--er-ink-2);font:400 13px/18px -apple-system,BlinkMacSystemFont,\"SF Pro Text\",sans-serif;transition:color 150ms}.ds-vs button:hover{color:var(--er-ink)}.ds-vs button[aria-pressed=\"true\"]{color:var(--er-ink)}.ds-vs button:focus-visible{outline:2px solid var(--er-accent);outline-offset:2px}"
     },
     {
       "name": "ServerMark",
@@ -875,9 +920,9 @@
       "name": "Status Tile",
       "kind": "custom",
       "refersTo": "status-tile",
-      "description": "Status as shape plus colour: check, bang, cross, dash.",
-      "html": "<span class=\"ds-tile ds-ok\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3.5 8.4l2.8 2.8 6.2-6.4\"/></svg></span><span class=\"ds-tile ds-warn\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\"><path d=\"M8 3.5v5.5M8 12.2v.3\"/></svg></span><span class=\"ds-tile ds-problem\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\"><path d=\"M4.5 4.5l7 7M11.5 4.5l-7 7\"/></svg></span><span class=\"ds-tile ds-neutral\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\"><path d=\"M4 8h8\"/></svg></span>",
-      "css": ".ds-tile{display:inline-grid;place-items:center;width:32px;height:32px;margin-right:8px;border-radius:8px;background:color-mix(in srgb,currentColor 14%,transparent);animation:ds-stamp 180ms cubic-bezier(0.16,1,0.3,1)}.ds-ok{color:var(--er-ok)}.ds-warn{color:var(--er-warn)}.ds-problem{color:var(--er-problem)}.ds-neutral{color:var(--er-ink-2)}@keyframes ds-stamp{from{transform:scale(1.35);opacity:0}}"
+      "description": "Status as shape plus colour: check, bang, cross, dash. The badge variant is a solid disc with a white glyph, for a one-line status.",
+      "html": "<span class=\"ds-tile ds-ok\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3.5 8.4l2.8 2.8 6.2-6.4\"/></svg></span><span class=\"ds-tile ds-warn\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\"><path d=\"M8 3.5v5.5M8 12.2v.3\"/></svg></span><span class=\"ds-tile ds-problem\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\"><path d=\"M4.5 4.5l7 7M11.5 4.5l-7 7\"/></svg></span><span class=\"ds-tile ds-neutral\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\"><path d=\"M4 8h8\"/></svg></span><span class=\"ds-tile ds-ok ds-badge\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3.5 8.4l2.8 2.8 6.2-6.4\"/></svg></span>",
+      "css": ".ds-tile{display:inline-grid;place-items:center;width:32px;height:32px;margin-right:8px;border-radius:8px;background:color-mix(in srgb,currentColor 14%,transparent);animation:ds-stamp 180ms cubic-bezier(0.16,1,0.3,1)}.ds-ok{color:var(--er-ok)}.ds-warn{color:var(--er-warn)}.ds-problem{color:var(--er-problem)}.ds-neutral{color:var(--er-ink-2)}@keyframes ds-stamp{from{transform:scale(1.35);opacity:0}}.ds-badge{width:16px;height:16px;border-radius:9999px;background:currentColor}"
     },
     {
       "name": "Docket",
@@ -910,28 +955,38 @@
       "description": "Template image: a solid folder with the fork cut through it, lit branch full cut, idle branch half cut. Shown 18 pt tall; macOS reads only alpha.",
       "html": "<span class=\"ds-menubar\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"2 2.15 18 18\" width=\"36\" height=\"36\"> <defs> <mask id=\"ds-fork\"> <rect x=\"0\" y=\"0\" width=\"22\" height=\"22\" fill=\"#fff\"/> <path d=\"M11 11c0 1.7-3 2.1-3.6 4.4\" stroke=\"#808080\" stroke-width=\"1.6\" fill=\"none\" stroke-linecap=\"round\"/> <path d=\"M11 8.7v2.3c0 1.7 3 2.1 3.6 4.4\" stroke=\"#000\" stroke-width=\"1.6\" fill=\"none\" stroke-linecap=\"round\"/> <circle cx=\"14.6\" cy=\"15.7\" r=\"1.8\" fill=\"#000\"/> </mask> </defs> <path d=\"M2.5 6.3V5a1.6 1.6 0 0 1 1.6-1.6h3.7l1.7 1.9h8.4a1.6 1.6 0 0 1 1.6 1.6v10.5a1.6 1.6 0 0 1-1.6 1.6H4.1a1.6 1.6 0 0 1-1.6-1.6z\" fill=\"#000\" mask=\"url(#ds-fork)\"/> </svg></span>",
       "css": ".ds-menubar{display:inline-flex;align-items:center;padding:6px 10px;border-radius:6px;background:#f2f2f4}.ds-menubar svg{width:18px;height:18px}"
+    },
+    {
+      "name": "Server Ways",
+      "kind": "custom",
+      "refersTo": "server-ways-list",
+      "description": "The Servers detail with nothing selected: a heading, one line, then the ways to add a server as one list on the well, each with a 28px icon tile, label, description and chevron.",
+      "html": "<div class=\"ds-ways\"><h2>Add a server</h2><p>Or pick one in the list to edit it.</p><ul><li><button><span class=\"ds-wt\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 12h14\"/><path d=\"M12 5v14\"/></svg></span><span class=\"ds-wl\"><b>Add by Hand…</b><small>A command to run, or a URL to connect to</small></span><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m9 18 6-6-6-6\"/></svg></button></li><li><button><span class=\"ds-wt\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"8\" y=\"2\" width=\"8\" height=\"4\" rx=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/></svg></span><span class=\"ds-wl\"><b>Paste JSON…</b><small>A config from a README or an agent's file</small></span><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m9 18 6-6-6-6\"/></svg></button></li></ul></div>",
+      "css": ".ds-ways{width:420px;text-align:center;font:400 13px/18px -apple-system,BlinkMacSystemFont,\"SF Pro Text\",sans-serif;color:var(--er-ink)}.ds-ways h2{margin:0;font:600 17px/22px -apple-system,BlinkMacSystemFont,\"SF Pro Text\",sans-serif}.ds-ways p{margin:4px 0 20px;font-size:12px;line-height:16px;color:var(--er-ink-2)}.ds-ways ul{list-style:none;margin:0;padding:0;border-radius:10px;overflow:hidden;background:var(--er-well);text-align:left}.ds-ways li+li{border-top:1px solid var(--er-rule)}.ds-ways button{display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;border:0;background:transparent;color:inherit;font:inherit;text-align:left}.ds-ways button:hover{background:color-mix(in srgb,var(--er-ink) 4%,transparent)}.ds-ways button:focus-visible{outline:2px solid var(--er-accent);outline-offset:-2px;border-radius:10px}.ds-wt{display:grid;place-items:center;width:28px;height:28px;flex-shrink:0;border-radius:7px;background:var(--er-card);color:var(--er-ink-2);box-shadow:var(--er-shadow-push)}.ds-ways button:hover .ds-wt{color:var(--er-ink)}.ds-wl{flex:1;min-width:0}.ds-wl b{display:block;font-weight:500}.ds-wl small{display:block;font-size:12px;line-height:16px;color:var(--er-ink-2)}.ds-ways button>svg{color:var(--er-ink-2)}"
     }
   ],
   "narrative": {
     "northStar": "The Sorting Frame",
-    "overview": "**Creative North Star: \"The Sorting Frame\"**\n\nEnvRouter is a native-feeling Mac utility, opened occasionally to set up profiles, to manage the MCP servers its agents load, or to find out why a folder didn't route. It is quiet, precise and dense in the way System Settings is: 13px system type, 26px controls, nothing decorative. The structure carries the product's one rule. Each profile is a card that holds the folders it owns, and a nested folder owned by another profile sits inside its parent's card as a carve-out tagged with the owner's colour, so \"the most specific folder wins\" is something you see.\n\nThe window is two places under one titlebar switch. **Profiles** is the map: the Sorting Frame, a post-office pigeonhole frame rendered as layered modern-Mac cards. **Servers** is the workbench: a master-detail split (in the manner of Mail or Notes) with every server in a list card and the chosen one's editor in a card beside it. Assignment between them is editable from both sides and visible on the cards. The user overrode an earlier flat, hairline-ruled sheet (\"it's hard to tell between surfaces\"), so depth is structural: a window ground through which macOS vibrancy shows faintly, opaque cards on it, and raised surfaces above those. Neutrals lean a few percent toward the app icon's signal-box navy, so the window belongs to its mark. The system accent follows the user's macOS accent colour and is spent on the one action that matters, selection, focus and the filed slip. Status always pairs colour with shape. Mono appears only where the text is a path, a name or a value worth copying.\n\nThe product's mark, \"Points\", carries the same idea into system chrome: a Finder-blue folder on a dark navy tile whose track forks to two accounts and lights the one it uses. In the menu bar it becomes a solid template folder with the fork cut through it. The mark is drawn as SVG and rendered by hand into every raster; it has its own fixed palette and does not theme.\n\nRejected, by the user: a web-app look, the System Settings sidebar-and-switches default, the flat ruled sheet, an inline profile editor in the grid, a slide-over drill-down three levels deep, and a sidebar app that would hide the map.",
+    "overview": "**Creative North Star: \"The Sorting Frame\"**\n\nEnvRouter is a native-feeling Mac utility, opened occasionally to set up profiles, to manage the MCP servers its agents load, or to find out why a folder didn't route. It is quiet, precise and dense in the way System Settings is: 13px system type, 26px controls, nothing decorative. Its materials and controls follow current macOS (macOS 27, measured natively): a 52px unified toolbar of 34px capsules, 12px card corners and soft two-step card shadows, while form buttons stay 26px and fields 28px on purpose, denser than the system default. The structure carries the product's one rule. Each profile is a card that holds the folders it owns, and a nested folder owned by another profile sits inside its parent's card as a carve-out tagged with the owner's colour, so \"the most specific folder wins\" is something you see.\n\nThe window is two places under one titlebar switch. **Profiles** is the map: the Sorting Frame, a post-office pigeonhole frame rendered as layered modern-Mac cards. **Servers** is the workbench: a master-detail split (in the manner of Mail or Notes) with every server in a list card and the chosen one's editor in a card beside it. Assignment between them is editable from both sides and visible on the cards. The user overrode an earlier flat, hairline-ruled sheet (\"it's hard to tell between surfaces\"), so depth is structural: a window ground through which macOS vibrancy shows faintly, opaque cards on it, and raised surfaces above those. Neutrals lean a few percent toward the app icon's signal-box navy, so the window belongs to its mark. The system accent follows the user's macOS accent colour and is spent on the one action that matters, selection, focus and the filed slip. Status always pairs colour with shape. Mono appears only where the text is a path, a name or a value worth copying.\n\nThe product's mark, \"Points\", carries the same idea into system chrome: a Finder-blue folder on a dark navy tile whose track forks to two accounts and lights the one it uses. In the menu bar it becomes a solid template folder with the fork cut through it. The mark is drawn as SVG and rendered by hand into every raster; it has its own fixed palette and does not theme. The window shows it once, in the titlebar; two illustrations drawn from it open it up for the first-run welcome and the empty server library.\n\nRejected, by the user: a web-app look, the System Settings sidebar-and-switches default, the flat ruled sheet, an inline profile editor in the grid, a slide-over drill-down three levels deep, and a sidebar app that would hide the map.",
     "keyCharacteristics": [
       "Two views, Profiles and Servers, under one segmented switch in the titlebar (⌘1, ⌘2).",
       "Three surface layers (window ground, card, raised), each visibly distinct in light and dark; the ground lets macOS vibrancy through, cards stay opaque.",
       "Neutrals tinted toward the icon's navy.",
       "One accent button per window state.",
-      "Status is shape plus colour, in a tinted tile.",
+      "Status is shape plus colour, in a tinted tile, or a solid badge on a one-line status.",
+      "Toolbar controls are 34px capsules, as macOS 27 draws them; form controls stay 26px rounded rectangles.",
+      "Working routing is a quiet line on the ground; only a state that needs attention gets a card.",
       "Id-keyed profile colours drawn from a status-free palette, washing each profile card's header.",
       "Servers wear their own logo in a brand-tinted tile; brand colour stays in the tile.",
       "System sans for everything; mono only for paths, names and values.",
       "Focus rings and field edges hold 3:1.",
-      "Damped motion around 140 to 300ms on one settle curve; reduced motion respected.",
-      "One mark in two cuts (128 px and up, 64 px and under) plus an alpha-only menu bar template."
+      "Damped motion around 140 to 300ms on one settle curve; reduced motion keeps the fades and drops the movement.",
+      "One mark in two cuts (the regular cut above 64 px, the small cut at 64 px and under) plus an alpha-only menu bar template."
     ],
     "rules": [
       {
         "name": "The One Accent Rule",
-        "body": "At most one accent-filled button is visible per window state. On Profiles, the health banner's action outranks the check result's action, which outranks Check Folder… in the titlebar; whichever loses renders as a push button. With the profile inspector open, Save takes the accent and Check Folder… stands down. On Servers, Check Folder… is always a push button and the detail's footer action (Save, or Import N Servers) holds the accent; Save is disabled while the editor is clean.",
+        "body": "At most one accent-filled button is visible per window state. On Profiles, the health banner's action outranks the check result's action, which outranks Check Folder… in the titlebar; whichever loses renders as a push button. With the profile inspector open, Save takes the accent and Check Folder… stands down. On Servers, Check Folder… is always a push button, a health banner shown there renders its action as a push button too, and the detail's footer action (Save, or Import N Servers) holds the accent; Save is disabled while the editor is clean. One exception: a blocked banner's Check Again stays a push button, because the fix lives in the check result (Open ~/.zshrc and the like); with the result dismissed, Check Folder… takes the accent.",
         "section": "colors"
       },
       {
@@ -956,7 +1011,7 @@
       },
       {
         "name": "The Three-to-One Rule",
-        "body": "Anything that marks where a control is or where focus sits holds 3:1 against what's around it: the focus ring is solid accent, and a text field's edge is `field-edge`, not `rule`.",
+        "body": "Anything that marks where a control is or where focus sits holds 3:1 against what's around it: the focus ring is solid accent ink, a text field's edge is `field-edge` (which holds 3:1 on the well too), not `rule`, and an off switch carries the same edge.",
         "section": "colors"
       },
       {
@@ -967,6 +1022,11 @@
       {
         "name": "The Quiet Default Rule",
         "body": "A default, empty or fallback state (\"Every agent uses its default config\", \"No servers yet\", \"Not checked yet\", \"All tools\", \"In Keychain\", placeholders) is set in italic secondary ink, so it reads as absence rather than content.",
+        "section": "typography"
+      },
+      {
+        "name": "The Hero Moments Rule",
+        "body": "`heading` and `display` belong to a view with nothing else to show yet: the first-run welcome and the empty server detail. A working surface never sets type above title size.",
         "section": "typography"
       },
       {
@@ -1006,6 +1066,8 @@
       "Do give each profile an id-keyed colour from the eight profile hues, shifting it only when two profiles on screen clash, and wash its card header with it (7% light, 12% dark).",
       "Do keep server brand colour inside its ServerMark tile, and give an unbranded server its monogram on the track colour.",
       "Do set paths, names, variables and values in mono and keep them selectable; everything else stays system sans and unselectable.",
+      "Do draw the titlebar's controls as 34px toolbar capsules, keep form buttons at 26px and fields at 28px, and give a hero's one action the 28px large capsule.",
+      "Do show working routing as the quiet 28px line on the ground; a card is for a state that needs attention.",
       "Do edit profiles in the right-side inspector, with the view visible behind it and the edited card outlined.",
       "Do edit servers in the Servers view's detail card beside the list, and open Catalog and Import in that same card.",
       "Do keep server assignment editable from both the profile inspector and the server's Used by chips.",
@@ -1017,7 +1079,8 @@
       "Do keep cards and raised surfaces opaque; only the ground and titlebar band let vibrancy through.",
       "Do take icons from `src/components/icons.tsx` (Lucide at a true 1.5px stroke, agent marks from Simple Icons), and add a new one there rather than drawing it inline.",
       "Do show the idle docket as a dashed drop zone, and the result as a single raised card.",
-      "Do keep motion on the settle curve (`cubic-bezier(0.16, 1, 0.3, 1)`) between 140 and 300ms, and let reduced motion collapse it, with pending marks holding still.",
+      "Do keep motion on the settle curve (`cubic-bezier(0.16, 1, 0.3, 1)`) between 140 and 300ms. Under reduced motion keep the fades and drop the movement: the slide, drop, rise and stamp keyframes become fades, transitions skip transforms (a switch's knob and a chevron jump), scrolling is instant, and pending marks hold still.",
+      "Do keep every edge and state visible under forced colours (`forced-colors: active`), where shadows and tints drop out: cards and raised surfaces get a 1px `CanvasText` outline, buttons and fields a `ButtonText` border, and a control whose state is a fill (a switch, the selected segment or the view switch's thumb, a checked box, an on shell's dot, the current setup step) takes `Highlight` with `forced-color-adjust: none`.",
       "Do verify both views in both themes and a non-blue system accent at 900 × 620 and 680 × 460, and check vibrancy in the real app window.",
       "Do render each icon raster from its SVG at its exact pixel size: the small cut for 64 px and under, the regular cut for 128 px and up, and `tray.svg` at 36 px.",
       "Do make every inner shape of the menu bar glyph a mask cutout: full for the lit branch and its coin, half (alpha 0.5) for the idle branch.",
@@ -1038,6 +1101,7 @@
       "Don't use `ink-tertiary` for any text that must be read.",
       "Don't put a second accent-filled button on screen.",
       "Don't return to the flat, hairline-ruled sheet or to a System Settings sidebar-and-switches layout; surfaces must stay visibly layered.",
+      "Don't set `heading` or `display` type on a working surface; they're for the welcome and an empty detail only.",
       "Don't add help paragraphs; a verdict is one headline, one note, its values and one action.",
       "Don't run `tauri icon`: it rebuilds every size from one source, losing the small cut and the provenance, and recreates the Windows tiles.",
       "Don't draw the menu bar glyph's cutouts with white fills; a template reads only alpha, so white paint renders as solid.",
