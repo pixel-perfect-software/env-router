@@ -14,6 +14,7 @@ import {
   plainNote,
   SERVER_NAME,
   type ServerDraft,
+  sameDefinition,
   sameEndpoint,
   serverOf,
   serverSummary,
@@ -28,7 +29,7 @@ import { withAgents } from '../lib/tools'
 import type { ConfigState, ImportCandidate, McpServer } from '../lib/types'
 import { LocalIcon, OpenIcon, RemoteIcon, SearchIcon, SignInIcon } from './icons'
 import { ServerMark } from './ServerMark'
-import { Button, CheckBox, ChevronIcon, CloseIcon, IconButton, LockIcon, Mark, Segmented, StatusTile, TextField } from './ui'
+import { Button, CheckBox, ChevronIcon, CloseIcon, Footer, IconButton, LockIcon, Mark, Segmented, StatusTile, TextField } from './ui'
 
 /**
  * The view's title bar. Its close button takes focus when the view opens: the button that
@@ -105,6 +106,10 @@ export function CatalogView({
       }}
     >
       <Header title="Catalog" count={entries.length} onClose={onBack} focusClose={false} />
+      {/* The count, for a screen reader, as the search and filters narrow the list. */}
+      <p role="status" className="sr-only">
+        {entries.length === 1 ? '1 server' : `${entries.length} servers`}
+      </p>
       <div className="flex flex-col gap-2 px-5 pb-3">
         <span className="relative flex">
           <span className="pointer-events-none absolute top-[7px] left-2 text-ink-2">
@@ -229,9 +234,9 @@ function rowsOf(candidates: ImportCandidate[], config: ConfigState): Row[] {
   const taken = new Set(Object.keys(config.mcpServers))
   return candidates.map((candidate) => {
     const server = serverWithInit(candidate.server)
-    const existing = JSON.stringify(config.mcpServers[candidate.name])
-    // An earlier import may have added the --init.
-    const present = existing === JSON.stringify(candidate.server) || existing === JSON.stringify(server)
+    const saved = config.mcpServers[candidate.name]
+    // An earlier import may have added the --init, and moved a credential to the secret store.
+    const present = sameDefinition(saved, candidate.server) || sameDefinition(saved, server)
     // A name agents can't take (`my server`) becomes one they can.
     const as = present ? candidate.name : freeName(asServerName(candidate.name), taken)
     if (!present) taken.add(as)
@@ -253,12 +258,15 @@ export function ImportView({
   pasted,
   onBack,
   onImport,
+  onElsewhere,
 }: {
   config: ConfigState
   home: string
   /** Pasted servers to review in place of the agents' own. */
   pasted?: PastedServers
   onBack: () => void
+  /** With nothing to import, the other ways to add a server. */
+  onElsewhere: (where: 'catalog' | 'paste') => void
   onImport: (servers: [string, McpServer][], secrets: Record<string, string>) => Promise<void>
 }) {
   const platform = usePlatform()
@@ -344,7 +352,15 @@ export function ImportView({
             </p>
           )
         ) : rows.length === 0 ? (
-          <p className="rounded-[8px] bg-well px-3 py-2.5 text-small text-ink-2 italic">Your agents don't define any servers yet</p>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-[8px] bg-well px-3 py-2">
+            <p className="mr-auto text-small text-ink-2 italic">Your agents don't define any servers yet</p>
+            <Button kind="plain" className="!mx-0 !h-[22px]" onClick={() => onElsewhere('catalog')}>
+              Add from Catalog…
+            </Button>
+            <Button kind="plain" className="!mx-0 !h-[22px]" onClick={() => onElsewhere('paste')}>
+              Paste JSON…
+            </Button>
+          </div>
         ) : (
           <ul className="rounded-[8px] bg-well">
             {rows.map((row) => (
@@ -416,17 +432,14 @@ export function ImportView({
           </ul>
         )}
       </div>
-      <footer className="flex items-center gap-2 bg-card-muted px-5 py-3 hair-t">
-        <p role="alert" className="min-w-0 flex-1 text-small text-problem">
-          {error}
-        </p>
+      <Footer error={error}>
         <Button onClick={onBack} disabled={saving}>
           Cancel
         </Button>
         <Button kind="primary" onClick={run} disabled={saving || picked.size === 0}>
           {saving ? 'Importing…' : picked.size > 1 ? `Import ${picked.size} Servers` : 'Import Server'}
         </Button>
-      </footer>
+      </Footer>
     </section>
   )
 }
@@ -485,7 +498,8 @@ export function PasteView({
         <textarea
           ref={field}
           aria-label="Server JSON"
-          aria-describedby="paste-note"
+          aria-describedby={error ? 'paste-note paste-error' : 'paste-note'}
+          aria-invalid={error ? true : undefined}
           spellCheck={false}
           autoCorrect="off"
           autoCapitalize="off"
@@ -503,23 +517,20 @@ export function PasteView({
           placeholder={
             '{\n  "mcpServers": {\n    "github": {\n      "command": "npx",\n      "args": ["-y", "@modelcontextprotocol/server-github"]\n    }\n  }\n}'
           }
-          className="min-h-[180px] flex-1 resize-none rounded-control bg-field px-2.5 py-2 font-mono text-small text-ink select-text shadow-[inset_0_0_0_1px_var(--er-field-edge)] placeholder:text-ink-2 placeholder:italic focus:shadow-[inset_0_0_0_1.5px_var(--er-accent)] focus:outline-none"
+          className="min-h-[180px] flex-1 resize-none rounded-control bg-field px-2.5 py-2 font-mono text-small text-ink select-text shadow-[inset_0_0_0_1px_var(--er-field-edge)] placeholder:text-ink-2 placeholder:italic focus:shadow-[inset_0_0_0_1.5px_var(--er-accent-ink)] focus:outline-none"
         />
         <p id="paste-note" className="mt-1.5 text-caption text-ink-2">
           An mcpServers block from a README or an agent's file, VS Code's servers, or one server on its own.
         </p>
       </div>
-      <footer className="flex items-center gap-2 bg-card-muted px-5 py-3 hair-t">
-        <p role="alert" className="min-w-0 flex-1 text-small text-problem">
-          {error}
-        </p>
+      <Footer error={error} errorId="paste-error">
         <Button onClick={onBack} disabled={reading}>
           Cancel
         </Button>
         <Button kind="primary" onClick={read} disabled={reading || !text.trim()}>
           {reading ? 'Reading…' : 'Continue'}
         </Button>
-      </footer>
+      </Footer>
     </section>
   )
 }

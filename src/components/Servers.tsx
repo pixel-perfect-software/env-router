@@ -2,35 +2,16 @@
 // Catalog and Import open in the same place as the editor, so nothing drills more than one level
 // deep. Which profiles load a server is set here (Used by) or in a profile's own editor.
 
-import { type ReactNode, useEffect, useRef, useState } from 'react'
-import { checkMcpServer, errorMessage, getMcpTools } from '../lib/api'
-import { confirmDeleteServer, confirmDiscardServer } from '../lib/confirm'
-import {
-  type DraftValue,
-  draftOf,
-  duplicateDraft,
-  initSlot,
-  isPending,
-  newSecretId,
-  type Pair,
-  plainCredentials,
-  plainNote,
-  profilesUsing,
-  SECRET_NAME,
-  SERVER_NAME,
-  type ServerDraft,
-  serverOf,
-  serverSummary,
-  TRANSPORTS,
-  type Transport,
-  withInit,
-} from '../lib/mcp'
-import { usePlatform } from '../lib/platform'
-import type { ConfigState, McpServer, ServerCheck, ToolInfo } from '../lib/types'
-import { CatalogIcon, CheckIcon, ImportIcon, PasteIcon, TransportIcon } from './icons'
+import { useEffect, useRef, useState } from 'react'
+import { getMcpTools } from '../lib/api'
+import { confirmDiscardServer } from '../lib/confirm'
+import { duplicateDraft, type ProfileChip, profilesUsing, type ServerDraft, TRANSPORTS } from '../lib/mcp'
+import type { ConfigState, McpServer, ToolInfo } from '../lib/types'
+import { CatalogIcon, ImportIcon, PasteIcon, TransportIcon } from './icons'
+import { ServerEditor } from './ServerEditor'
 import { ServerMark } from './ServerMark'
 import { CatalogView, ImportView, type PastedServers, PasteView } from './ServerSources'
-import { Button, ChevronIcon, CloseIcon, IconButton, LockIcon, PlusIcon, ProfileDot, Segmented, StatusTile, TextField, type Tone } from './ui'
+import { Button, IconButton, PlusIcon, ProfileDot } from './ui'
 
 /** What the detail side shows. `name` null: a new server, blank or from `template`. */
 export type Detail =
@@ -40,13 +21,6 @@ export type Detail =
   | { kind: 'paste' }
   /** The agents' own servers, or `pasted` ones. */
   | { kind: 'import'; pasted?: PastedServers }
-
-/** A profile as the Used by toggles show it. */
-interface ProfileChip {
-  id: string
-  name: string
-  color: string
-}
 
 export function ServersView({
   config,
@@ -94,7 +68,7 @@ export function ServersView({
   const selected = detail.kind === 'edit' ? detail.name : null
 
   return (
-    <div className="flex min-h-0 flex-1 gap-3 px-4 pt-1 pb-4">
+    <main aria-label="MCP Servers" className="flex min-h-0 flex-1 gap-3 px-4 pt-1 pb-4">
       <aside aria-label="MCP servers" className="flex w-[232px] shrink-0 flex-col rounded-card bg-card shadow-card min-[820px]:w-[264px]">
         <header className="flex items-center gap-1 py-2 pr-2 pl-3.5 hair-b">
           <h2 className="min-w-0 flex-1 truncate text-title font-semibold">
@@ -134,6 +108,7 @@ export function ServersView({
                   <li key={name}>
                     <button
                       type="button"
+                      data-server={name}
                       aria-current={isSelected ? 'true' : undefined}
                       onClick={() => go({ kind: 'edit', name })}
                       className={`flex w-full items-center gap-2.5 rounded-[7px] px-2 py-1.5 text-left ${
@@ -142,7 +117,7 @@ export function ServersView({
                     >
                       <ServerMark name={name} server={server} size={28} />
                       <span className="min-w-0 flex-1">
-                        <span className={`block truncate font-mono text-small ${isSelected ? 'text-accent' : 'text-ink'}`}>{name}</span>
+                        <span className={`block truncate font-mono text-small ${isSelected ? 'text-accent-ink' : 'text-ink'}`}>{name}</span>
                         <span className="flex items-center gap-1 text-caption text-ink-2">
                           <TransportIcon transport={server.transport} size={11} />
                           {TRANSPORTS.find(([t]) => t === server.transport)?.[1]}
@@ -193,6 +168,7 @@ export function ServersView({
             home={home}
             pasted={detail.pasted}
             onBack={() => onDetail({ kind: 'none' })}
+            onElsewhere={(where) => onDetail({ kind: where })}
             onImport={async (servers, secrets) => {
               await onImport(servers, secrets)
               onDetail(servers.length === 1 ? { kind: 'edit', name: servers[0][0] } : { kind: 'none' })
@@ -223,6 +199,10 @@ export function ServersView({
               await onSave(detail.name, name, server, secrets, usedBy)
               dirty.current = false
               onDetail({ kind: 'edit', name })
+              // The editor reopens from what was saved, so focus goes to the server's row rather than the page.
+              requestAnimationFrame(() => {
+                if (document.activeElement === document.body) document.querySelector<HTMLElement>(`[data-server="${CSS.escape(name)}"]`)?.focus()
+              })
             }}
             onDelete={
               detail.name
@@ -246,7 +226,7 @@ export function ServersView({
           />
         )}
       </section>
-    </div>
+    </main>
   )
 }
 
@@ -286,632 +266,5 @@ function NoServer({ empty, onPick }: { empty: boolean; onPick: (detail: Detail) 
         </div>
       </div>
     </div>
-  )
-}
-
-function ServerEditor({
-  name,
-  server,
-  template,
-  taken,
-  profiles,
-  initialUsedBy,
-  cachedTools,
-  toolsOff,
-  onDirty,
-  onCancel,
-  onSave,
-  onDelete,
-  onDuplicate,
-}: {
-  /** null for a new server. */
-  name: string | null
-  server: McpServer | undefined
-  /** A new server's starting point: a catalog entry or a copy of another server. */
-  template?: ServerDraft
-  /** Other servers' names, which this one can't take. */
-  taken: string[]
-  profiles: ProfileChip[]
-  /** Ids of the profiles that load this server now. */
-  initialUsedBy: string[]
-  cachedTools: ToolInfo[] | undefined
-  toolsOff: Record<string, ProfileChip[]>
-  onDirty: (dirty: boolean) => void
-  onCancel: () => void
-  onSave: (name: string, server: McpServer, secrets: Record<string, string>, usedBy: string[]) => Promise<void>
-  onDelete?: () => Promise<void>
-  /** Opens a new server copied from the saved one (unsaved edits ask first). */
-  onDuplicate?: () => void
-}) {
-  const initial = useRef(template ?? draftOf(name ?? '', server))
-  const [draft, setDraft] = useState<ServerDraft>(initial.current)
-  const [usedBy, setUsedBy] = useState<string[]>(initialUsedBy)
-  const [error, setError] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
-  const nameField = useRef<HTMLInputElement>(null)
-  const dirty =
-    JSON.stringify(draft) !== JSON.stringify(initial.current) ||
-    usedBy.length !== initialUsedBy.length ||
-    usedBy.some((id) => !initialUsedBy.includes(id))
-  useEffect(() => onDirty(dirty), [dirty, onDirty])
-
-  useEffect(() => {
-    // A new server starts at its name; an existing one keeps focus in the list it was picked from.
-    if (!name) nameField.current?.focus()
-  }, [name])
-
-  const set = <K extends keyof ServerDraft>(key: K, value: ServerDraft[K]) => setDraft((d) => ({ ...d, [key]: value }))
-  const preview = serverOf(draft)
-
-  const save = async () => {
-    const trimmed = draft.name.trim()
-    const problem = !trimmed
-      ? 'Give the server a name.'
-      : !SERVER_NAME.test(trimmed)
-        ? 'Use only letters, digits, - and _ in the name.'
-        : taken.includes(trimmed)
-          ? `There's already a server named ${trimmed}.`
-          : null
-    if (problem) {
-      setError(problem)
-      nameField.current?.focus()
-      return
-    }
-    const built = serverOf(draft)
-    if ('error' in built) {
-      setError(built.error)
-      return
-    }
-    setSaving(true)
-    setError(null)
-    try {
-      await onSave(trimmed, built.server, built.secrets, usedBy)
-    } catch (err) {
-      setError(errorMessage(err))
-    } finally {
-      // A save that changed only which profiles use the server keeps this editor open.
-      setSaving(false)
-    }
-  }
-
-  const remove = async () => {
-    if (!onDelete || !name) return
-    if (
-      !(await confirmDeleteServer(
-        name,
-        profiles.filter((p) => initialUsedBy.includes(p.id)).map((p) => p.name),
-      ))
-    )
-      return
-    setSaving(true)
-    try {
-      await onDelete()
-    } catch (err) {
-      setError(errorMessage(err))
-      setSaving(false)
-    }
-  }
-
-  const stdio = draft.transport === 'stdio'
-  const initAt = stdio ? initSlot(draft.command, draft.args) : null
-  const plain = plainCredentials(draft)
-  return (
-    <form
-      aria-label={name ? `Edit ${name}` : 'New MCP server'}
-      className="flex min-h-0 flex-1 animate-[er-fade_160ms_var(--ease-settle)] flex-col"
-      onSubmit={(e) => {
-        e.preventDefault()
-        save()
-      }}
-    >
-      <header className="flex items-center gap-3 px-5 pt-4 pb-3 hair-b">
-        {'server' in preview ? (
-          <ServerMark name={draft.name || name || '?'} server={preview.server} size={36} />
-        ) : (
-          <ServerMark name={draft.name || name || '?'} server={server ?? { transport: 'stdio', command: '', args: [], env: {} }} size={36} />
-        )}
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate font-mono text-title font-semibold">{name ?? (draft.name.trim() || 'New Server')}</h2>
-          <p className="truncate font-mono text-caption text-ink-2">{'server' in preview ? serverSummary(preview.server) : 'Not set up yet'}</p>
-        </div>
-      </header>
-
-      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 pt-4 pb-5">
-        {/* First: which profiles load the server is the part people change most. */}
-        <fieldset className="min-w-0">
-          <legend className="mb-1.5 text-small font-medium text-ink-2">Used by</legend>
-          {profiles.length === 0 ? (
-            <p className="text-small text-ink-2 italic">No profiles yet</p>
-          ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {profiles.map((p) => {
-                const on = usedBy.includes(p.id)
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => setUsedBy((ids) => (on ? ids.filter((id) => id !== p.id) : [...ids, p.id]))}
-                    className={`flex h-[28px] items-center gap-1.5 rounded-full pr-3 pl-2.5 text-small transition-[background-color,box-shadow] duration-150 ease-settle ${
-                      on
-                        ? 'text-ink'
-                        : 'text-ink-2 shadow-[inset_0_0_0_1px_var(--er-rule)] hover:bg-[color-mix(in_srgb,var(--er-ink)_5%,transparent)] hover:text-ink'
-                    }`}
-                    style={
-                      on ? { background: `color-mix(in srgb, ${p.color} 16%, var(--er-card))`, boxShadow: `inset 0 0 0 1.5px ${p.color}` } : undefined
-                    }
-                  >
-                    <ProfileDot color={p.color} className={`size-2 ${on ? '' : 'opacity-70'}`} />
-                    {p.name}
-                  </button>
-                )
-              })}
-            </div>
-          )}
-          <p className="mt-1.5 text-caption text-ink-2">The agents load it in these profiles' folders.</p>
-        </fieldset>
-
-        <div>
-          <label htmlFor="server-name" className="mb-1.5 block text-small font-medium text-ink-2">
-            Name
-          </label>
-          <TextField
-            ref={nameField}
-            mono
-            id="server-name"
-            value={draft.name}
-            onChange={(e) => set('name', e.target.value)}
-            placeholder="github"
-            aria-describedby="server-name-note"
-            className="w-full"
-          />
-          <p id="server-name-note" className="mt-1 text-caption text-ink-2">
-            Agents see this name. Letters, digits, - and _.
-          </p>
-        </div>
-
-        <fieldset className="min-w-0">
-          <legend className="mb-1.5 text-small font-medium text-ink-2">Connects with</legend>
-          <Segmented
-            label="Transport"
-            options={TRANSPORTS.map(([t, text]) => [t, text, <TransportIcon key={t} transport={t} size={12} />])}
-            value={draft.transport}
-            onChange={(t: Transport) => set('transport', t)}
-          />
-        </fieldset>
-
-        {stdio ? (
-          <>
-            <div>
-              <label htmlFor="server-command" className="mb-1.5 block text-small font-medium text-ink-2">
-                Command
-              </label>
-              <TextField
-                mono
-                id="server-command"
-                value={draft.command}
-                onChange={(e) => set('command', e.target.value)}
-                placeholder="npx"
-                className="w-full"
-              />
-            </div>
-            <ValueList
-              label="Arguments"
-              add="Add Argument"
-              placeholder="-y"
-              values={draft.args}
-              onChange={(args) => set('args', args)}
-              note={draft.args.length > 0 && <LockLegend />}
-            />
-            {initAt !== null && (
-              <Caution
-                action={
-                  <Button onClick={() => set('args', withInit(draft.args, initAt))}>
-                    Add <span className="font-mono">--init</span>
-                  </Button>
-                }
-              >
-                Without <span className="font-mono">--init</span>, the container keeps running after the agent stops it.
-              </Caution>
-            )}
-            {plain.length > 0 && <Caution>{plainNote(plain)}</Caution>}
-            <PairList
-              label="Environment"
-              add="Add Variable"
-              keyPlaceholder="API_KEY"
-              rows={draft.env}
-              onChange={(env) => set('env', env)}
-              note={draft.args.length === 0 && draft.env.length > 0 && <LockLegend />}
-            />
-          </>
-        ) : (
-          <>
-            <div>
-              <label htmlFor="server-url" className="mb-1.5 block text-small font-medium text-ink-2">
-                URL
-              </label>
-              <TextField
-                mono
-                id="server-url"
-                type="url"
-                value={draft.url}
-                onChange={(e) => set('url', e.target.value)}
-                placeholder={draft.transport === 'sse' ? 'https://example.com/sse' : 'https://example.com/mcp'}
-                className="w-full"
-              />
-            </div>
-            {plain.length > 0 && <Caution>{plainNote(plain)}</Caution>}
-            <PairList
-              label="Headers"
-              add="Add Header"
-              keyPlaceholder="Authorization"
-              rows={draft.headers}
-              onChange={(headers) => set('headers', headers)}
-              note={draft.headers.length > 0 && <LockLegend />}
-            />
-          </>
-        )}
-        <CheckSection name={draft.name.trim()} draft={draft} cached={cachedTools} toolsOff={toolsOff} />
-      </div>
-
-      <footer className="flex items-center gap-2 bg-card-muted px-5 py-3 hair-t">
-        {onDelete && (
-          <Button onClick={remove} disabled={saving}>
-            Delete…
-          </Button>
-        )}
-        {onDuplicate && (
-          <Button onClick={onDuplicate} disabled={saving}>
-            Duplicate
-          </Button>
-        )}
-        <p role="alert" className="min-w-0 flex-1 text-small text-problem">
-          {error}
-        </p>
-        <Button onClick={onCancel} disabled={saving || (!dirty && Boolean(name))}>
-          {name ? 'Revert' : 'Cancel'}
-        </Button>
-        <Button kind="primary" type="submit" disabled={saving || (!dirty && Boolean(name))}>
-          {saving ? 'Saving…' : 'Save'}
-        </Button>
-      </footer>
-    </form>
-  )
-}
-
-/** A warning tucked under the field it's about: a well with the amber tile, one line, and maybe a fix. */
-function Caution({ children, action }: { children: ReactNode; action?: ReactNode }) {
-  return (
-    <div className="-mt-3 flex items-center gap-2 rounded-[8px] bg-well py-1.5 pr-1.5 pl-2">
-      <StatusTile tone="warn" size={20} />
-      <p className="min-w-0 flex-1 py-0.5 text-small text-ink-2">{children}</p>
-      {action}
-    </div>
-  )
-}
-
-/** What the lock beside a value does, under the first list that has values: its tooltip takes too long to come up. */
-function LockLegend() {
-  const platform = usePlatform()
-  return (
-    <p className="mb-2 flex items-center gap-1 text-caption text-ink-2">
-      Click <LockIcon /> to keep a value in the {platform.secretStore} instead of config.json.
-    </p>
-  )
-}
-
-/**
- * One value: a text field with a lock that sends it to the Keychain on save (the field then
- * masks it), or, for a value already there, a sealed well that can only be replaced. A stored
- * secret never comes back to the window.
- */
-function ValueField({
-  value,
-  onChange,
-  label,
-  placeholder,
-  hint,
-}: {
-  value: DraftValue
-  onChange: (value: DraftValue) => void
-  label: string
-  placeholder: string
-  /** What to type, where it's known; shown in place of the placeholder. */
-  hint?: string
-}) {
-  const platform = usePlatform()
-  if (!isPending(value) && typeof value !== 'string') {
-    return (
-      <span className="flex h-[28px] min-w-0 flex-1 items-center gap-1.5 rounded-control bg-well pr-1 pl-2 text-small text-ink-2">
-        <LockIcon />
-        <span className="min-w-0 flex-1 truncate italic">{platform.isMac ? 'In Keychain' : `In the ${platform.secretStore}`}</span>
-        <Button
-          kind="plain"
-          className="!mx-0 !h-[22px]"
-          aria-label={`Replace ${label}`}
-          onClick={() => onChange({ secret: newSecretId(), value: '' })}
-        >
-          Replace
-        </Button>
-      </span>
-    )
-  }
-  const pending = isPending(value)
-  return (
-    <span className="relative flex min-w-0 flex-1">
-      <TextField
-        mono
-        type={pending ? 'password' : 'text'}
-        aria-label={label}
-        value={pending ? value.value : value}
-        onChange={(e) => onChange(pending ? { ...value, value: e.target.value } : e.target.value)}
-        placeholder={hint ?? (pending ? `Saved to the ${platform.secretStore}` : placeholder)}
-        className="w-full pr-8"
-      />
-      <IconButton
-        // One name; aria-pressed says whether it's on. A name that flips with the state reads as its opposite.
-        label={`Store ${label} in the ${platform.secretStore} on save`}
-        aria-pressed={pending}
-        onClick={() => onChange(pending ? value.value : { secret: newSecretId(), value })}
-        className={`absolute top-px right-px !size-[26px] ${pending ? '!bg-tint !text-accent' : 'opacity-60 hover:opacity-100 focus-visible:opacity-100'}`}
-      >
-        <LockIcon />
-      </IconButton>
-    </span>
-  )
-}
-
-function ValueList({
-  label,
-  add,
-  placeholder,
-  values,
-  onChange,
-  note,
-}: {
-  label: string
-  add: string
-  placeholder: string
-  values: DraftValue[]
-  onChange: (values: DraftValue[]) => void
-  /** A line under the label, before the rows. */
-  note?: ReactNode
-}) {
-  return (
-    <fieldset className="min-w-0">
-      <legend className="mb-1.5 text-small font-medium text-ink-2">{label}</legend>
-      {note}
-      {values.length > 0 && (
-        <ol className="mb-2 space-y-1.5">
-          {values.map((value, i) => (
-            // Arguments have no identity but their place, and their order is the meaning.
-            // biome-ignore lint/suspicious/noArrayIndexKey: see above
-            <li key={i} className="flex items-center gap-1.5">
-              <ValueField
-                label={`${label.toLowerCase()} ${i + 1}`}
-                value={value}
-                onChange={(next) => onChange(values.map((v, j) => (j === i ? next : v)))}
-                placeholder={placeholder}
-              />
-              <IconButton label={`Remove ${label.toLowerCase()} ${i + 1}`} onClick={() => onChange(values.filter((_, j) => j !== i))}>
-                <CloseIcon />
-              </IconButton>
-            </li>
-          ))}
-        </ol>
-      )}
-      <Button onClick={() => onChange([...values, ''])}>
-        <PlusIcon />
-        {add}
-      </Button>
-    </fieldset>
-  )
-}
-
-/** A new, still empty value follows its name: under API_KEY or Authorization it heads for the Keychain. */
-const followName = (key: string, value: DraftValue): DraftValue => {
-  const empty = value === '' || (isPending(value) && value.value === '')
-  if (!empty) return value
-  if (SECRET_NAME.test(key)) return isPending(value) ? value : { secret: newSecretId(), value: '' }
-  return ''
-}
-
-function PairList({
-  label,
-  add,
-  keyPlaceholder,
-  rows,
-  onChange,
-  note,
-}: {
-  label: string
-  add: string
-  keyPlaceholder: string
-  rows: Pair[]
-  onChange: (rows: Pair[]) => void
-  /** A line under the label, before the rows. */
-  note?: ReactNode
-}) {
-  const update = (i: number, row: Pair) => onChange(rows.map((r, j) => (j === i ? row : r)))
-  return (
-    <fieldset className="min-w-0">
-      <legend className="mb-1.5 text-small font-medium text-ink-2">{label}</legend>
-      {note}
-      {rows.length > 0 && (
-        <ul className="mb-2 space-y-1.5">
-          {rows.map((row, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: a row's key is the text being edited, so it can't be the React key
-            <li key={i} className="flex items-center gap-1.5">
-              <TextField
-                mono
-                aria-label={`${label} name ${i + 1}`}
-                value={row.key}
-                onChange={(e) => update(i, { key: e.target.value, value: followName(e.target.value, row.value) })}
-                placeholder={keyPlaceholder}
-                className="w-[46%]"
-              />
-              <ValueField
-                label={row.key || `${label.toLowerCase()} ${i + 1}`}
-                value={row.value}
-                onChange={(value) => update(i, { ...row, value })}
-                placeholder="value"
-                hint={row.hint}
-              />
-              <IconButton label={`Remove ${row.key || `${label.toLowerCase()} ${i + 1}`}`} onClick={() => onChange(rows.filter((_, j) => j !== i))}>
-                <CloseIcon />
-              </IconButton>
-            </li>
-          ))}
-        </ul>
-      )}
-      <Button onClick={() => onChange([...rows, { key: '', value: '' }])}>
-        <PlusIcon />
-        {add}
-      </Button>
-    </fieldset>
-  )
-}
-
-const CHECK_TONE: Record<ServerCheck['status'], Tone> = {
-  ok: 'ok',
-  needsLogin: 'warn',
-  failed: 'problem',
-  timedOut: 'problem',
-  unsupported: 'neutral',
-}
-
-/**
- * Check Server: starts the server as the form describes it, unsaved edits and typed secrets
- * included, and shows what it offers or why it didn't answer. Editing the form clears the result.
- */
-function CheckSection({
-  name,
-  draft,
-  cached,
-  toolsOff,
-}: {
-  name: string
-  draft: ServerDraft
-  /** The tools from the last check that worked, kept between sessions; absent until one has. */
-  cached: ToolInfo[] | undefined
-  /** Per tool, the profiles that turn it off, so the list says where each one is off. */
-  toolsOff: Record<string, ProfileChip[]>
-}) {
-  const [state, setState] = useState<{ key: string; result: ServerCheck | 'running' | { error: string } } | null>(null)
-  const key = JSON.stringify(draft)
-  const current = state?.key === key ? state.result : null
-
-  const run = async () => {
-    const built = serverOf(draft)
-    if ('error' in built) {
-      setState({ key, result: { error: built.error } })
-      return
-    }
-    setState({ key, result: 'running' })
-    try {
-      const result = await checkMcpServer(name, built.server, built.secrets)
-      setState((s) => (s?.key === key ? { key, result } : s))
-    } catch (err) {
-      setState((s) => (s?.key === key ? { key, result: { error: errorMessage(err) } } : s))
-    }
-  }
-
-  const running = current === 'running'
-  const result = current && current !== 'running' && 'status' in current ? current : null
-  const problem = current && current !== 'running' && 'error' in current ? current.error : null
-  // A fresh answer wins; otherwise the last good check's list, said to be from then.
-  const fromCache = !current && cached !== undefined
-  const tools = result?.status === 'ok' ? result.tools : fromCache ? cached : null
-  const tone: Tone = running ? 'pending' : result ? CHECK_TONE[result.status] : problem ? 'problem' : fromCache ? 'ok' : 'neutral'
-  const count = (n: number) => `${n} ${n === 1 ? 'tool' : 'tools'}`
-  // A short list starts open; a long one folds away until asked for. The user's choice holds.
-  const [open, setOpen] = useState<boolean | null>(null)
-  const listOpen = open ?? (tools?.length ?? 0) <= 8
-  const headline = running
-    ? 'Starting the server…'
-    : result?.status === 'ok'
-      ? count(result.tools.length)
-      : result?.status === 'needsLogin'
-        ? 'Needs a sign-in'
-        : result?.status === 'unsupported'
-          ? 'Not checked'
-          : result
-            ? "Didn't answer"
-            : problem
-              ? "Can't check yet"
-              : fromCache
-                ? count(cached.length)
-                : null
-
-  return (
-    <section aria-label="Tools" aria-live="polite">
-      <h3 className="mb-1.5 text-small font-medium text-ink-2">Tools</h3>
-      <div className="flex items-center gap-2.5">
-        {headline ? (
-          <>
-            <StatusTile tone={tone} size={28} />
-            <p className="min-w-0 flex-1 truncate">
-              <span className="font-medium">{headline}</span>
-              {fromCache && <span className="ml-2 text-small text-ink-2">from the last check</span>}
-            </p>
-          </>
-        ) : (
-          <p className="min-w-0 flex-1 text-small text-ink-2 italic">Not checked yet</p>
-        )}
-        {/* aria-disabled, not disabled: a disabled button drops keyboard focus to the page. */}
-        <Button onClick={running ? undefined : run} aria-disabled={running}>
-          <CheckIcon />
-          {result || problem || fromCache ? 'Check Again' : 'Check Server'}
-        </Button>
-      </div>
-      {(result?.message || problem) && <p className="mt-1.5 text-small text-ink-2">{result?.message ?? problem}</p>}
-      {result?.log && (
-        <pre className="mt-2 max-h-[120px] overflow-auto rounded-control bg-well px-2 py-1.5 font-mono text-caption whitespace-pre-wrap text-ink-2 select-text">
-          {result.log}
-        </pre>
-      )}
-      {tools && tools.length > 0 && (
-        <button
-          type="button"
-          aria-expanded={listOpen}
-          aria-controls="server-tools"
-          onClick={() => setOpen(!listOpen)}
-          className="mt-2 -ml-1 flex min-h-[26px] items-center gap-1 rounded-control px-1 text-small text-ink-2 hover:text-ink"
-        >
-          <span className={`transition-transform duration-150 ease-settle ${listOpen ? 'rotate-90' : ''}`}>
-            <ChevronIcon />
-          </span>
-          {listOpen ? 'Hide tools' : `Show ${tools.length === 1 ? 'the tool' : `all ${tools.length} tools`}`}
-        </button>
-      )}
-      {tools && tools.length > 0 && listOpen && (
-        <ul id="server-tools" className="mt-1 rounded-[8px] bg-well">
-          {tools.map((tool) => {
-            const off = toolsOff[tool.name] ?? []
-            return (
-              <li key={tool.name} className="flex min-h-[32px] items-center gap-3 px-3 py-1.5 [&+&]:hair-t">
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-mono text-small text-ink select-text">{tool.name}</span>
-                  {tool.description && (
-                    <span className="block truncate text-caption text-ink-2" title={tool.description}>
-                      {tool.description}
-                    </span>
-                  )}
-                </span>
-                {off.length > 0 && (
-                  <span className="flex shrink-0 items-center gap-1 text-caption text-ink-2" title={`Off in ${off.map((p) => p.name).join(', ')}`}>
-                    off in
-                    {off.map((p) => (
-                      <ProfileDot key={p.id} color={p.color} className="size-2" />
-                    ))}
-                    <span className="sr-only">{off.map((p) => p.name).join(', ')}</span>
-                  </span>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </section>
   )
 }

@@ -13,7 +13,7 @@ import { KNOWN_TOOLS } from '../lib/tools'
 import type { McpServer, Profile, ToolInfo } from '../lib/types'
 import { AgentMark } from './icons'
 import { ServerMark } from './ServerMark'
-import { Button, CheckBox, ChevronIcon, CloseIcon, FolderIcon, IconButton, PlusIcon, ProfileDot, TextField } from './ui'
+import { Button, CheckBox, ChevronIcon, CloseIcon, FolderIcon, Footer, IconButton, PlusIcon, ProfileDot, TextField } from './ui'
 
 interface FolderRow {
   path: string
@@ -176,6 +176,8 @@ export function ProfileInspector({
       {/* Dims the grid behind; it stays visible so other profiles' folders are in view. */}
       <div aria-hidden="true" className="absolute inset-0 z-30 animate-[er-fade_160ms_ease-out] bg-black/15 dark:bg-black/35" />
       <form
+        role="dialog"
+        aria-modal="true"
         aria-label={profile ? `Edit ${profile.name}` : 'New profile'}
         data-inspector
         className="absolute inset-y-0 right-0 z-40 flex w-[min(440px,calc(100%-40px))] animate-[er-slide_220ms_var(--ease-settle)] flex-col bg-raised shadow-raised"
@@ -341,27 +343,30 @@ export function ProfileInspector({
           </fieldset>
         </div>
 
-        <footer className="flex items-center gap-2 bg-card-muted px-5 py-3 hair-t">
-          {onDelete && (
-            <Button onClick={remove} disabled={saving}>
-              Delete…
-            </Button>
-          )}
-          {onDuplicate && (
-            <Button onClick={duplicate} disabled={saving}>
-              Duplicate
-            </Button>
-          )}
-          <p role="alert" className="min-w-0 flex-1 text-small text-problem">
-            {error}
-          </p>
+        <Footer
+          leading={
+            <>
+              {onDelete && (
+                <Button onClick={remove} disabled={saving}>
+                  Delete…
+                </Button>
+              )}
+              {onDuplicate && (
+                <Button onClick={duplicate} disabled={saving}>
+                  Duplicate
+                </Button>
+              )}
+            </>
+          }
+          error={error}
+        >
           <Button onClick={close} disabled={saving}>
             Cancel
           </Button>
-          <Button kind="primary" type="submit" disabled={saving}>
+          <Button kind="primary" type="submit" busy={saving}>
             {saving ? 'Saving…' : 'Save'}
           </Button>
-        </footer>
+        </Footer>
       </form>
     </>
   )

@@ -7,19 +7,50 @@ import { forwardRef } from 'react'
 type ButtonKind = 'push' | 'primary' | 'plain'
 
 const BUTTON: Record<ButtonKind, string> = {
-  push: 'h-[26px] px-3 rounded-control bg-button text-ink shadow-[0_0_0_0.5px_rgb(0_0_0/0.14),0_1px_2px_rgb(0_0_0/0.08)] hover:brightness-[0.97] active:brightness-90',
+  // Held open (a popover it opened, aria-expanded) it stays pressed, hovered or not.
+  push: 'h-[26px] px-3 rounded-control bg-button text-ink shadow-[0_0_0_0.5px_rgb(0_0_0/0.14),0_1px_2px_rgb(0_0_0/0.08)] hover:brightness-[0.97] active:brightness-90 aria-expanded:brightness-90 aria-expanded:hover:brightness-90',
   primary:
     'h-[26px] px-3 rounded-control bg-accent text-on-accent font-medium shadow-[0_1px_2px_rgb(0_0_0/0.18)] hover:brightness-105 active:brightness-90',
-  plain: 'h-[26px] px-2 -mx-2 rounded-control text-accent hover:bg-tint active:brightness-90',
+  plain: 'h-[26px] px-2 -mx-2 rounded-control text-accent-ink hover:bg-tint active:brightness-90',
 }
 
-export function Button({ kind = 'push', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { kind?: ButtonKind }) {
+/**
+ * `busy`: working on its last press. It looks disabled but keeps focus (`aria-disabled`, not
+ * `disabled`, which would drop focus to the page), and ignores presses, a form's Return included.
+ */
+export function Button({
+  kind = 'push',
+  busy = false,
+  className = '',
+  onClick,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { kind?: ButtonKind; busy?: boolean }) {
   return (
     <button
       type="button"
+      aria-disabled={busy || undefined}
+      onClick={(e) => (busy ? e.preventDefault() : onClick?.(e))}
       className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-body disabled:pointer-events-none disabled:opacity-45 aria-disabled:opacity-45 ${BUTTON[kind]} ${className}`}
       {...props}
     />
+  )
+}
+
+/**
+ * An editor's footer on muted card: the leading actions, the inline error, then the closing
+ * actions. Empty, the error is the spacer that pushes the closing actions right; once it says
+ * something it takes its own row above them, so a sentence never squeezes between the buttons.
+ */
+export function Footer({ leading, error, errorId, children }: { leading?: ReactNode; error: string | null; errorId?: string; children: ReactNode }) {
+  return (
+    <footer className="flex flex-wrap items-center gap-2 bg-card-muted px-5 py-3 hair-t">
+      {leading}
+      <p id={errorId} role="alert" className={`min-w-0 text-small text-problem ${error ? 'order-first basis-full' : 'flex-1'}`}>
+        {error}
+      </p>
+      {error && <span aria-hidden="true" className="flex-1" />}
+      {children}
+    </footer>
   )
 }
 
@@ -34,7 +65,7 @@ export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTM
       type="button"
       aria-label={label}
       title={label}
-      className={`inline-grid size-[26px] shrink-0 place-items-center rounded-control text-ink-2 hover:bg-[color-mix(in_srgb,var(--er-ink)_8%,transparent)] hover:text-ink active:brightness-90 disabled:opacity-40 ${className}`}
+      className={`inline-grid size-[26px] shrink-0 place-items-center rounded-control text-ink-2 hover:bg-[color-mix(in_srgb,var(--er-ink)_8%,transparent)] hover:text-ink active:brightness-90 disabled:opacity-40 aria-pressed:bg-tint aria-pressed:text-accent-ink ${className}`}
       {...props}
     >
       {children}
@@ -62,7 +93,8 @@ export function Switch({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={`relative h-[16px] w-[28px] shrink-0 rounded-full transition-colors duration-150 disabled:opacity-45 ${
-        checked ? 'bg-accent' : 'bg-[color-mix(in_srgb,var(--er-ink)_18%,transparent)]'
+        // Off, the track carries a field edge so the control's bounds hold 3:1 (WCAG 1.4.11).
+        checked ? 'bg-accent' : 'bg-[color-mix(in_srgb,var(--er-ink)_18%,transparent)] shadow-[inset_0_0_0_1px_var(--er-field-edge)]'
       }`}
     >
       <span
@@ -148,7 +180,7 @@ export const TextField = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLIn
       spellCheck={false}
       autoCorrect="off"
       autoCapitalize="off"
-      className={`h-[28px] min-w-0 text-ellipsis rounded-control bg-field px-2 text-ink select-text shadow-[inset_0_0_0_1px_var(--er-field-edge)] placeholder:text-ink-2 placeholder:italic focus:shadow-[inset_0_0_0_1.5px_var(--er-accent)] focus:outline-none ${
+      className={`h-[28px] min-w-0 text-ellipsis rounded-control bg-field px-2 text-ink select-text shadow-[inset_0_0_0_1px_var(--er-field-edge)] placeholder:text-ink-2 placeholder:italic focus:shadow-[inset_0_0_0_1.5px_var(--er-accent-ink)] focus:outline-none ${
         mono ? 'font-mono text-small' : 'text-body'
       } ${className}`}
       {...props}

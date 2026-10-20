@@ -16,15 +16,19 @@
   --er-button: #ffffff;
   --er-border: rgb(16 24 48 / 0.1);
   --er-rule: #e3e6ec;
-  /* A field's edge at 3:1 against the field and the panel around it (WCAG 1.4.11). */
-  --er-field-edge: #8e939d;
+  /* A field's edge at 3:1 against the field and the panel around it, the well included (WCAG 1.4.11). */
+  --er-field-edge: #7f848e;
   /* The segmented control's track, and a sealed value's well (a Keychain secret). */
   --er-track: rgb(16 24 48 / 0.07);
   --er-well: #f1f3f7;
   --er-ink: #1b1d22;
-  --er-ink-2: #61656f;
+  /* 4.5:1 on every surface it sits on, the segmented track included. */
+  --er-ink-2: #5b5f69;
   --er-ink-3: #959aa5;
+  /* The accent as a fill (the primary button, a checked box): on-accent text holds 4.5:1 on it. */
   --er-accent: #0a64d8;
+  /* The accent as ink (text, links, focus rings, selection outlines): 4.5:1 on the card, the tint and the well. */
+  --er-accent-ink: #0a64d8;
   --er-on-accent: #ffffff;
   --er-ok: #24a148;
   --er-warn: #c47f00;
@@ -48,13 +52,14 @@
     --er-button: #3a3f4a;
     --er-border: rgb(255 255 255 / 0.09);
     --er-rule: #30343c;
-    --er-field-edge: #747a86;
+    --er-field-edge: #808693;
     --er-track: rgb(0 0 0 / 0.32);
     --er-well: #31353e;
     --er-ink: #eef0f4;
     --er-ink-2: #a0a5b0;
     --er-ink-3: #6c717c;
-    --er-accent: #3d8af7;
+    --er-accent: #2a6fd9;
+    --er-accent-ink: #5aa2ff;
     --er-ok: #3ec46d;
     --er-warn: #e5a83a;
     --er-problem: #ff6b61;
@@ -79,10 +84,21 @@
   background: color-mix(in srgb, var(--er-window) 90%, transparent);
 }
 
+/*
+ * The user's macOS accent, held to contrast: system accents are bright (blue is 4.0:1 under
+ * white text), so fills take it a step darker, and ink takes it darker in light and lighter in
+ * dark.
+ */
 @supports (color: AccentColor) {
   :root {
-    --er-accent: AccentColor;
+    --er-accent: color-mix(in srgb, AccentColor 85%, black);
+    --er-accent-ink: color-mix(in srgb, AccentColor 80%, black);
     --er-on-accent: AccentColorText;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --er-accent-ink: color-mix(in srgb, AccentColor 65%, white);
+    }
   }
 }
 
@@ -119,6 +135,7 @@
   --color-ink-2: var(--er-ink-2);
   --color-ink-3: var(--er-ink-3);
   --color-accent: var(--er-accent);
+  --color-accent-ink: var(--er-accent-ink);
   --color-on-accent: var(--er-on-accent);
   --color-ok: var(--er-ok);
   --color-warn: var(--er-warn);
@@ -147,7 +164,7 @@
 /* A row that is the label of a hidden native control shows that control's focus ring. */
 @utility focus-within-ring {
   &:has(:focus-visible) {
-    outline: 2px solid var(--er-accent);
+    outline: 2px solid var(--er-accent-ink);
     outline-offset: 2px;
   }
 }
@@ -186,12 +203,12 @@
   }
 
   input {
-    caret-color: var(--er-accent);
+    caret-color: var(--er-accent-ink);
   }
 
-  /* Solid accent, so the ring holds 3:1 on every surface (WCAG 1.4.11). */
+  /* Solid accent ink, so the ring holds 3:1 on every surface (WCAG 1.4.11). */
   :focus-visible {
-    outline: 2px solid var(--er-accent);
+    outline: 2px solid var(--er-accent-ink);
     outline-offset: 2px;
     border-radius: 6px;
   }
@@ -208,6 +225,11 @@
   }
   ::-webkit-scrollbar-track {
     background: transparent;
+  }
+
+  /* No one-word last lines in short prose: footers, cautions, notes. */
+  p {
+    text-wrap: pretty;
   }
 }
 

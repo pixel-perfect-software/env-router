@@ -48,11 +48,11 @@ export function Docket({
   onDismiss: () => void
 }) {
   const platform = usePlatform()
-  const base = 'mx-4 mb-4 flex min-h-[60px] shrink-0 flex-wrap items-center gap-x-4 gap-y-2.5 rounded-card px-4 py-3'
+  const base = 'mx-4 mb-4 flex min-h-[60px] shrink-0 items-center gap-x-4 gap-y-2.5 rounded-card px-4 py-3'
 
   if (hovering) {
     return (
-      <footer className={`${base} bg-tint text-accent shadow-[0_0_0_1.5px_var(--er-accent)]`}>
+      <footer className={`${base} bg-tint text-accent-ink shadow-[0_0_0_1.5px_var(--er-accent-ink)]`}>
         <DropIcon />
         <p className="min-w-0 truncate">
           Release to check <span className="font-mono text-small">{tildify(hovering, home)}</span>
@@ -65,8 +65,10 @@ export function Docket({
     const shell = shells.find((s) => s.isDefault && s.available) ?? shells.find((s) => s.available)
     return (
       <footer className={`${base} border-[1.5px] border-dashed border-ink-3/45 text-ink-2`}>
-        <DropIcon />
-        <p>
+        <span className="shrink-0">
+          <DropIcon />
+        </span>
+        <p className="min-w-0">
           Drop a folder on this window, or press <kbd className="font-sans">{shortcutLabel('o', platform)}</kbd>, to see which profile a new{' '}
           {shell?.shell ?? 'terminal'} window uses there.
         </p>
@@ -80,7 +82,7 @@ export function Docket({
   const available = shells.filter((s) => s.available)
 
   return (
-    <footer className={`${base} animate-[er-rise_180ms_var(--ease-settle)] bg-raised shadow-raised`} aria-live="polite">
+    <footer className={`${base} flex-wrap animate-[er-rise_180ms_var(--ease-settle)] bg-raised shadow-raised`} aria-live="polite">
       <div className="flex min-w-[300px] flex-1 items-start gap-3">
         <StatusTile
           key={`${check.key}-${check.error ? 'err' : (verdict?.tone ?? 'pending')}`}
@@ -88,15 +90,16 @@ export function Docket({
           size={28}
         />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h2 className="truncate font-semibold">
+          {/* The headline wraps rather than truncating: it's the verdict. The folder gives way first. */}
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <h2 className="font-semibold">
               {check.error
                 ? "Couldn't check this folder"
                 : verdict
                   ? verdict.headline
                   : `Checking ${toolLabel(check.tool)} in a new ${check.shell} window…`}
             </h2>
-            <span className="min-w-0 truncate font-mono text-small text-ink-2 select-text" title={check.folder}>
+            <span className="min-w-0 max-w-full truncate font-mono text-small text-ink-2 select-text" title={check.folder}>
               {tildify(check.folder, home)}
             </span>
           </div>
@@ -105,13 +108,20 @@ export function Docket({
               <p className="select-text">{check.error}</p>
             ) : verdict ? (
               <>
-                {verdict.note && <p>{verdict.note}</p>}
+                {/* In a short window the note keeps to one line, so the cards above stay in view. */}
+                {verdict.note && (
+                  <p className="[@media(max-height:520px)]:line-clamp-1" title={verdict.note}>
+                    {verdict.note}
+                  </p>
+                )}
                 {verdict.values.length > 0 && (
                   <dl className="flex flex-wrap gap-x-4 gap-y-0.5">
                     {verdict.values.map((v) => (
                       <div key={v.label} className="flex min-w-0 gap-1.5">
                         <dt>{v.label}</dt>
-                        <dd className="truncate font-mono text-ink select-text">{v.value}</dd>
+                        <dd className="truncate font-mono text-ink select-text" title={v.value}>
+                          {v.value}
+                        </dd>
                       </div>
                     ))}
                   </dl>
