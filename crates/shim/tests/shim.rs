@@ -86,15 +86,20 @@ impl Fixture {
 }
 
 /// Writes a script that's run straight away. The bytes go to a side file and `cp` copies them into
-/// place, so this process never holds the script open for writing: on Linux, a test thread that
-/// forks meanwhile would inherit that handle, and running the script would fail with "Text file
-/// busy" until the fork execs.
+/// place (see `copy_executable`).
 fn write_executable(path: &Path, contents: &str) {
     let source = path.with_extension("src");
     fs::write(&source, contents).unwrap();
-    let copied = Command::new("cp").arg(&source).arg(path).status().unwrap();
-    assert!(copied.success());
+    copy_executable(&source, path);
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// Copies an executable that's run straight away with `cp`, never `fs::copy`, so this process
+/// never holds it open for writing: on Linux, a test thread that forks meanwhile would inherit
+/// that handle, and running the file would fail with "Text file busy" until the fork execs.
+fn copy_executable(from: &Path, to: &Path) {
+    let copied = Command::new("cp").arg(from).arg(to).status().unwrap();
+    assert!(copied.success());
 }
 
 fn stdout(output: &Output) -> String {
@@ -192,7 +197,7 @@ fn never_execs_another_copy_of_the_shim() {
     let other = f.home.join("scratch/.envrouter");
     fs::create_dir_all(other.join("bin")).unwrap();
     fs::create_dir_all(other.join("shims")).unwrap();
-    fs::copy(SHIM, other.join("bin/envrouter-shim")).unwrap();
+    copy_executable(Path::new(SHIM), &other.join("bin/envrouter-shim"));
     symlink(other.join("bin/envrouter-shim"), other.join("shims/claude")).unwrap();
 
     let mut child = Command::new(f.shims.join("claude"))
@@ -324,7 +329,7 @@ fn routes_the_binary_an_editor_wraps() {
     // Named like the extension's own copy, in a folder that isn't on PATH.
     let bundled = f.home.join("extension/native-binary");
     fs::create_dir_all(&bundled).unwrap();
-    fs::copy(f.real_bin.join("claude"), bundled.join("claude")).unwrap();
+    copy_executable(&f.real_bin.join("claude"), &bundled.join("claude"));
     let real = bundled.join("claude");
 
     let output = f.run_wrapped("dev/work/app", &[real.as_os_str(), OsStr::new("x")]);
