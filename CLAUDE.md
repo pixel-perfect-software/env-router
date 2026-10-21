@@ -34,9 +34,13 @@ run in every terminal, with nothing to reload.
 **Editor extensions** that run their own copy of an agent (Claude Code for VS Code) bypass PATH,
 so they're routed through their process-wrapper setting: the editor runs `envrouter-shim <its
 binary> <args>`, and the shim's wrapper mode routes that binary (`crates/shim/src/main.rs`,
-`wrapped`). `crates/ops/src/editors.rs` sets the setting in VS Code-family user settings
-(JSONC kept intact, written through symlinks, never replacing someone else's wrapper) and in
-remote servers' machine settings (`~/.vscode-server/data/Machine/settings.json`), which is what
+`wrapped`). Builds that ship a script instead (Claude Code for VS Code without a native binary,
+like 2.1.89's universal build) pass `<interpreter> <script> <args>`, with VS Code's own Electron
+helper as Node; the agent is the one whose `ide.extension` names the installed folder
+(`<id>-<version>[-<platform>]`) holding the script, and injected arguments go after the script.
+`crates/ops/src/editors.rs` sets the setting in VS Code-family user settings (JSONC kept intact,
+written through symlinks, never replacing someone else's wrapper) and in remote servers' machine
+settings (`~/.vscode-server/data/Machine/settings.json`), which is what
 VS Code on Windows reads for a WSL folder. The hook is agent data: `ide` in `src/lib/agents.json`,
 saved to `config.agents.*.ide`.
 
@@ -89,7 +93,7 @@ the app's binary is `envrouter-app`, so `envrouter` is always the CLI.
 - **`config::validate` runs on every save.** It rejects a folder claimed by two profiles, tool or env var names that aren't strict identifiers, and a tool folder that isn't absolute or `~`-based (a relative one would resolve against wherever the tool runs; `resolve` skips one from a hand-edited config too). Tool names become file names in `shims/` and are interpolated into shell probes, so keep `is_command_name` strict.
 
 ## The shim must never block the tool
-A missing config means the tool runs silently. A broken one prints a warning and the tool still runs. The same goes for MCP: no manifest means no injection, a broken one warns, a server whose secret can't be read is left out with a warning, `--strict-mcp-config` (or `ENVROUTER_MCP=0`) turns injection off for that run, and so does a first argument in the agent's `skipSubcommands` (Claude's `plugin`: `claude plugin test` refuses any option before `plugin`, verified on 2.1.306), and explaining never asks the secret store. When looking for the real binary, the shim skips the shims directory, empty PATH entries (the current directory), and anything that canonicalizes to itself, so it can never exec itself in a loop. In wrapper mode (run under its own name, for an editor) it wraps only an absolute path to an executable, named like a command, that isn't a shim. Keep these properties; `crates/shim/tests/shim.rs` covers each one.
+A missing config means the tool runs silently. A broken one prints a warning and the tool still runs. The same goes for MCP: no manifest means no injection, a broken one warns, a server whose secret can't be read is left out with a warning, `--strict-mcp-config` (or `ENVROUTER_MCP=0`) turns injection off for that run, and so does a first argument in the agent's `skipSubcommands` (Claude's `plugin`: `claude plugin test` refuses any option before `plugin`, verified on 2.1.306), and explaining never asks the secret store. When looking for the real binary, the shim skips the shims directory, empty PATH entries (the current directory), and anything that canonicalizes to itself, so it can never exec itself in a loop. In wrapper mode (run under its own name, for an editor) it wraps only an absolute path to an executable that isn't a shim; one it can't name as a tool (not named like a command, and not running a script from an agent's extension) runs unrouted with a warning rather than not at all. Keep these properties; `crates/shim/tests/shim.rs` covers each one.
 
 ## Constraints
 - **No logins or OAuth.** EnvRouter never signs anyone into an agent or an MCP server; agents run their own sign-in (`/mcp`). The one credential it handles is MCP secret values the user enters, kept in the secret store item above.

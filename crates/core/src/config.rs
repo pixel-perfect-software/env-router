@@ -146,6 +146,16 @@ pub struct IdeHook {
     pub extension: String,
 }
 
+impl IdeHook {
+    /// Whether a folder named `name` is an installed copy of the extension. The version after
+    /// the id keeps `anthropic.claude-code` from matching an `anthropic.claude-code-nightly`.
+    pub fn is_installed_copy(&self, name: &str) -> bool {
+        name.strip_prefix(self.extension.as_str())
+            .and_then(|rest| rest.strip_prefix('-'))
+            .is_some_and(|version| version.starts_with(|c: char| c.is_ascii_digit()))
+    }
+}
+
 /// Where an agent keeps its own MCP config, in its `mcp` dialect.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -791,6 +801,28 @@ mod tests {
             json,
             serde_json::json!({ "setting": "claudeCode.claudeProcessWrapper", "extension": "anthropic.claude-code" })
         );
+    }
+
+    #[test]
+    fn an_installed_copy_is_the_extension_id_then_a_version() {
+        let hook = IdeHook {
+            setting: "claudeCode.claudeProcessWrapper".into(),
+            extension: "anthropic.claude-code".into(),
+        };
+        for name in [
+            "anthropic.claude-code-2.1.89",
+            "anthropic.claude-code-2.1.301-darwin-arm64",
+        ] {
+            assert!(hook.is_installed_copy(name), "{name}");
+        }
+        for name in [
+            "anthropic.claude-code",
+            "anthropic.claude-code-nightly-1.0.0",
+            "anthropic.claude-code2-1.0.0",
+            "other.anthropic.claude-code-1.0.0",
+        ] {
+            assert!(!hook.is_installed_copy(name), "{name}");
+        }
     }
 
     #[test]
