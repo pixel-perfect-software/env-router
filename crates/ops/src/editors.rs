@@ -136,10 +136,9 @@ pub fn status(editor: Editor, home: &Path, command: &str, hook: &IdeHook) -> Edi
         .ok()
         .and_then(|text| CstRootNode::parse(&text, &ParseOptions::default()).ok())
         .and_then(|root| read_setting(&root, &hook.setting));
-    let prefix = format!("{}-", hook.extension);
     let extension_installed = fs::read_dir(editor.extensions_dir(home)).is_ok_and(|entries| {
         entries.flatten().any(|entry| {
-            entry.path().is_dir() && entry.file_name().to_string_lossy().starts_with(&prefix)
+            entry.path().is_dir() && hook.is_installed_copy(&entry.file_name().to_string_lossy())
         })
     });
     EditorStatus {

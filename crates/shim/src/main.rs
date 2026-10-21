@@ -5,14 +5,16 @@
 //!
 //! Editors that start an agent from their own copy of it, like the Claude Code extension for
 //! VS Code, run `~/.envrouter/bin/envrouter-shim <their binary> <args>` instead, through a
-//! process-wrapper setting. The shim then routes that binary rather than searching PATH.
+//! process-wrapper setting. The shim then routes that binary rather than searching PATH. An
+//! extension that ships a script rather than a binary passes `<interpreter> <script> <args>`,
+//! and the agent is the one whose extension folder holds the script.
 //!
 //! It must never stop someone from running their tool. A missing or broken config only
 //! produces a warning, and the tool runs unrouted.
 
 use std::collections::HashMap;
 use std::env;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
@@ -21,6 +23,7 @@ use std::process::{Command, ExitCode, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use envrouter_core::config::ConfigState;
 use envrouter_core::mcp::{self, Launch};
 use envrouter_core::platform::Platform;
 use envrouter_core::{config, paths, resolve, EXIT_TOOL_NOT_FOUND};
@@ -41,7 +44,7 @@ fn main() -> ExitCode {
     let home = env::var_os("HOME")
         .filter(|home| !home.is_empty())
         .map(PathBuf::from);
-    let Some(mut tool) = Path::new(&argv0)
+    let Some(name) = Path::new(&argv0)
         .file_name()
         .and_then(|name| name.to_str())
         .map(str::to_owned)
@@ -49,25 +52,46 @@ fn main() -> ExitCode {
         eprintln!("envrouter: can't tell which tool to run from {argv0:?}");
         return ExitCode::from(2);
     };
+    // Loaded before the tool is known: an editor's script names its agent only through it.
+    let config = home
+        .as_deref()
+        .map_or(Ok(None), |home| config::load(&paths::root(home)));
 
-    let real = if tool == paths::SHIM_NAME {
-        let Some((wrapped_tool, real)) = user_args.first().and_then(wrapped) else {
+    // `None` runs the program unrouted.
+    let tool: Option<String>;
+    let real;
+    // Stays ahead of anything injected: the script an interpreter runs.
+    let mut script = None;
+    if name == paths::SHIM_NAME {
+        let Some(found) = wrapped(&user_args, config.as_ref().ok().and_then(Option::as_ref)) else {
             eprintln!("envrouter: run this through a link named after a tool, such as ~/.envrouter/shims/claude, or as an editor's process wrapper, followed by the tool's full path");
             return ExitCode::from(2);
         };
         user_args.remove(0);
-        tool = wrapped_tool;
-        real
-    } else {
-        let Some(real) = find_real(&tool, home.as_deref()) else {
+        if found.runs_script {
+            script = Some(user_args.remove(0));
+        }
+        if found.tool.is_none() {
             eprintln!(
-                "envrouter: can't find `{tool}` on PATH outside ~/.envrouter/shims. Is it installed?"
+                "envrouter: can't tell which tool {} is. Running it without a profile.",
+                found.program.display()
+            );
+        }
+        tool = found.tool;
+        real = found.program;
+    } else {
+        let Some(found) = find_real(&name, home.as_deref()) else {
+            eprintln!(
+                "envrouter: can't find `{name}` on PATH outside ~/.envrouter/shims. Is it installed?"
             );
             return ExitCode::from(EXIT_TOOL_NOT_FOUND);
         };
-        real
-    };
-    let route = route(&tool, home.as_deref());
+        tool = Some(name);
+        real = found;
+    }
+    let route = tool
+        .as_deref()
+        .map_or_else(Route::none, |tool| route(&config, tool, home.as_deref()));
     let launch = route
         .launch
         .filter(|launch| launch.applies_to(&user_args))
@@ -95,8 +119,9 @@ fn main() -> ExitCode {
     }
 
     let mut command = Command::new(&real);
-    if let (Some(launch), Some(home)) = (launch, home.as_deref()) {
-        let injection = inject(&launch, home, &tool);
+    command.args(&script);
+    if let (Some(launch), Some(home), Some(tool)) = (launch, home.as_deref(), tool.as_deref()) {
+        let injection = inject(&launch, home, tool);
         // Ahead of the user's arguments, so none can land after a `--` they typed.
         command.args(&injection.args).envs(injection.env);
     }
@@ -118,28 +143,37 @@ struct Route {
     launch: Option<Launch>,
 }
 
-fn route(tool: &str, home: Option<&Path>) -> Route {
-    let none = Route {
-        profile: None,
-        env: None,
-        launch: None,
-    };
+impl Route {
+    fn none() -> Self {
+        Self {
+            profile: None,
+            env: None,
+            launch: None,
+        }
+    }
+}
+
+fn route(
+    config: &envrouter_core::Result<Option<ConfigState>>,
+    tool: &str,
+    home: Option<&Path>,
+) -> Route {
     let Some(home) = home else {
-        return none;
+        return Route::none();
     };
-    let config = match config::load(&paths::root(home)) {
+    let config = match config {
         Ok(Some(config)) => config,
-        Ok(None) => return none,
+        Ok(None) => return Route::none(),
         Err(err) => {
-            warn(&err, &format!("Running {tool} without a profile"));
-            return none;
+            warn(err, &format!("Running {tool} without a profile"));
+            return Route::none();
         }
     };
     // A deleted working directory has no profile.
     let Ok(cwd) = env::current_dir() else {
-        return none;
+        return Route::none();
     };
-    let resolution = resolve::resolve(&config, home, &cwd, tool);
+    let resolution = resolve::resolve(config, home, &cwd, tool);
     let launch = resolution.profile.and_then(|profile| {
         mcp::load_launch(home, &profile.id, tool)
             .inspect_err(|err| warn(err, &format!("Running {tool} without MCP servers")))
@@ -219,18 +253,66 @@ fn warn(err: &impl std::fmt::Display, then: &str) {
     let err = err.to_string();
     eprintln!("envrouter: {}. {then}.", err.trim_end_matches('.'));
 }
-/// The tool an editor asks the shim to wrap, named by its first argument: an absolute path to an
-/// executable that isn't a shim, whose file name is the tool's command, like the
-/// `.../native-binary/claude` the Claude Code extension passes.
-fn wrapped(first: &OsString) -> Option<(String, PathBuf)> {
-    let path = Path::new(first);
-    let tool = path.file_name()?.to_str()?;
+/// What an editor asks the shim to run.
+struct Wrapped {
+    /// The tool to route it as. `None`: it runs unrouted rather than not at all.
+    tool: Option<String>,
+    program: PathBuf,
+    /// The argument after the program is a script inside the agent's extension.
+    runs_script: bool,
+}
+
+/// What an editor asks the shim to run, named by its first argument: an absolute path to an
+/// executable that isn't a shim. That's either the agent's binary, named after its command,
+/// like the `.../native-binary/claude` the Claude Code extension passes, or an interpreter
+/// followed by a script inside an installed copy of the agent's extension, like the
+/// `<VS Code's own Node> .../resources/claude-code/cli.js` its builds without a native binary
+/// pass. Anything else runs unrouted.
+fn wrapped(args: &[OsString], config: Option<&ConfigState>) -> Option<Wrapped> {
+    let program = Path::new(args.first()?);
     let me = env::current_exe().and_then(fs::canonicalize).ok();
-    (path.is_absolute()
-        && config::is_command_name(tool)
-        && is_executable(path)
-        && !is_shim(path, me.as_deref()))
-    .then(|| (tool.to_owned(), path.to_path_buf()))
+    if !(program.is_absolute() && is_executable(program) && !is_shim(program, me.as_deref())) {
+        return None;
+    }
+    let script_agent = config
+        .zip(args.get(1))
+        .and_then(|(config, script)| extension_agent(config, Path::new(script)));
+    let runs_script = script_agent.is_some();
+    let tool = script_agent.or_else(|| {
+        program
+            .file_name()
+            .and_then(OsStr::to_str)
+            .filter(|name| config::is_command_name(name))
+            .map(str::to_owned)
+    });
+    Some(Wrapped {
+        tool,
+        program: program.to_path_buf(),
+        runs_script,
+    })
+}
+
+/// The agent whose editor extension holds `script`, a file somewhere inside an installed copy.
+fn extension_agent(config: &ConfigState, script: &Path) -> Option<String> {
+    if !(script.is_absolute() && script.is_file()) {
+        return None;
+    }
+    let folders: Vec<&str> = script
+        .ancestors()
+        .skip(1)
+        .filter_map(|dir| dir.file_name()?.to_str())
+        .collect();
+    config
+        .agents
+        .iter()
+        .find(|(command, agent)| {
+            config::is_command_name(command)
+                && agent
+                    .ide
+                    .as_ref()
+                    .is_some_and(|ide| folders.iter().any(|folder| ide.is_installed_copy(folder)))
+        })
+        .map(|(command, _)| command.clone())
 }
 
 /// The first `tool` on PATH that isn't a shim. It skips the shims directory and anything

@@ -348,7 +348,8 @@ EnvRouter uses shims, like [mise](https://mise.jdx.dev) or [Volta](https://volta
   helper, `envrouter-keychain`, to read it from the system's store and passes it to the agent in
   its environment.
 - An editor extension that runs its own copy of the agent runs it through the shim instead
-  (`envrouter-shim <its binary> <args>`), so the same routing applies there.
+  (`envrouter-shim <its binary> <args>`, or `<interpreter> <script> <args>` for a build that
+  ships a script), so the same routing applies there.
 
 **The most specific folder wins outright.** The deepest trigger folder containing the current
 folder picks the profile. If that profile doesn't set the tool you're running, the tool runs

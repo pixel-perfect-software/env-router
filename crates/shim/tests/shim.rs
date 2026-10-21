@@ -349,17 +349,14 @@ fn routes_the_binary_an_editor_wraps() {
 }
 
 #[test]
-fn refuses_to_wrap_anything_but_a_tools_full_path() {
+fn refuses_to_wrap_anything_but_an_executables_full_path() {
     let f = Fixture::new(Some(CONFIG));
     let not_executable = f.home.join("elsewhere/claude");
     fs::write(&not_executable, "#!/bin/sh\necho ran\n").unwrap();
-    let bad_name = f.home.join("elsewhere/claude.sh");
-    write_executable(&bad_name, "#!/bin/sh\necho ran\n");
     let refused = [
         "claude".into(),          // a bare name
         "real-bin/claude".into(), // relative, though it exists from the home folder
         not_executable.into_os_string(),
-        bad_name.into_os_string(),               // not a command name
         f.shims.join("claude").into_os_string(), // a shim, which would wrap itself
         "--version".into(),                      // the editor passed no binary
     ];
@@ -577,4 +574,113 @@ fn passes_secrets_from_the_keychain_helper_as_environment_variables() {
         stderr(&output)
     );
     assert_eq!(stderr(&output), "");
+}
+
+/// `CONFIG` with the editor hook the window saves for `claude`.
+fn config_with_editor_hook() -> String {
+    CONFIG.replace(
+        r#""version": 2,"#,
+        r#""version": 4, "agents": { "claude": { "ide": { "setting": "claudeCode.claudeProcessWrapper", "extension": "anthropic.claude-code" } } },"#,
+    )
+}
+
+impl Fixture {
+    /// A stand-in for the Node an extension runs its script with, named like VS Code's own:
+    /// it reports the variable, the script's file name and the arguments after it.
+    fn write_interpreter(&self) -> PathBuf {
+        let dir = self.home.join("Code.app/MacOS");
+        fs::create_dir_all(&dir).unwrap();
+        let interpreter = dir.join("Code Helper (Plugin)");
+        write_executable(
+            &interpreter,
+            "#!/bin/sh\nscript=$(basename \"$1\")\nshift\necho \"${CLAUDE_CONFIG_DIR-unset} $script $# $*\"\nexit 3\n",
+        );
+        interpreter
+    }
+
+    /// `cli.js` inside `folder`, under the home folder.
+    fn write_script(&self, folder: &str) -> PathBuf {
+        let dir = self.home.join(folder);
+        fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("cli.js");
+        fs::write(&script, "").unwrap();
+        script
+    }
+}
+
+#[test]
+fn routes_a_script_an_editor_runs_from_the_agents_extension() {
+    let f = Fixture::new(Some(&config_with_editor_hook()));
+    f.write_launch("2", &fs_server());
+    let interpreter = f.write_interpreter();
+    let script =
+        f.write_script(".vscode/extensions/anthropic.claude-code-2.1.89/resources/claude-code");
+
+    let output = f.run_wrapped(
+        "dev/work/app",
+        &[interpreter.as_os_str(), script.as_os_str(), OsStr::new("x")],
+    );
+    assert_eq!(
+        stdout(&output),
+        format!(
+            "{}/.claude-work cli.js 3 --mcp-config=/m/fs.json --disallowedTools=mcp__fs__rm x\n",
+            f.home.display()
+        ),
+        "the servers go after the script, not to the interpreter: {}",
+        stderr(&output)
+    );
+    assert_eq!(output.status.code(), Some(3), "exit code passes through");
+
+    // The agent's own arguments start after the script.
+    let output = f.run_wrapped(
+        "dev/work/app",
+        &[
+            interpreter.as_os_str(),
+            script.as_os_str(),
+            OsStr::new("plugin"),
+        ],
+    );
+    assert_eq!(
+        stdout(&output),
+        format!("{}/.claude-work cli.js 1 plugin\n", f.home.display()),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn runs_what_it_cant_route_rather_than_blocking_the_editor() {
+    let interpreter_runs = |f: &Fixture, script: &Path| {
+        let interpreter = f.write_interpreter();
+        let output = f.run_wrapped(
+            "dev/work/app",
+            &[interpreter.as_os_str(), script.as_os_str(), OsStr::new("x")],
+        );
+        assert_eq!(stdout(&output), "unset cli.js 1 x\n", "{}", stderr(&output));
+        assert!(
+            stderr(&output).contains("Running it without a profile"),
+            "{}",
+            stderr(&output)
+        );
+        assert_eq!(output.status.code(), Some(3));
+    };
+    // A script outside the agent's extension, and one in an extension whose agent has no hook.
+    let f = Fixture::new(Some(&config_with_editor_hook()));
+    interpreter_runs(&f, &f.write_script("elsewhere"));
+    interpreter_runs(
+        &f,
+        &f.write_script(".vscode/extensions/anthropic.claude-code-nightly-1.0.0"),
+    );
+    let f = Fixture::new(Some(CONFIG));
+    interpreter_runs(
+        &f,
+        &f.write_script(".vscode/extensions/anthropic.claude-code-2.1.89"),
+    );
+
+    // A binary that isn't named like a command.
+    let f = Fixture::new(Some(CONFIG));
+    let odd_name = f.home.join("elsewhere/claude.sh");
+    copy_executable(&f.real_bin.join("claude"), &odd_name);
+    let output = f.run_wrapped("dev/work/app", &[odd_name.as_os_str(), OsStr::new("x")]);
+    assert_eq!(stdout(&output), "unset 1 x\n", "{}", stderr(&output));
 }
