@@ -1,6 +1,6 @@
 [package]
 name = "envrouter-shim"
-version = "0.5.3"
+version = "0.5.4"
 description = "Installed as ~/.envrouter/shims/<tool>; routes one invocation to the real tool"
 license = "GPL-3.0-or-later"
 edition = "2021"
