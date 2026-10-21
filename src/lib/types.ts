@@ -47,6 +47,8 @@ export interface McpInjection {
   denyArg: string | null
   /** Any of these among the user's arguments turns injection off for that run. */
   skipAnyArgs: string[]
+  /** A run whose first argument is one of these subcommands gets no injection: `claude plugin test` refuses any option before `plugin`. */
+  skipSubcommands: string[]
 }
 
 /** `envrouter_core::config::McpFiles`: where an agent keeps MCP servers of its own, for importing them. */

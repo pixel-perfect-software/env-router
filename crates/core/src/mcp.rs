@@ -31,6 +31,9 @@ pub struct Launch {
     /// Any of these among the user's own arguments turns injection off for that run.
     #[serde(default)]
     pub skip_any_args: Vec<String>,
+    /// A run whose first argument is one of these subcommands gets no injection.
+    #[serde(default)]
+    pub skip_subcommands: Vec<String>,
     #[serde(default)]
     pub servers: Vec<LaunchServer>,
 }
@@ -59,9 +62,15 @@ pub struct Injection {
 impl Launch {
     /// Whether to inject into a run with these arguments.
     pub fn applies_to(&self, user_args: &[OsString]) -> bool {
-        !user_args
-            .iter()
-            .any(|arg| self.skip_any_args.iter().any(|skip| arg == skip.as_str()))
+        let skipped_subcommand = user_args.first().is_some_and(|first| {
+            self.skip_subcommands
+                .iter()
+                .any(|skip| first == skip.as_str())
+        });
+        !skipped_subcommand
+            && !user_args
+                .iter()
+                .any(|arg| self.skip_any_args.iter().any(|skip| arg == skip.as_str()))
     }
 
     pub fn secret_ids(&self) -> BTreeSet<&str> {
@@ -143,6 +152,7 @@ pub fn render(config: &ConfigState, home: &Path) -> Vec<(PathBuf, String)> {
                 .expect("the manifest is inside a folder");
             let mut launch = Launch {
                 skip_any_args: injection.skip_any_args.clone(),
+                skip_subcommands: injection.skip_subcommands.clone(),
                 servers: Vec::new(),
             };
             for (name, using) in &profile.mcp_servers {
@@ -317,6 +327,7 @@ mod tests {
                 config_arg: "--mcp-config=".into(),
                 deny_arg: Some("--disallowedTools=".into()),
                 skip_any_args: vec!["--strict-mcp-config".into()],
+                skip_subcommands: vec!["plugin".into()],
             }),
             ..Default::default()
         }
@@ -329,6 +340,7 @@ mod tests {
                 config_arg: "--additional-mcp-config=@".into(),
                 deny_arg: Some("--deny-tool=".into()),
                 skip_any_args: Vec::new(),
+                skip_subcommands: Vec::new(),
             }),
             ..Default::default()
         }
@@ -457,6 +469,7 @@ mod tests {
             launch,
             Launch {
                 skip_any_args: vec!["--strict-mcp-config".into()],
+                skip_subcommands: vec!["plugin".into()],
                 servers: vec![
                     LaunchServer {
                         name: "github".into(),
@@ -526,10 +539,22 @@ mod tests {
     fn applies_to_skips_runs_that_ask_for_their_own_servers_only() {
         let launch = Launch {
             skip_any_args: vec!["--strict-mcp-config".into()],
-            servers: Vec::new(),
+            ..Default::default()
         };
         assert!(launch.applies_to(&["-p".into(), "hi".into()]));
         assert!(!launch.applies_to(&["--strict-mcp-config".into()]));
+    }
+
+    #[test]
+    fn applies_to_skips_subcommands_that_take_no_injected_options() {
+        let launch = Launch {
+            skip_subcommands: vec!["plugin".into()],
+            ..Default::default()
+        };
+        assert!(!launch.applies_to(&["plugin".into(), "test".into(), ".".into()]));
+        // Only as the first argument: the same word in a prompt is just a word.
+        assert!(launch.applies_to(&["-p".into(), "plugin".into()]));
+        assert!(launch.applies_to(&[]));
     }
 
     #[cfg(unix)]

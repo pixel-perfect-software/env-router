@@ -21,7 +21,10 @@ pub const CONFIG_FILE: &str = "config.json";
 ///
 /// 3 added each agent's editor hook (`agents.*.ide`), so the CLI can route an editor extension
 /// without the window. It defaults to none, so a version 2 file reads as is.
-pub const CONFIG_VERSION: u32 = 3;
+///
+/// 4 added the subcommands that take no injected MCP options (`agents.*.mcp.skipSubcommands`).
+/// It defaults to empty, so a version 3 file reads as is.
+pub const CONFIG_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -172,6 +175,10 @@ pub struct McpInjection {
     /// Any of these among the user's own arguments turns injection off for that run.
     #[serde(default)]
     pub skip_any_args: Vec<String>,
+    /// A run whose first argument is one of these subcommands gets no injection: some refuse
+    /// any option ahead of them (`claude plugin test`). Added in version 4.
+    #[serde(default)]
+    pub skip_subcommands: Vec<String>,
 }
 
 /// An MCP config file format, named after the agent that defined it. Several agents can share
@@ -669,6 +676,7 @@ mod tests {
                 config_arg: "--mcp-config=".into(),
                 deny_arg: Some("--disallowedTools=".into()),
                 skip_any_args: vec!["--strict-mcp-config".into()],
+                skip_subcommands: vec!["plugin".into()],
             }),
             ..Default::default()
         }
@@ -735,6 +743,7 @@ mod tests {
                 "configArg": "--mcp-config=",
                 "denyArg": "--disallowedTools=",
                 "skipAnyArgs": ["--strict-mcp-config"],
+                "skipSubcommands": ["plugin"],
             })
         );
         assert_eq!(serde_json::from_value::<ConfigState>(json).unwrap(), config);
@@ -782,6 +791,20 @@ mod tests {
             json,
             serde_json::json!({ "setting": "claudeCode.claudeProcessWrapper", "extension": "anthropic.claude-code" })
         );
+    }
+
+    #[test]
+    fn load_reads_a_version_3_file_as_one_without_skipped_subcommands() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join(CONFIG_FILE),
+            r#"{ "version": 3, "profiles": [], "agents": { "claude": { "mcp": { "dialect": "claude", "configArg": "--mcp-config=", "skipAnyArgs": ["--strict-mcp-config"] } } } }"#,
+        )
+        .unwrap();
+        let config = load(dir.path()).unwrap().unwrap();
+        let mcp = config.agents["claude"].mcp.as_ref().unwrap();
+        assert!(mcp.skip_subcommands.is_empty());
+        assert_eq!(mcp.skip_any_args, ["--strict-mcp-config"]);
     }
 
     #[test]

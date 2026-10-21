@@ -411,6 +411,7 @@ impl Fixture {
 fn fs_server() -> serde_json::Value {
     serde_json::json!({
         "skipAnyArgs": ["--strict-mcp-config"],
+        "skipSubcommands": ["plugin"],
         "servers": [{
             "name": "fs",
             "args": ["--mcp-config=/m/fs.json", "--disallowedTools=mcp__fs__rm"],
@@ -464,6 +465,28 @@ fn skips_mcp_injection_when_asked() {
     );
     let output = f.run_with("dev/work/app", &["x"], &[("ENVROUTER_MCP", "0")]);
     assert!(stdout(&output).ends_with(" 1 x\n"), "{}", stdout(&output));
+}
+
+#[test]
+fn skips_mcp_injection_for_a_subcommand_that_takes_none() {
+    let f = Fixture::new(Some(CONFIG));
+    f.write_launch("2", &fs_server());
+    // `claude plugin test` refuses any option ahead of `plugin`.
+    let output = f.run_with("dev/work/app", &["plugin", "test", "."], &[]);
+    assert!(
+        stdout(&output).ends_with(" 3 plugin test .\n"),
+        "{}",
+        stdout(&output)
+    );
+    assert_eq!(stderr(&output), "");
+    // The same word later on is just an argument.
+    let output = f.run_with("dev/work/app", &["-p", "plugin"], &[]);
+    assert!(
+        stdout(&output)
+            .ends_with(" 4 --mcp-config=/m/fs.json --disallowedTools=mcp__fs__rm -p plugin\n"),
+        "{}",
+        stdout(&output)
+    );
 }
 
 #[test]

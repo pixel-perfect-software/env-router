@@ -326,6 +326,7 @@ mod tests {
                 config_arg: "--mcp-config=".into(),
                 deny_arg: None,
                 skip_any_args: Vec::new(),
+                skip_subcommands: Vec::new(),
             }),
             mcp_files: Some(McpFiles {
                 user_file: ".claude.json".into(),
