@@ -1,6 +1,6 @@
 [package]
 name = "envrouter-ops"
-version = "0.5.4"
+version = "0.6.0"
 description = "EnvRouter's backend operations (shell integration, shims, editors, MCP import and checks), with no UI, for the app and the CLI"
 license = "GPL-3.0-or-later"
 edition = "2021"
