@@ -273,12 +273,36 @@ pub fn load_or_init(dir: &Path) -> Result<ConfigState> {
 }
 
 pub fn save(dir: &Path, config: &ConfigState) -> Result<()> {
-    let current = ConfigState {
+    let json =
+        serde_json::to_string_pretty(&as_saved(config)).expect("ConfigState always serializes");
+    write_atomic(&dir.join(CONFIG_FILE), format!("{json}\n"))
+}
+
+/// `config` as [`save`] writes it: at the current version.
+pub fn as_saved(config: &ConfigState) -> ConfigState {
+    ConfigState {
         version: CONFIG_VERSION,
         ..config.clone()
+    }
+}
+
+/// Holds `dir`'s save lock until the returned file is dropped, so the window and the CLI never
+/// read, compare and write the config at the same time. Advisory: a hand edit doesn't take it.
+pub fn lock(dir: &Path) -> Result<File> {
+    let path = dir.join("config.lock");
+    let io_err = |source| Error::Io {
+        path: path.clone(),
+        source,
     };
-    let json = serde_json::to_string_pretty(&current).expect("ConfigState always serializes");
-    write_atomic(&dir.join(CONFIG_FILE), format!("{json}\n"))
+    fs::create_dir_all(dir).map_err(io_err)?;
+    let file = File::options()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(io_err)?;
+    file.lock().map_err(io_err)?;
+    Ok(file)
 }
 
 /// Writes through a sibling temp file and a rename, so a reader never sees a half-written

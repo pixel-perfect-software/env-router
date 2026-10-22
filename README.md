@@ -204,7 +204,8 @@ profiles that use it.
 - **Add from Catalog** (the package icon): search the vendors' own servers. Filter by where they
   run (**Hosted** by the vendor, or **Runs locally** on your machine) and by what they need
   (**No sign-in**, **Sign-in**, **Secret**). Picking one opens the editor filled in, with any
-  secret fields empty and the expected format as a hint.
+  secret fields empty and the expected format as a hint. An `npx` server comes pinned to the
+  package's current release.
 - **Import from Your Agents** (the import icon): lists the servers your agents already define, in
   Claude Code's `.claude.json` (your home folder and each profile's config folder) and any
   `.mcp.json` in a trigger folder, and in Copilot's `mcp-config.json`. Tick the ones to bring in.
@@ -244,6 +245,16 @@ server has been checked, each profile that uses it can turn individual tools off
 profile, expand the server's **All 9 tools** line under **MCP servers**, and untick tools, or use
 **All On** and **All Off**. A tool turned off in a profile stays available in the others.
 
+### 📌 Pin a server's version
+
+An `npx` server with no version, or with `@latest`, runs whatever npm has newest when an agent
+starts it, so a new release (or a bad one) reaches every session the day it's published, with
+the server's secrets in its environment. The editor says so under **Arguments**: **Pin Version**
+asks your own npm (`npm view`, so your registry and `~/.npmrc` apply) for the current release and
+writes it into the argument (`chrome-devtools-mcp@0.9.0`). A pinned server shows its version, and
+**Check for Update** offers **Update to …** when a newer release is out. Nothing changes until you
+save.
+
 Remote servers that need a login sign in through the agent (`/mcp` in Claude Code), not through
 EnvRouter. **Duplicate** in the editor's footer starts a new server from this one, with its
 secret fields empty; **Delete…** removes it from the library and from every profile.
@@ -270,6 +281,10 @@ bar icon. On Linux, closing the window quits; routing keeps working without it.
 
 `--tool` defaults to `claude`; pass `--tool copilot` for Copilot CLI. `--shell` defaults to your
 login shell. Add `--json` to any command for machine-readable output.
+
+The window and the CLI can both change the config while the window is open. When the window
+saves, it keeps whatever else changed in `config.json` meanwhile, and asks first only when the
+same profile or server changed in both places.
 
 ### 📝 Without the window
 
@@ -374,7 +389,8 @@ Your agents' own config folders are yours; EnvRouter only creates missing ones.
 ### 🔒 Privacy and security
 
 EnvRouter has no account, no telemetry and no background process. It makes network requests
-only when you check a remote MCP server. Secret values never appear in `config.json`, in a
+only when you check an MCP server (a remote one, or an `npx` one npm has to download) or look up
+a package's version, which runs your own npm. Secret values never appear in `config.json`, in a
 rendered file or on a command line, and the window never reads them back once they're saved.
 
 ## 🩺 Troubleshooting

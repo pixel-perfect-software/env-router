@@ -16,7 +16,10 @@
 // - `&store=off`: there's no secret store, so saving a secret (or checking a server that needs
 //   a saved one) fails as it does there.
 // The mcp library has a server named `slow` whose check times out. `window.__mockDrop(path, x, y)`
-// simulates a Finder drop. The profile card's context menu pops up as a DOM stand-in.
+// simulates a Finder drop. `window.__mockEditConfig(edit)` changes config.json as the CLI or a
+// hand edit would, behind the window's back, so a save from an open editor meets it. npm knows
+// every package (at 1.4.0, `next` at 2.0.0-beta.2) except one whose name ends in `-nope`.
+// The profile card's context menu pops up as a DOM stand-in.
 
 import { emit } from '@tauri-apps/api/event'
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
@@ -37,6 +40,7 @@ import type {
   Pasted,
   Platform,
   Profile,
+  SaveOutcome,
   ServerCheck,
   SetupStatus,
   Shell,
@@ -775,6 +779,11 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       return config
     case 'save_config': {
       await delay(250)
+      // `commands::save`: a save from a config the file no longer holds changes nothing.
+      if (a.base !== undefined && a.base !== null && (configBroken || !same(a.base, config))) {
+        if (configBroken) return respond('get_config', {})
+        return { status: 'changed', config } satisfies SaveOutcome
+      }
       const next = structuredClone(a.payload as ConfigState)
       const secrets = (a.secrets ?? {}) as Record<string, string>
       validate(next)
@@ -790,7 +799,15 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       }
       config = { ...next, version: CONFIG_VERSION }
       configBroken = false
-      return null
+      return { status: 'saved', config } satisfies SaveOutcome
+    }
+    case 'npm_dist_tags': {
+      await delay(700)
+      const command = String(a.command)
+      const name = String(a.package)
+      if (!/(^|\/)npx$/.test(command)) throw `${command} isn't npx, so there's no npm package to look up.`
+      if (name.endsWith('-nope')) throw `npm has no package named ${name}.`
+      return { latest: '1.4.0', next: '2.0.0-beta.2' }
     }
     case 'import_candidates':
       await delay(500)
@@ -930,7 +947,12 @@ mockIPC(async (cmd, args) => structuredClone(await respond(cmd, args)), { should
 declare global {
   interface Window {
     __mockDrop: (path: string, x: number, y: number) => Promise<void>
+    __mockEditConfig: (edit: (config: ConfigState) => ConfigState) => void
   }
+}
+
+window.__mockEditConfig = (edit) => {
+  config = edit(structuredClone(config))
 }
 
 window.__mockDrop = async (path, x, y) => {

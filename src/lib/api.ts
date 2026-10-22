@@ -12,6 +12,7 @@ import type {
   McpServer,
   Pasted,
   Preview,
+  SaveOutcome,
   ServerCheck,
   SetupStatus,
   Shell,
@@ -25,9 +26,11 @@ export const getConfig = () => invoke<ConfigState>('get_config')
 /**
  * Validates and saves, then updates the shims. Takes effect on the next run of each tool.
  * `secrets`: values typed since the last save, keyed by the ids `payload` refers to them by;
- * they go to the Keychain and never come back to the window.
+ * they go to the Keychain and never come back to the window. `base`: the config the edit
+ * started from; if config.json has changed since, nothing is saved and the answer says so.
  */
-export const saveConfig = (payload: ConfigState, secrets: Record<string, string> = {}) => invoke<void>('save_config', { payload, secrets })
+export const saveConfig = (payload: ConfigState, secrets: Record<string, string>, base: ConfigState) =>
+  invoke<SaveOutcome>('save_config', { payload, secrets, base })
 
 export const getSetupStatus = () => invoke<SetupStatus>('get_setup_status')
 
@@ -53,6 +56,10 @@ export const previewFolder = (payload: ConfigState, folder: string, tool: string
  */
 export const checkMcpServer = (name: string, server: McpServer, secrets: Record<string, string>) =>
   invoke<ServerCheck>('check_mcp_server', { name, server, secrets })
+
+/** The dist-tags (`latest` and the like) of the npm package an `npx` server runs, from the user's own npm. */
+export const npmDistTags = (command: string, packageName: string) =>
+  invoke<Record<string, string>>('npm_dist_tags', { command, package: packageName })
 
 /** Each library server's tools, from its last check that worked, if its definition hasn't changed since. */
 export const getMcpTools = () => invoke<Record<string, ToolInfo[]>>('get_mcp_tools')

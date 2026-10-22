@@ -12,22 +12,37 @@ use serde::Serialize;
 
 use crate::editors::{self, Editor, EditorStatus};
 use crate::shell::{self, FolderCheck, Preview, Shell, ShellStatus};
-use crate::{mcp_import, mcp_probe, shims};
+use crate::{mcp_import, mcp_probe, npm, shims};
 
 pub fn get_config(home: &Path) -> Result<ConfigState> {
     config::load_or_init(&paths::root(home))
 }
 
+/// What a save did. A save that names the config it was edited from (`base`) is refused when
+/// config.json no longer holds that config, because the CLI or a hand edit changed it since:
+/// the answer then carries the file as it is, so the window can fold its edit into it and save
+/// again. A refused save changes nothing, the secret store included.
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum SaveOutcome {
+    /// `config` is what config.json holds now: the payload at the current version.
+    Saved { config: ConfigState },
+    /// Nothing was saved. `config` is what config.json holds now.
+    Changed { config: ConfigState },
+}
+
 /// Validates and saves the config, then renders each profile's MCP files and updates the shims
 /// to match. `secrets` holds values typed since the last save, keyed by the ids the config
-/// refers to them by; they go to the secret store before the config names them. The window's
-/// save: it installs the shim and helper it ships with.
+/// refers to them by; they go to the secret store before the config names them. `base`, when
+/// given, is the config the edit started from (see [`SaveOutcome`]). The window's save: it
+/// installs the shim and helper it ships with.
 pub fn save_config(
     home: &Path,
     payload: &ConfigState,
     secrets: &HashMap<String, String>,
-) -> Result<()> {
-    save(home, payload, secrets, true)
+    base: Option<&ConfigState>,
+) -> Result<SaveOutcome> {
+    save(home, payload, secrets, base, true)
 }
 
 /// [`save_config`] for the CLI: the same save, but it installs its own shim and helper only
@@ -38,15 +53,32 @@ pub fn save_config_from_cli(
     payload: &ConfigState,
     secrets: &HashMap<String, String>,
 ) -> Result<()> {
-    save(home, payload, secrets, !paths::shim_binary(home).is_file())
+    let install = !paths::shim_binary(home).is_file();
+    save(home, payload, secrets, None, install).map(|_| ())
 }
 
 fn save(
     home: &Path,
     payload: &ConfigState,
     secrets: &HashMap<String, String>,
+    base: Option<&ConfigState>,
     install: bool,
-) -> Result<()> {
+) -> Result<SaveOutcome> {
+    let root = paths::root(home);
+    let _lock = config::lock(&root)?;
+    let previous = match (config::load(&root), base) {
+        // A file that can't be read now was readable when the edit started: someone is editing
+        // it. Saving over that would throw their edit away.
+        (Err(err), Some(_)) => return Err(err),
+        (loaded, _) => loaded.ok().flatten(),
+    };
+    if let Some(base) = base {
+        if previous.as_ref() != Some(base) {
+            return Ok(SaveOutcome::Changed {
+                config: previous.unwrap_or_default(),
+            });
+        }
+    }
     config::validate(payload, home)?;
     let referenced = config::secret_ids(payload);
     if secrets.keys().any(|id| !referenced.contains(id.as_str())) {
@@ -62,8 +94,7 @@ fn save(
         }
     }
     // The store is read only when this save adds a secret or stops using one.
-    let root = paths::root(home);
-    let dropped = config::load(&root).ok().flatten().is_some_and(|previous| {
+    let dropped = previous.is_some_and(|previous| {
         config::secret_ids(&previous)
             .iter()
             .any(|id| !referenced.contains(id))
@@ -77,7 +108,9 @@ fn save(
     if fresh_shim && !referenced.is_empty() {
         shims::ask_keychain_access(home);
     }
-    Ok(())
+    Ok(SaveOutcome::Saved {
+        config: config::as_saved(payload),
+    })
 }
 
 /// A secret the server library refers to: who uses it and whether the store has it, never
@@ -213,6 +246,17 @@ pub async fn check_mcp_server(
     Ok(check)
 }
 
+/// The dist-tags of the npm package an `npx` server runs (`latest` and the like), so the window
+/// can pin it to one version. `path` is the PATH a new terminal gets, as for a check.
+pub async fn npm_dist_tags(
+    home: &Path,
+    path: &str,
+    command: &str,
+    package: &str,
+) -> Result<BTreeMap<String, String>> {
+    npm::dist_tags(home, path, command, package).await
+}
+
 /// Each library server's tools from its last check that worked, if its definition hasn't
 /// changed since.
 pub fn mcp_tools(home: &Path) -> Result<BTreeMap<String, Vec<mcp_probe::ToolInfo>>> {
@@ -252,5 +296,102 @@ pub fn open_in_editor(home: &Path, path: &str) -> Result<()> {
         Ok(())
     } else {
         Err(Error::Command(format!("couldn't open {}", file.display())))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use envrouter_core::config::Profile;
+
+    fn profile(id: &str, name: &str) -> Profile {
+        Profile {
+            id: id.into(),
+            name: name.into(),
+            ..Profile::default()
+        }
+    }
+
+    /// The window's save, minus installing the bundled shim, which a test binary has none of.
+    fn save_config(
+        home: &Path,
+        payload: &ConfigState,
+        secrets: &HashMap<String, String>,
+        base: Option<&ConfigState>,
+    ) -> Result<SaveOutcome> {
+        save(home, payload, secrets, base, false)
+    }
+
+    fn with_profile(config: &ConfigState, id: &str, name: &str) -> ConfigState {
+        let mut config = config.clone();
+        config.profiles.push(profile(id, name));
+        config
+    }
+
+    #[test]
+    fn saves_an_edit_of_the_config_on_disk() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let base = get_config(home).unwrap();
+        let edited = with_profile(&base, "p1", "Work");
+        let outcome = save_config(home, &edited, &HashMap::new(), Some(&base)).unwrap();
+        assert_eq!(
+            outcome,
+            SaveOutcome::Saved {
+                config: edited.clone()
+            }
+        );
+        assert_eq!(get_config(home).unwrap(), edited);
+    }
+
+    /// The CLI (or a hand edit) saved after the window read the config: the window's save is
+    /// refused with the file as it is now, and nothing changes.
+    #[test]
+    fn refuses_an_edit_of_a_config_changed_since() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let base = get_config(home).unwrap();
+        let elsewhere = with_profile(&base, "p2", "Personal");
+        config::save(&paths::root(home), &elsewhere).unwrap();
+
+        let edited = with_profile(&base, "p1", "Work");
+        let outcome = save_config(home, &edited, &HashMap::new(), Some(&base)).unwrap();
+        assert_eq!(
+            outcome,
+            SaveOutcome::Changed {
+                config: elsewhere.clone()
+            }
+        );
+        assert_eq!(get_config(home).unwrap(), elsewhere);
+        // Without a base, the save goes ahead as before.
+        save_config(home, &edited, &HashMap::new(), None).unwrap();
+        assert_eq!(get_config(home).unwrap(), edited);
+    }
+
+    #[test]
+    fn refuses_an_edit_while_the_file_is_broken() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let base = get_config(home).unwrap();
+        let file = paths::root(home).join(config::CONFIG_FILE);
+        std::fs::write(&file, "{ half-typed").unwrap();
+        let edited = with_profile(&base, "p1", "Work");
+        assert!(save_config(home, &edited, &HashMap::new(), Some(&base)).is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "{ half-typed");
+    }
+
+    /// `SaveOutcome` in `src/lib/types.ts`.
+    #[test]
+    fn wire_format_matches_the_typescript_types() {
+        let config = ConfigState::default();
+        let saved = serde_json::to_value(SaveOutcome::Saved {
+            config: config.clone(),
+        })
+        .unwrap();
+        assert_eq!(saved["status"], "saved");
+        assert_eq!(saved["config"], serde_json::to_value(&config).unwrap());
+        let changed = serde_json::to_value(SaveOutcome::Changed { config }).unwrap();
+        assert_eq!(changed["status"], "changed");
+        assert!(changed["config"]["profiles"].is_array());
     }
 }

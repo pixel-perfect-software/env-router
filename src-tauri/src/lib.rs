@@ -7,7 +7,7 @@ use envrouter_core::config::{self, ConfigState, IdeHook, McpServer};
 use envrouter_core::{paths, Error, Result};
 use tauri::{AppHandle, Manager, WindowEvent};
 
-use envrouter_ops::commands::{self, SetupStatus};
+use envrouter_ops::commands::{self, SaveOutcome, SetupStatus};
 use envrouter_ops::editors::{Editor, EditorStatus};
 use envrouter_ops::shell::{self, FolderCheck, Preview, Shell, ShellStatus};
 use envrouter_ops::{mcp_import, mcp_probe, shims};
@@ -39,12 +39,13 @@ async fn save_config(
     app: AppHandle,
     payload: ConfigState,
     secrets: HashMap<String, String>,
-) -> Result<()> {
+    base: Option<ConfigState>,
+) -> Result<SaveOutcome> {
     let home = home(&app)?;
     blocking(move || {
-        commands::save_config(&home, &payload, &secrets)?;
+        let outcome = commands::save_config(&home, &payload, &secrets, base.as_ref())?;
         tray::refresh(&app);
-        Ok(())
+        Ok(outcome)
     })
     .await
 }
@@ -123,6 +124,20 @@ async fn check_mcp_server(
 }
 
 #[tauri::command]
+async fn npm_dist_tags(
+    app: AppHandle,
+    command: String,
+    package: String,
+) -> Result<BTreeMap<String, String>> {
+    let home = home(&app)?;
+    let path = {
+        let home = home.clone();
+        blocking(move || shell::login_path(&home)).await?
+    };
+    commands::npm_dist_tags(&home, &path, &command, &package).await
+}
+
+#[tauri::command]
 async fn get_mcp_tools(app: AppHandle) -> Result<BTreeMap<String, Vec<mcp_probe::ToolInfo>>> {
     let home = home(&app)?;
     blocking(move || commands::mcp_tools(&home)).await
@@ -191,6 +206,7 @@ window_commands![
     preview_folder,
     open_in_editor,
     check_mcp_server,
+    npm_dist_tags,
     get_mcp_tools,
     import_candidates,
     parse_mcp_json,

@@ -199,6 +199,16 @@ export interface ToolInfo {
   description: string | null
 }
 
+/**
+ * `commands::SaveOutcome`. `changed`: nothing was saved, because config.json no longer holds the
+ * `base` the save named (the CLI or a hand edit changed it). Either way, `config` is what the
+ * file holds now.
+ */
+export interface SaveOutcome {
+  status: 'saved' | 'changed'
+  config: ConfigState
+}
+
 /** `mcp_probe::ServerCheck`: what starting a server and asking for its tools found. */
 export interface ServerCheck {
   /** needsLogin: the server answered 401, so the agent has to sign in with /mcp. unsupported: an SSE server, which can't be checked here. */

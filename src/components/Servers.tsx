@@ -2,7 +2,7 @@
 // Catalog and Import open in the same place as the editor, so nothing drills more than one level
 // deep. Which profiles load a server is set here (Used by) or in a profile's own editor.
 
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, type RefObject, useEffect, useState } from 'react'
 // The mark's folder handing its tracks to three servers: an empty library's hero.
 import libraryArt from '../assets/servers-library.svg'
 import { getMcpTools } from '../lib/api'
@@ -18,7 +18,7 @@ import { ChevronIcon, IconButton, PlugIcon, PlusIcon, ProfileDot } from './ui'
 /** What the detail side shows. `name` null: a new server, blank or from `template`. */
 export type Detail =
   | { kind: 'none' }
-  | { kind: 'edit'; name: string | null; template?: ServerDraft }
+  | { kind: 'edit'; name: string | null; template?: ServerDraft; pin?: boolean }
   | { kind: 'catalog' }
   | { kind: 'paste' }
   /** The agents' own servers, or `pasted` ones. */
@@ -33,6 +33,7 @@ export function ServersView({
   onSave,
   onImport,
   onDelete,
+  dirty,
 }: {
   config: ConfigState
   home: string
@@ -43,10 +44,10 @@ export function ServersView({
   onSave: (previous: string | null, name: string, server: McpServer, secrets: Record<string, string>, usedBy: string[]) => Promise<void>
   onImport: (servers: [string, McpServer][], secrets: Record<string, string>) => Promise<void>
   onDelete: (name: string) => Promise<void>
+  /** Unsaved edits in the editor; switching to another server asks before dropping them. The window's, so a card's server link asks too. */
+  dirty: RefObject<boolean>
 }) {
   const [tools, setTools] = useState<Record<string, ToolInfo[]>>({})
-  // Unsaved edits in the editor; switching to another server asks before dropping them.
-  const dirty = useRef(false)
   // Read again after every change of detail, so a check just run counts in the list.
   const detailKey = detail.kind === 'edit' ? `edit:${detail.name}` : detail.kind
   useEffect(() => {
@@ -163,7 +164,7 @@ export function ServersView({
             taken={names}
             library={config.mcpServers}
             onBack={() => back('Add from Catalog')}
-            onPick={(template) => onDetail({ kind: 'edit', name: null, template })}
+            onPick={(template) => onDetail({ kind: 'edit', name: null, template, pin: true })}
           />
         )}
         {detail.kind === 'paste' && (
@@ -197,6 +198,7 @@ export function ServersView({
             name={detail.name}
             server={detail.name ? config.mcpServers[detail.name] : undefined}
             template={detail.template}
+            pinOnOpen={detail.pin}
             taken={names.filter((n) => n !== detail.name)}
             profiles={profiles}
             initialUsedBy={detail.name ? profilesUsing(config, detail.name).map((p) => p.id) : []}
@@ -207,7 +209,7 @@ export function ServersView({
             }}
             onCancel={() => {
               dirty.current = false
-              onDetail(detail.name ? { kind: 'edit', name: detail.name } : { kind: 'none' })
+              onDetail({ kind: 'none' })
             }}
             onSave={async (name, server, secrets, usedBy) => {
               await onSave(detail.name, name, server, secrets, usedBy)
