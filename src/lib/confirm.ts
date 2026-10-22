@@ -1,4 +1,5 @@
 import { ask } from '@tauri-apps/plugin-dialog'
+import { listOf } from './merge'
 import type { Profile } from './types'
 
 /** The native confirmation before the inspector closes with edits that haven't been saved. */
@@ -39,3 +40,15 @@ export const confirmDeleteServer = (serverName: string, usedBy: string[]) =>
       cancelLabel: 'Cancel',
     },
   )
+
+/**
+ * The native confirmation before a save replaces changes made outside the window (by the
+ * envrouter CLI or in config.json) to the same profiles or servers. `conflicts` as `mergeConfig` words them.
+ */
+export const confirmReplace = (conflicts: string[]) =>
+  ask('config.json changed after you started editing. Changes to anything else are kept either way.', {
+    title: `Replace the other ${conflicts.length === 1 ? 'change' : 'changes'} to ${listOf(conflicts)}?`,
+    kind: 'warning',
+    okLabel: 'Replace',
+    cancelLabel: 'Cancel',
+  })

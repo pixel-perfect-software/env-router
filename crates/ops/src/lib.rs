@@ -6,6 +6,7 @@ pub mod commands;
 pub mod editors;
 pub mod mcp_import;
 pub mod mcp_probe;
+pub mod npm;
 pub mod rpc;
 pub mod shell;
 pub mod shims;

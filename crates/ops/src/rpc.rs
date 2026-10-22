@@ -33,6 +33,7 @@ pub const COMMANDS: &[&str] = &[
     "check_folder",
     "preview_folder",
     "check_mcp_server",
+    "npm_dist_tags",
     "get_mcp_tools",
     "import_candidates",
     "parse_mcp_json",
@@ -89,8 +90,17 @@ async fn dispatch(home: &Path, command: &str, args: Value) -> Result<Value> {
     match command {
         "get_config" => to_value(commands::get_config(home)?),
         "save_config" => {
-            let Save { payload, secrets } = parse(args)?;
-            to_value(commands::save_config(home, &payload, &secrets)?)
+            let Save {
+                payload,
+                secrets,
+                base,
+            } = parse(args)?;
+            to_value(commands::save_config(
+                home,
+                &payload,
+                &secrets,
+                base.as_ref(),
+            )?)
         }
         "get_setup_status" => to_value(commands::setup_status(home)?),
         "set_shell_integration" => {
@@ -137,6 +147,11 @@ async fn dispatch(home: &Path, command: &str, args: Value) -> Result<Value> {
             let path = shell::login_path(home)?;
             to_value(commands::check_mcp_server(home, &path, &name, &server, &secrets).await?)
         }
+        "npm_dist_tags" => {
+            let Package { command, package } = parse(args)?;
+            let path = shell::login_path(home)?;
+            to_value(commands::npm_dist_tags(home, &path, &command, &package).await?)
+        }
         "get_mcp_tools" => to_value(commands::mcp_tools(home)?),
         "import_candidates" => {
             let Payload { payload } = parse(args)?;
@@ -163,6 +178,9 @@ struct Save {
     payload: ConfigState,
     #[serde(default)]
     secrets: HashMap<String, String>,
+    /// The config the edit started from; see `commands::SaveOutcome`.
+    #[serde(default)]
+    base: Option<ConfigState>,
 }
 
 #[derive(Deserialize)]
@@ -204,6 +222,12 @@ struct ServerCheck {
     server: McpServer,
     #[serde(default)]
     secrets: HashMap<String, String>,
+}
+
+#[derive(Deserialize)]
+struct Package {
+    command: String,
+    package: String,
 }
 
 #[derive(Deserialize)]

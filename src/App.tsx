@@ -24,8 +24,9 @@ import {
   setEditorIntegration,
   setShellIntegration,
 } from './lib/api'
-import { confirmDelete } from './lib/confirm'
+import { confirmDelete, confirmDiscardServer, confirmReplace } from './lib/confirm'
 import { withoutServer, withServer, withUsedBy } from './lib/mcp'
+import { mergeConfig } from './lib/merge'
 import { owningTrigger } from './lib/paths'
 import { guessPlatform, isShortcut, PlatformContext, platformInfo } from './lib/platform'
 import { ideHooks, KNOWN_TOOLS, toolByCommand, withAgents } from './lib/tools'
@@ -105,6 +106,8 @@ export default function App() {
     import.meta.env.DEV && new URLSearchParams(location.search).get('view') === 'servers' ? 'servers' : 'profiles',
   )
   const [serverDetail, setServerDetail] = useState<Detail>({ kind: 'none' })
+  // Whether the server editor holds unsaved edits, for leaving it from outside the Servers view.
+  const serverDirty = useRef(false)
   // Each server's checked tools, read again whenever the profile editor opens.
   const [mcpTools, setMcpTools] = useState<Record<string, ToolInfo[]>>({})
   const [shellsOpen, setShellsOpen] = useState(false)
@@ -265,9 +268,17 @@ export default function App() {
     setEditorsOpen(false)
     setViewState(next)
   }
-  /** Opens a server in the Servers view, from a card's footer. */
-  const openServer = (name: string) => {
-    setServerDetail({ kind: 'edit', name })
+  /**
+   * Opens a server in the Servers view, from a card's footer. Unsaved edits to another server
+   * ask first, as picking one from the list does; the same server comes back as it was left.
+   */
+  const openServer = async (name: string) => {
+    const open = serverDetail.kind === 'edit' ? serverDetail.name : null
+    if (open !== name) {
+      if (serverDirty.current && !(await confirmDiscardServer(open))) return
+      serverDirty.current = false
+      setServerDetail({ kind: 'edit', name })
+    }
     setView('servers')
   }
 
@@ -343,9 +354,37 @@ export default function App() {
     }
   }, [hovering, config, inspecting])
 
+  /**
+   * Saves `edited`, an edit of the window's `config`. If config.json changed meanwhile (the CLI
+   * saved, or a hand edit), the edit is folded into the file as it is now, and only a profile or
+   * server changed on both sides asks first. Declining shows the file's version and rejects.
+   */
   const commit = async (edited: ConfigState, secrets: Record<string, string> = {}) => {
-    const next = withAgents(edited)
-    await saveConfig(next, secrets)
+    if (!config) return
+    const mine = withAgents(edited)
+    let next = mine
+    let base = config
+    let replace = false
+    // A file that keeps changing under the save gets a few tries, not a loop.
+    for (let tries = 0; ; tries++) {
+      const outcome = await saveConfig(next, secrets, base)
+      if (outcome.status === 'saved') {
+        next = outcome.config
+        break
+      }
+      if (tries === 2) throw new Error('config.json kept changing while saving. Save again.')
+      const merged = mergeConfig(config, mine, outcome.config)
+      if (merged.conflicts.length > 0 && !replace) {
+        replace = await confirmReplace(merged.conflicts)
+        if (!replace) {
+          configSeq.current++
+          setConfig(outcome.config)
+          throw new Error('Not saved. The other change was kept.')
+        }
+      }
+      next = withAgents(merged.config)
+      base = outcome.config
+    }
     configSeq.current++
     setActionError(null)
     setConfig(next)
@@ -537,24 +576,28 @@ export default function App() {
           {shellsOpen && setup && <ShellsPopover setup={setup} home={home} onSet={setShell} onClose={closeShells} />}
           {editorsOpen && editors && <EditorsPopover editors={editors} home={home} onSet={setEditor} onClose={closeEditors} />}
           {/* Soft edges where cards scroll under the banner and the floating check card. */}
-          {view === 'servers' && config && (
-            <ServersView
-              config={config}
-              home={home}
-              colors={profileColors(config.profiles.map((p) => p.id))}
-              detail={serverDetail}
-              onDetail={setServerDetail}
-              onSave={(previous, name, server, secrets, usedBy) =>
-                commit(withUsedBy(withServer(config, previous, name, server), name, usedBy), secrets)
-              }
-              onImport={(servers, secrets) =>
-                commit(
-                  servers.reduce((next, [name, server]) => withServer(next, null, name, server), config),
-                  secrets,
-                )
-              }
-              onDelete={(name) => commit(withoutServer(config, name))}
-            />
+          {/* Kept while Profiles shows, only hidden, so a server's unsaved edits survive a trip there and back. */}
+          {config && (
+            <div className={view === 'servers' ? 'contents' : 'hidden'}>
+              <ServersView
+                config={config}
+                home={home}
+                colors={profileColors(config.profiles.map((p) => p.id))}
+                detail={serverDetail}
+                onDetail={setServerDetail}
+                onSave={(previous, name, server, secrets, usedBy) =>
+                  commit(withUsedBy(withServer(config, previous, name, server), name, usedBy), secrets)
+                }
+                onImport={(servers, secrets) =>
+                  commit(
+                    servers.reduce((next, [name, server]) => withServer(next, null, name, server), config),
+                    secrets,
+                  )
+                }
+                onDelete={(name) => commit(withoutServer(config, name))}
+                dirty={serverDirty}
+              />
+            </div>
           )}
           {view === 'profiles' && (
             <>

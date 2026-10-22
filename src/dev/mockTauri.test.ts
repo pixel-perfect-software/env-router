@@ -156,3 +156,28 @@ describe('checks and files', () => {
     })
   })
 })
+
+describe('saving', () => {
+  it('refuses a save from a config changed since, and answers with the file', async () => {
+    const call = await boot('?scenario=populated')
+    const base = await call<ConfigState>('get_config')
+    const elsewhere = { ...base, profiles: base.profiles.slice(1) }
+    window.__mockEditConfig(() => elsewhere)
+    const edit = { ...base, profiles: base.profiles.map((p, i) => (i === 0 ? { ...p, name: 'Renamed' } : p)) }
+    expect(await call('save_config', { payload: edit, secrets: {}, base })).toEqual({ status: 'changed', config: elsewhere })
+    expect(await call('get_config')).toEqual(elsewhere)
+
+    const saved = await call<{ status: string; config: ConfigState }>('save_config', { payload: elsewhere, secrets: {}, base: elsewhere })
+    expect(saved.status).toBe('saved')
+    expect(saved.config).toEqual(await call('get_config'))
+  })
+})
+
+describe('npm', () => {
+  it('looks up only npx packages, as `npm::dist_tags` does', async () => {
+    const call = await boot('?scenario=mcp')
+    expect(await call('npm_dist_tags', { command: 'npx', package: '@acme/mcp' })).toMatchObject({ latest: '1.4.0' })
+    await expect(call('npm_dist_tags', { command: 'npx', package: 'acme-nope' })).rejects.toBe('npm has no package named acme-nope.')
+    await expect(call('npm_dist_tags', { command: 'uvx', package: 'git' })).rejects.toBe("uvx isn't npx, so there's no npm package to look up.")
+  })
+})
