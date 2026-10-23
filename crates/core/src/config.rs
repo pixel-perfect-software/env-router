@@ -354,7 +354,14 @@ fn write_through_temp(path: &Path, contents: &[u8], mode: Option<u32>) -> Result
 /// A new file beside `path` that no other writer can have open. With one fixed temp name, the
 /// CLI's `install` and the app's could share a file: the second `O_TRUNC` cut the first's
 /// half-written shim, and a truncated shim breaks every agent launch.
-fn create_temp(path: &Path, mode: Option<u32>) -> io::Result<(PathBuf, File)> {
+fn create_temp(
+    path: &Path,
+    #[cfg_attr(
+        not(unix),
+        expect(unused_variables, reason = "a file mode is Unix's; Windows has ACLs")
+    )]
+    mode: Option<u32>,
+) -> io::Result<(PathBuf, File)> {
     static NEXT: AtomicU32 = AtomicU32::new(0);
     loop {
         let mut tmp = path.as_os_str().to_owned();
