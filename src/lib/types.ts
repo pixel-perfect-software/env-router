@@ -49,6 +49,8 @@ export interface McpInjection {
   skipAnyArgs: string[]
   /** A run whose first argument is one of these subcommands gets no injection: `claude plugin test` refuses any option before `plugin`. */
   skipSubcommands: string[]
+  /** While any of these files exists, no run gets injection: Claude Code exits at startup when given servers on a machine with an enterprise `managed-mcp.json`. Absolute paths. */
+  skipIfPresent: string[]
 }
 
 /** `envrouter_core::config::McpFiles`: where an agent keeps MCP servers of its own, for importing them. */
@@ -168,7 +170,16 @@ export interface EditorStatus {
 /** `shell::FolderCheck`: what running a tool in a folder does in a new terminal window. */
 export type FolderCheck =
   /** The shim runs. `profile` is null when no profile owns the folder. `mcp`: the servers it adds, if every secret they need is readable. */
-  | { status: 'routed'; profile: string | null; envVar: string | null; value: string | null; mcp: string[]; real: string }
+  | {
+      status: 'routed'
+      profile: string | null
+      envVar: string | null
+      value: string | null
+      mcp: string[]
+      /** A file that turns the profile's MCP servers off on this machine, such as Claude Code's `managed-mcp.json`. `mcp` is empty then. */
+      mcpManagedBy: string | null
+      real: string
+    }
   /** An alias or function with the tool's name runs before PATH is searched. `origin`: the file defining it, when the shell can say. */
   | { status: 'shadowedByShell'; kind: string; origin: string | null }
   /**

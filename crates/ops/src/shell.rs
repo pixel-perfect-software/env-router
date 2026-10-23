@@ -393,6 +393,9 @@ pub enum FolderCheck {
         value: Option<String>,
         /// The MCP servers the run gets, if every secret they need is readable.
         mcp: Vec<String>,
+        /// A file that turns the profile's MCP servers off on this machine, such as Claude
+        /// Code's enterprise `managed-mcp.json`. `mcp` is empty then.
+        mcp_managed_by: Option<String>,
         real: String,
     },
     /// An alias or function with the tool's name runs instead of anything on PATH.
@@ -580,6 +583,7 @@ pub fn check_folder(shell: Shell, home: &Path, folder: &Path, tool: &str) -> Res
         env_var: explanation.env_var,
         value: explanation.value,
         mcp: explanation.mcp,
+        mcp_managed_by: explanation.mcp_managed_by,
         real: explanation.real,
     })
 }
@@ -619,6 +623,9 @@ struct Explanation {
     env_var: Option<String>,
     value: Option<String>,
     mcp: Vec<String>,
+    /// Absent from a shim older than version 5's.
+    #[serde(default)]
+    mcp_managed_by: Option<String>,
     real: String,
 }
 
@@ -756,9 +763,10 @@ mod tests {
                 env_var: Some("V".into()),
                 value: Some("/x".into()),
                 mcp: vec!["github".into()],
+                mcp_managed_by: None,
                 real: "/bin/t".into(),
             }),
-            r#"{"status":"routed","profile":null,"envVar":"V","value":"/x","mcp":["github"],"real":"/bin/t"}"#
+            r#"{"status":"routed","profile":null,"envVar":"V","value":"/x","mcp":["github"],"mcpManagedBy":null,"real":"/bin/t"}"#
         );
         assert_eq!(
             json(&Preview {
@@ -1051,6 +1059,7 @@ mod tests {
                 env_var: Some("CLAUDE_CONFIG_DIR".into()),
                 value: Some(home.join(".claude-work").display().to_string()),
                 mcp: Vec::new(),
+                mcp_managed_by: None,
                 real: home.join("bin/claude").display().to_string(),
             }
         );

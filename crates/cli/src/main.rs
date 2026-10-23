@@ -572,6 +572,7 @@ fn verdict(check: &FolderCheck, tool: &str, shell: Shell, home: &Path) -> String
             env_var,
             value,
             mcp,
+            mcp_managed_by,
             real,
         } => {
             let route = match (profile, env_var, value) {
@@ -585,7 +586,13 @@ fn verdict(check: &FolderCheck, tool: &str, shell: Shell, home: &Path) -> String
             };
             format!(
                 "Routed: {tool} in a new {shell} window runs through the shim; {route}{}. Runs {}.",
-                mcp_suffix(mcp),
+                mcp_managed_by.as_deref().map_or_else(
+                    || mcp_suffix(mcp),
+                    |path| format!(
+                        ", without MCP servers, since {} manages them on this machine",
+                        tilde(Path::new(path), home)
+                    )
+                ),
                 tilde(Path::new(real), home)
             )
         }

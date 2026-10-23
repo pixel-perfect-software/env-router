@@ -48,6 +48,7 @@ export function verdictOf(
       if (check.mcp.length > 0) values.push({ label: 'mcp', value: [...check.mcp].sort((a, b) => a.localeCompare(b)).join(', ') })
       values.push({ label: 'runs', value: tildify(check.real, home) })
       if (!check.profile) return { tone: 'neutral', headline: 'No profile owns this folder', note: `${tool} uses its default config here.`, values }
+      const managed = check.mcpManagedBy && `its MCP servers are off because ${tildify(check.mcpManagedBy, home)} manages them on this machine`
       // Loading the profile's MCP servers is routing too, even with the agent's own config.
       if (!check.envVar && check.mcp.length > 0) {
         return {
@@ -61,10 +62,14 @@ export function verdictOf(
         return {
           tone: 'warn',
           headline: `Owned by ${check.profile}`,
-          note: `${check.profile} doesn't set ${tool}, so it uses its default config here.`,
+          note: managed
+            ? `${check.profile} doesn't set ${tool}, and ${managed}.`
+            : `${check.profile} doesn't set ${tool}, so it uses its default config here.`,
           values,
         }
       }
+      if (managed)
+        return { tone: 'ok', headline: `Routed to ${check.profile}`, note: `${check.profile} sets ${tool}'s config, but ${managed}.`, values }
       return { tone: 'ok', headline: `Routed to ${check.profile}`, values }
     }
     case 'shadowedByShell': {

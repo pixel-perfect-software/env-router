@@ -327,6 +327,7 @@ mod tests {
                 deny_arg: None,
                 skip_any_args: Vec::new(),
                 skip_subcommands: Vec::new(),
+                skip_if_present: Vec::new(),
             }),
             mcp_files: Some(McpFiles {
                 user_file: ".claude.json".into(),

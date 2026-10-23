@@ -96,6 +96,12 @@ fn main() -> ExitCode {
         .launch
         .filter(|launch| launch.applies_to(&user_args))
         .filter(|_| env::var_os(MCP_VAR).is_none_or(|value| value != "0"));
+    // Claude Code exits at startup when given servers on a machine whose admin manages them.
+    let managed_by = launch
+        .as_ref()
+        .and_then(Launch::managed_by)
+        .map(str::to_owned);
+    let launch = launch.filter(|_| managed_by.is_none());
 
     if env::var_os(EXPLAIN_VAR).is_some_and(|value| value == "1") {
         let (var, value) = route.env.unzip();
@@ -112,12 +118,18 @@ fn main() -> ExitCode {
             "envVar": var,
             "value": value,
             "mcp": servers,
+            "mcpManagedBy": managed_by,
             "real": real,
         });
         println!("{explanation}");
         return ExitCode::SUCCESS;
     }
 
+    if let (Some(path), Some(tool)) = (&managed_by, &tool) {
+        eprintln!(
+            "envrouter: {path} manages this machine's MCP servers, so {tool} runs without the profile's."
+        );
+    }
     let mut command = Command::new(&real);
     command.args(&script);
     if let (Some(launch), Some(home), Some(tool)) = (launch, home.as_deref(), tool.as_deref()) {
