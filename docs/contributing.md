@@ -111,7 +111,9 @@ shell startup files. Two ways to avoid that:
   folder from Finder (`/home/sam/…` with `platform=linux` or `wsl`).
   `window.__mockEditConfig((c) => ({ ...c, profiles: c.profiles.slice(1) }))` changes `config.json`
   behind the window's back, as the CLI or a hand edit would, so the next save meets it;
-  `window.__mockDeleteConfig()` deletes it the same way. The mock's
+  `window.__mockDeleteConfig()` deletes it the same way. `window.__mockQuit()` quits as the menu
+  bar's Quit does: with unsaved edits in an editor the window asks first, and a quit that goes
+  ahead logs `quit` to the console. The mock's
   npm knows every package at `1.4.0` (`next` at `2.0.0-beta.2`), except a name ending in `-nope`. When you change a command's behaviour, keep the mock answering the way the
   real backend does.
 - **A scratch home folder**, for the real app. Build it, then launch the binary with `HOME`

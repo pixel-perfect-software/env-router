@@ -145,6 +145,27 @@ describe('saving', () => {
   })
 })
 
+describe('quitting', () => {
+  it('quits at once with nothing unsaved, and asks once with unsaved edits, as quit::may_quit does', async () => {
+    const call = await boot('?scenario=populated')
+    const log = vi.spyOn(console, 'info').mockImplementation(() => {})
+    await window.__mockQuit()
+    expect(log).toHaveBeenCalledWith('quit')
+    log.mockClear()
+
+    await call('set_unsaved_edits', { unsaved: true })
+    await window.__mockQuit()
+    expect(log).not.toHaveBeenCalled()
+    // Kept editing: the window says so, and the next quit asks again.
+    await call('set_unsaved_edits', { unsaved: true })
+    await window.__mockQuit()
+    expect(log).not.toHaveBeenCalled()
+    // Unanswered, the second request quits.
+    await window.__mockQuit()
+    expect(log).toHaveBeenCalledWith('quit')
+  })
+})
+
 describe('checks and files', () => {
   it('times out as the shell does', async () => {
     const call = await boot('?scenario=populated&check=timeout')

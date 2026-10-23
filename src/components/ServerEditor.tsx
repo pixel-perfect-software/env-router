@@ -26,6 +26,7 @@ import {
 import { newerRelease, npxPackage, pinnedArg, pinnedVersion, pinTarget } from '../lib/npm'
 import { usePlatform } from '../lib/platform'
 import type { McpServer, ToolInfo } from '../lib/types'
+import { setUnsaved } from '../lib/unsaved'
 import { TransportIcon } from './icons'
 import { ServerMark } from './ServerMark'
 import { CheckSection } from './ServerTools'
@@ -46,6 +47,7 @@ export function ServerEditor({
   onDelete,
   onDuplicate,
   pinOnOpen = false,
+  changedOutside = null,
 }: {
   /** null for a new server. */
   name: string | null
@@ -68,6 +70,8 @@ export function ServerEditor({
   onDuplicate?: () => void
   /** Pin an unpinned npm package as soon as the editor opens: a server just picked from the catalog. */
   pinOnOpen?: boolean
+  /** config.json changed or dropped this server (the CLI, a hand edit) while this editor held unsaved edits. */
+  changedOutside?: 'changed' | 'deleted' | null
 }) {
   const initial = useRef(template ?? draftOf(name ?? '', server))
   const [draft, setDraft] = useState<ServerDraft>(initial.current)
@@ -91,6 +95,10 @@ export function ServerEditor({
     setError(null)
   }
   useEffect(() => onDirty(dirty), [dirty, onDirty])
+  useEffect(() => {
+    setUnsaved('server', dirty)
+    return () => setUnsaved('server', false)
+  }, [dirty])
 
   useEffect(() => {
     // A new server starts at its name; an existing one keeps focus in the list it was picked from.
@@ -176,6 +184,13 @@ export function ServerEditor({
       </header>
 
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 pt-4 pb-5">
+        {changedOutside && (
+          <Caution tucked={false}>
+            {changedOutside === 'deleted'
+              ? 'config.json no longer has this server. Saving adds it back.'
+              : 'config.json changed this server after you started editing. Saving replaces that change; Revert shows it.'}
+          </Caution>
+        )}
         {/* First: which profiles load the server is the part people change most. */}
         <fieldset className="min-w-0">
           <legend className="mb-1.5 text-small font-medium text-ink-2">Used by</legend>
@@ -350,10 +365,10 @@ export function ServerEditor({
   )
 }
 
-/** A warning tucked under the field it's about: a well with the amber tile, one line, and maybe a fix. */
-function Caution({ children, action }: { children: ReactNode; action?: ReactNode }) {
+/** A warning tucked under the field it's about (or, `tucked={false}`, about the whole server): a well with the amber tile, one line, and maybe a fix. */
+function Caution({ children, action, tucked = true }: { children: ReactNode; action?: ReactNode; tucked?: boolean }) {
   return (
-    <div className="-mt-3 flex items-center gap-2 rounded-[8px] bg-well py-1.5 pr-1.5 pl-2">
+    <div role={tucked ? undefined : 'status'} className={`${tucked ? '-mt-3 ' : ''}flex items-center gap-2 rounded-[8px] bg-well py-1.5 pr-1.5 pl-2`}>
       <StatusTile tone="warn" size={20} />
       <p className="min-w-0 flex-1 py-0.5 text-small text-ink-2">{children}</p>
       {action}

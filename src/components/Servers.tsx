@@ -2,7 +2,7 @@
 // Catalog and Import open in the same place as the editor, so nothing drills more than one level
 // deep. Which profiles load a server is set here (Used by) or in a profile's own editor.
 
-import { type ReactNode, type RefObject, useEffect, useState } from 'react'
+import { type ReactNode, type RefObject, useCallback, useEffect, useState } from 'react'
 // The mark's folder handing its tracks to three servers: an empty library's hero.
 import libraryArt from '../assets/servers-library.svg'
 import { getMcpTools } from '../lib/api'
@@ -60,6 +60,22 @@ export function ServersView({
       current = false
     }
   }, [detailKey])
+  // While the editor holds edits, it keeps the definition it opened with: a focus reload that
+  // brings an outside change to this server (the CLI, a hand edit) would otherwise remount it
+  // and drop the draft. The editor says what changed under it instead.
+  const [holding, setHolding] = useState(false)
+  const saved = detail.kind === 'edit' && detail.name ? JSON.stringify(config.mcpServers[detail.name] ?? null) : null
+  const [openedWith, setOpenedWith] = useState(saved)
+  if (!holding && openedWith !== saved) setOpenedWith(saved)
+  const changedOutside = holding && openedWith !== saved ? (saved === 'null' ? 'deleted' : 'changed') : null
+  // Stable, so the editor reports only when its dirty state flips, never mid-save.
+  const onEditorDirty = useCallback(
+    (value: boolean) => {
+      dirty.current = value
+      setHolding(value)
+    },
+    [dirty],
+  )
   const names = Object.keys(config.mcpServers).sort((a, b) => a.localeCompare(b))
   const profiles: ProfileChip[] = config.profiles.map((p) => ({ id: p.id, name: p.name, color: colors.get(p.id) ?? '' }))
 
@@ -192,9 +208,9 @@ export function ServersView({
         )}
         {detail.kind === 'edit' && (
           <ServerEditor
-            // Keyed by the saved definition too, so saving a change reopens the editor from what
-            // was saved (a typed secret sealed again) instead of leaving the draft in place.
-            key={detail.name ? `${detail.name}:${JSON.stringify(config.mcpServers[detail.name] ?? null)}` : `new-${detail.template?.name ?? ''}`}
+            // Keyed by the definition it opened with, so saving a change reopens the editor from
+            // what was saved (a typed secret sealed again) instead of leaving the draft in place.
+            key={detail.name ? `${detail.name}:${openedWith}` : `new-${detail.template?.name ?? ''}`}
             name={detail.name}
             server={detail.name ? config.mcpServers[detail.name] : undefined}
             template={detail.template}
@@ -204,15 +220,21 @@ export function ServersView({
             initialUsedBy={detail.name ? profilesUsing(config, detail.name).map((p) => p.id) : []}
             cachedTools={detail.name ? tools[detail.name] : undefined}
             toolsOff={detail.name ? toolsOffIn(config, detail.name, profiles) : {}}
-            onDirty={(value) => {
-              dirty.current = value
-            }}
+            changedOutside={changedOutside}
+            onDirty={onEditorDirty}
             onCancel={() => {
               dirty.current = false
               onDetail({ kind: 'none' })
             }}
             onSave={async (name, server, secrets, usedBy) => {
-              await onSave(detail.name, name, server, secrets, usedBy)
+              // Let go first, as a clean editor would: the save reopens it from what it wrote.
+              setHolding(false)
+              try {
+                await onSave(detail.name, name, server, secrets, usedBy)
+              } catch (err) {
+                setHolding(true)
+                throw err
+              }
               dirty.current = false
               onDetail({ kind: 'edit', name })
               // The editor reopens from what was saved, so focus goes to the server's row rather than the page.

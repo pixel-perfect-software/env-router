@@ -20,17 +20,20 @@ import {
   getSetupStatus,
   openInEditor,
   previewFolder,
+  quitApp,
   saveConfig,
   setEditorIntegration,
   setShellIntegration,
+  setUnsavedEdits,
 } from './lib/api'
-import { confirmDelete, confirmDiscardServer, confirmReplace, confirmRestore } from './lib/confirm'
+import { confirmDelete, confirmDiscardServer, confirmQuit, confirmReplace, confirmRestore } from './lib/confirm'
 import { withoutServer, withServer, withUsedBy } from './lib/mcp'
 import { mergeConfig } from './lib/merge'
 import { owningTrigger } from './lib/paths'
 import { guessPlatform, isShortcut, PlatformContext, platformInfo } from './lib/platform'
 import { ideHooks, KNOWN_TOOLS, toolByCommand, withAgents } from './lib/tools'
 import type { ConfigState, Editor, EditorStatus, Profile, SetupStatus, Shell, ToolInfo } from './lib/types'
+import { hasUnsaved } from './lib/unsaved'
 import { useFolderDrop } from './lib/useFolderDrop'
 import { type VerdictAction, verdictOf } from './lib/verdict'
 
@@ -310,6 +313,17 @@ export default function App() {
   const platform = platformInfo(setup?.platform ?? guessPlatform(), setup?.secretStore)
   const platformRef = useRef(platform)
   platformRef.current = platform
+
+  // The app asks before quitting only while an editor holds unsaved edits (`src-tauri/src/quit.rs`).
+  useEffect(() => {
+    const unlisten = listen('quit-requested', async () => {
+      if (await confirmQuit()) await quitApp()
+      else await setUnsavedEdits(hasUnsaved())
+    })
+    return () => {
+      unlisten.then((stop) => stop())
+    }
+  }, [])
 
   useEffect(() => {
     const unlisten = listen('check-folder', () => actions.current.checkFolder())

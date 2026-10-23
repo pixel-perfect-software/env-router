@@ -18,7 +18,9 @@
 // The mcp library has a server named `slow` whose check times out. `window.__mockDrop(path, x, y)`
 // simulates a Finder drop. `window.__mockEditConfig(edit)` changes config.json as the CLI or a
 // hand edit would, behind the window's back, so a save from an open editor meets it, and
-// `window.__mockDeleteConfig()` deletes it the same way. npm knows
+// `window.__mockDeleteConfig()` deletes it the same way. `window.__mockQuit()` quits as the menu
+// bar's Quit does: it asks only while an editor holds unsaved edits, and a quit that goes
+// ahead logs "quit" to the console. npm knows
 // every package (at 1.4.0, `next` at 2.0.0-beta.2) except one whose name ends in `-nope`.
 // The profile card's context menu pops up as a DOM stand-in.
 
@@ -151,6 +153,9 @@ const populated = scenario !== 'first-run'
 let configBroken = scenario === 'broken'
 /** config.json was deleted behind the window's back; the next read creates an empty one. */
 let configMissing = false
+/** `quit::UNSAVED` and `quit::ASKED`. */
+let unsaved = false
+let quitAsked = false
 const withLibrary = scenario === 'mcp'
 const library: Record<string, McpServer> = withLibrary
   ? {
@@ -811,6 +816,15 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       configMissing = false
       return { status: 'saved', config } satisfies SaveOutcome
     }
+    case 'set_unsaved_edits':
+      // `quit::set_unsaved_edits`
+      unsaved = a.unsaved === true
+      quitAsked = false
+      return null
+    case 'quit_app':
+      unsaved = false
+      console.info('quit')
+      return null
     case 'npm_dist_tags': {
       await delay(700)
       const command = String(a.command)
@@ -959,6 +973,7 @@ declare global {
     __mockDrop: (path: string, x: number, y: number) => Promise<void>
     __mockEditConfig: (edit: (config: ConfigState) => ConfigState) => void
     __mockDeleteConfig: () => void
+    __mockQuit: () => Promise<void>
   }
 }
 
@@ -968,6 +983,16 @@ window.__mockEditConfig = (edit) => {
 
 window.__mockDeleteConfig = () => {
   configMissing = true
+}
+
+// `quit::may_quit`
+window.__mockQuit = async () => {
+  if (!unsaved || quitAsked) {
+    console.info('quit')
+    return
+  }
+  quitAsked = true
+  await emit('quit-requested')
 }
 
 window.__mockDrop = async (path, x, y) => {

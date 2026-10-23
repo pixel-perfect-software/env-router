@@ -11,6 +11,15 @@ export const confirmDiscard = (profileName: string | undefined) =>
     cancelLabel: 'Keep Editing',
   })
 
+/** The native confirmation before quitting with unsaved edits in an editor. */
+export const confirmQuit = () =>
+  ask("Your changes haven't been saved.", {
+    title: 'Quit without saving?',
+    kind: 'warning',
+    okLabel: 'Quit',
+    cancelLabel: 'Keep Editing',
+  })
+
 /** The native confirmation before a profile is deleted, from the editor or a context menu. */
 export const confirmDelete = (profile: Profile) =>
   ask("New terminals in its folders will use the next profile up, or each agent's default config.", {
