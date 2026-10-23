@@ -3,9 +3,13 @@ name: CI image
 # Builds .github/ci/Containerfile for amd64 and arm64, each on its own architecture's runner, and
 # pushes one multi-arch image to ghcr.io/pixel-perfect-software/envrouter-ci, tagged with the
 # commit. ci.yml and release.yml pin it by digest: after a change, copy the digest this run
-# prints into both. Runs only when the image's files change, or on demand.
+# prints into both. Runs on main when the image's files change, and on demand for a branch
+# that changes them (`gh workflow run ci-image.yml --ref <branch>`), so its pull request can pin
+# the new digest. Not on every branch push: a branch created or rebased onto main counts the
+# image's files as changed, which rebuilt and pushed the image for each Dependabot branch.
 on:
   push:
+    branches: [main]
     paths: ['.github/ci/**', '.github/workflows/ci-image.yml']
   workflow_dispatch:
 
