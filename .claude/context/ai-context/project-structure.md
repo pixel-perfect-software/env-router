@@ -56,7 +56,9 @@ env-router/
 ├── README.md, LICENSE         # users: what it is, install per platform, WSL, getting started, troubleshooting, uninstall; GPL-3.0-or-later
 ├── docs/contributing.md       # contributors: setup, commands, containers, mock scenarios, rules, releases, PRs
 ├── docs/images/               # README screenshots (browser mock, `mcp` scenario, light and dark)
-├── .github/workflows/ci.yml   # Linux: lint, types, frontend tests, build, fmt, deny, machete, backend tests, keyring round trip, Windows helper lint; macOS: clippy and cargo test
+├── .github/workflows/ci.yml   # Linux: lint, types, frontend tests, build, fmt, deny, machete, backend tests, keyring round trip, Windows helper lint and link, app crate; Linux jobs in the CI image; macOS: clippy and cargo test
+├── .github/ci/Containerfile   # the Linux CI and release jobs' image: Ubuntu 22.04, their packages, rustup
+├── .github/workflows/ci-image.yml  # builds that image for amd64 and arm64 into ghcr.io, prints the digest to pin
 ├── .github/workflows/advisories.yml  # weekly: cargo deny advisories and pnpm audit, for main and the latest release
 ├── .github/workflows/release.yml  # on a v* tag: macOS and Linux builds, one release, then the tap from packaging/homebrew
 ├── .github/dependabot.yml     # monthly action and dependency updates

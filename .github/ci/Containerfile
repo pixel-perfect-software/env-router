@@ -1,0 +1,45 @@
+# The image the Linux CI and release jobs run in, so no job installs packages from Ubuntu's
+# mirror while it runs: that mirror stalled jobs for minutes at a time (the 0.7.0 release's CLI
+# build sat in apt for over 17 minutes). ci-image.yml builds it for amd64 and arm64 and pushes it
+# to ghcr.io/pixel-perfect-software/envrouter-ci; the workflows pin it by digest, so a change
+# here reaches them only when that digest is updated.
+#
+# Ubuntu 22.04 for its glibc (2.35): the release's Linux builds run on more distros, and the
+# image keeps it after GitHub retires the 22.04 runners. Rust comes from rust-toolchain.toml in
+# each job (rustup is here, no toolchain), and Node and pnpm from their setup actions.
+FROM docker.io/library/ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956
+
+# - building: a C toolchain, pkg-config, git for actions/checkout, curl and jq for the install
+#   actions, xz and file for the bundler;
+# - the shell tests: zsh, fish (bash is in the base), and dbus with gnome-keyring for the
+#   secrets round trip;
+# - the desktop app: WebKitGTK and AppIndicator; librsvg and libxdo as the release has always
+#   installed them (#38 checks whether the AppImage still needs libxdo);
+# - the Windows secrets helper: the x86_64 mingw compiler only.
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      build-essential pkg-config ca-certificates curl git jq xz-utils file \
+      zsh fish dbus gnome-keyring \
+      libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev \
+      gcc-mingw-w64-x86-64 \
+ && rm -rf /var/lib/apt/lists/*
+
+# rustup alone; each job installs the toolchain rust-toolchain.toml pins. Container jobs set
+# HOME to /github/home, so rustup and cargo live at fixed paths instead of under ~.
+ARG RUSTUP_VERSION=1.29.2
+ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo PATH=/usr/local/cargo/bin:$PATH
+RUN arch=$(uname -m) \
+ && case "$arch" in \
+      x86_64) sum=5be191e8c70a5007074254cb74d78dbfdd25cd5a61c27de7b8e5410122ec24f4 ;; \
+      aarch64) sum=a9c168dbea81a84671c6b7a5c1795cb0eb699020110d107ddfca427bd797e697 ;; \
+      *) echo "no rustup-init checksum for $arch" >&2; exit 1 ;; \
+    esac \
+ && curl -fsSLo /tmp/rustup-init "https://static.rust-lang.org/rustup/archive/$RUSTUP_VERSION/$arch-unknown-linux-gnu/rustup-init" \
+ && echo "$sum  /tmp/rustup-init" | sha256sum -c - \
+ && chmod +x /tmp/rustup-init \
+ && /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain none \
+ && rm /tmp/rustup-init \
+ && chmod -R a+w "$RUSTUP_HOME" "$CARGO_HOME"
+
+# The AppImage tooling is itself an AppImage, and containers have no FUSE.
+ENV APPIMAGE_EXTRACT_AND_RUN=1
