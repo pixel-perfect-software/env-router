@@ -1,0 +1,62 @@
+name: CI image
+
+# Builds .github/ci/Containerfile for amd64 and arm64, each on its own architecture's runner, and
+# pushes one multi-arch image to ghcr.io/pixel-perfect-software/envrouter-ci, tagged with the
+# commit. ci.yml and release.yml pin it by digest: after a change, copy the digest this run
+# prints into both. Runs only when the image's files change, or on demand.
+on:
+  push:
+    paths: ['.github/ci/**', '.github/workflows/ci-image.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/pixel-perfect-software/envrouter-ci
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - env:
+          TOKEN: ${{ github.token }}
+        run: printf '%s' "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      # Tagged per architecture for the merge below, which joins the two into one image. No
+      # provenance attestation, so each is a plain image the merge can list.
+      - env:
+          ARCH: ${{ matrix.arch }}
+        run: >-
+          docker buildx build --platform "linux/$ARCH" --provenance=false --push
+          -t "$IMAGE:$GITHUB_SHA-$ARCH" -f .github/ci/Containerfile .github/ci
+
+  merge:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - env:
+          TOKEN: ${{ github.token }}
+        run: printf '%s' "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - run: |
+          docker buildx imagetools create -t "$IMAGE:$GITHUB_SHA" "$IMAGE:$GITHUB_SHA-amd64" "$IMAGE:$GITHUB_SHA-arm64"
+          digest=$(docker buildx imagetools inspect "$IMAGE:$GITHUB_SHA" --format '{{json .Manifest}}' | jq -r .digest)
+          echo "Pin in ci.yml and release.yml: \`$IMAGE@$digest\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "$IMAGE@$digest"
