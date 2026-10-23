@@ -150,6 +150,20 @@ describe('saving', () => {
       /^Couldn't save the secret: there's no Secret Service.*Nothing was saved\.$/,
     )
   })
+
+  it("saves a config that drops a secret even when the store can't remove it, and says so", async () => {
+    const call = await boot('?scenario=mcp&store=off&platform=linux')
+    const config = await call<ConfigState>('get_config')
+    const { github: _, ...rest } = config.mcpServers
+    const profiles = config.profiles.map((p) => {
+      const { github: __, ...uses } = p.mcpServers
+      return { ...p, mcpServers: uses }
+    })
+    await expect(call('save_config', { payload: { ...config, mcpServers: rest, profiles }, secrets: {} })).rejects.toMatch(
+      /^Saved, but couldn't remove a secret no server uses any more: there's no Secret Service.*\.$/,
+    )
+    expect(Object.keys((await call<ConfigState>('get_config')).mcpServers)).not.toContain('github')
+  })
 })
 
 describe('checks and files', () => {

@@ -810,15 +810,20 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       if (Object.keys(secrets).some((id) => !referenced.has(id))) throw "A new secret isn't used by any server. Save the server again."
       // `shims::install_bundled` runs before the store is touched, so a failed save still reinstalls.
       shimInstalled = true
-      // The store is read only when this save adds a secret or stops using one.
-      const dropped = !configMissing && [...secretIds(config)].some((id) => !referenced.has(id))
-      if (Object.keys(secrets).length > 0 || dropped) {
+      // The store is read only when this save adds a secret or stops using one. New values go in
+      // before config.json is written, and secrets nothing names any more come out after.
+      const before = configMissing ? new Set<string>() : secretIds(config)
+      if (Object.keys(secrets).length > 0) {
         if (storeOff) throw `Couldn't save the secret: ${storeError.replace(/\.$/, '')}. Nothing was saved.`
-        stored = new Set([...[...stored].filter((id) => referenced.has(id)), ...Object.keys(secrets)])
+        stored = new Set([...[...stored].filter((id) => referenced.has(id) || before.has(id)), ...Object.keys(secrets)])
       }
       config = { ...next, version: CONFIG_VERSION }
       configBroken = false
       configMissing = false
+      if ([...before].some((id) => !referenced.has(id))) {
+        if (storeOff) throw `Saved, but couldn't remove a secret no server uses any more: ${storeError.replace(/\.$/, '')}.`
+        stored = new Set([...stored].filter((id) => referenced.has(id)))
+      }
       return { status: 'saved', config } satisfies SaveOutcome
     }
     case 'npm_dist_tags': {

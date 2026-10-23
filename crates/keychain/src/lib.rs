@@ -66,22 +66,38 @@ pub fn write(home: &Path, secrets: &HashMap<String, String>) -> Result<()> {
 /// before writing `config.json`, so the config never names a secret that isn't stored yet. A
 /// store's failure comes back as a sentence a save can show as it is.
 pub fn update(home: &Path, new: &HashMap<String, String>, keep: &BTreeSet<&str>) -> Result<()> {
-    let update = || {
-        let mut secrets = read(home)?;
-        let before = secrets.clone();
-        secrets.retain(|id, _| keep.contains(id.as_str()));
-        secrets.extend(new.iter().map(|(id, value)| (id.clone(), value.clone())));
-        if secrets == before {
-            return Ok(());
-        }
-        write(home, &secrets)
-    };
-    // Each store words its own reason, naming itself, to follow a prefix like this one.
-    update().map_err(|err| match err {
-        Error::SecretStore(why) => Error::SecretStore(format!(
-            "Couldn't save the secret: {}. Nothing was saved.",
-            why.trim_end_matches('.')
-        )),
-        other => other,
+    rewrite(home, new, keep).map_err(|err| {
+        reworded(err, |why| {
+            format!("Couldn't save the secret: {why}. Nothing was saved.")
+        })
     })
+}
+
+/// Drops every secret not in `keep`. A save calls it last, once the config it wrote names
+/// none of them, so a failure leaves only a secret nothing uses, and says the save happened.
+pub fn prune(home: &Path, keep: &BTreeSet<&str>) -> Result<()> {
+    rewrite(home, &HashMap::new(), keep).map_err(|err| {
+        reworded(err, |why| {
+            format!("Saved, but couldn't remove a secret no server uses any more: {why}.")
+        })
+    })
+}
+
+fn rewrite(home: &Path, new: &HashMap<String, String>, keep: &BTreeSet<&str>) -> Result<()> {
+    let mut secrets = read(home)?;
+    let before = secrets.clone();
+    secrets.retain(|id, _| keep.contains(id.as_str()));
+    secrets.extend(new.iter().map(|(id, value)| (id.clone(), value.clone())));
+    if secrets == before {
+        return Ok(());
+    }
+    write(home, &secrets)
+}
+
+/// Each store words its own reason, naming itself, to go inside a sentence like these.
+fn reworded(err: Error, sentence: impl Fn(&str) -> String) -> Error {
+    match err {
+        Error::SecretStore(why) => Error::SecretStore(sentence(why.trim_end_matches('.'))),
+        other => other,
+    }
 }

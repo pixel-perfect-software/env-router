@@ -98,6 +98,23 @@ pub fn is_installed(home: &Path, shim: &Path, keychain: &Path) -> bool {
     same(paths::shim_binary(home), shim) && same(paths::keychain_helper(home), keychain)
 }
 
+/// Refuses a config whose shims couldn't all be made: a file that isn't a link has a routed
+/// tool's name. A save checks this before writing anything, so it can't leave a config whose
+/// tools have no shim.
+pub fn check(home: &Path, config: &ConfigState) -> Result<()> {
+    let dir = paths::shims(home);
+    for tool in config::tool_names(config) {
+        let link = dir.join(tool);
+        if fs::read_link(&link).is_err() && link.exists() {
+            return Err(Error::Invalid(format!(
+                "{} already exists and wasn't made by EnvRouter. Move it, then save again.",
+                link.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Makes the shims directory hold exactly one link per tool the config routes. Links to the
 /// shim for tools no longer routed are removed, and a link named after a routed tool is
 /// pointed at the shim. Anything that isn't a link is left alone, and reported if it's in
@@ -110,6 +127,7 @@ pub fn sync(home: &Path, config: &ConfigState) -> Result<()> {
         move |source| Error::Io { path, source }
     };
     fs::create_dir_all(&dir).map_err(io_err(&dir))?;
+    check(home, config)?;
     let wanted = config::tool_names(config);
 
     for entry in fs::read_dir(&dir).map_err(io_err(&dir))? {
@@ -129,12 +147,7 @@ pub fn sync(home: &Path, config: &ConfigState) -> Result<()> {
         match fs::read_link(&link) {
             Ok(existing) if existing == target => continue,
             Ok(_) => fs::remove_file(&link).map_err(io_err(&link))?,
-            Err(_) if link.exists() => {
-                return Err(Error::Invalid(format!(
-                    "{} already exists and wasn't made by EnvRouter. Move it, then save again.",
-                    link.display()
-                )))
-            }
+            // `check` refused anything else that's in the way.
             Err(_) => {}
         }
         symlink(&target, &link).map_err(io_err(&link))?;
