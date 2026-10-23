@@ -64,7 +64,9 @@ known advisory: the fix is a release, not a change to the scan.
 
 Every action in the workflows is pinned to the full commit SHA of a release, with its version in
 a comment, and Dependabot (`.github/dependabot.yml`) opens a monthly pull request to update them.
-Keep new ones pinned the same way.
+Keep new ones pinned the same way. Dependabot does the same for the Rust crates, except `tauri*`,
+which move together with the `@tauri-apps/*` npm packages, and it opens a security update as soon
+as an advisory lands.
 
 ### 🐳 Linux and Windows from a Mac
 
