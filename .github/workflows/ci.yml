@@ -103,7 +103,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zsh fish gnome-keyring dbus
+      # Retries a slow mirror instead of waiting on it (see the script).
+      - run: sh .github/scripts/apt-install.sh zsh fish gnome-keyring dbus
+        timeout-minutes: 13
       - run: rustup show active-toolchain || rustup toolchain install
       - run: rustup target add x86_64-pc-windows-gnu
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
