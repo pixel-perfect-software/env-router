@@ -573,6 +573,7 @@ fn verdict(check: &FolderCheck, tool: &str, shell: Shell, home: &Path) -> String
             value,
             mcp,
             mcp_managed_by,
+            via_alias,
             real,
         } => {
             let route = match (profile, env_var, value) {
@@ -584,8 +585,12 @@ fn verdict(check: &FolderCheck, tool: &str, shell: Shell, home: &Path) -> String
                 }
                 (Some(p), _, _) => format!("{p} leaves its config alone"),
             };
+            let through = via_alias.as_deref().map_or_else(
+                || "the shim".to_string(),
+                |expansion| format!("the alias `{expansion}`, then the shim"),
+            );
             format!(
-                "Routed: {tool} in a new {shell} window runs through the shim; {route}{}. Runs {}.",
+                "Routed: {tool} in a new {shell} window runs through {through}; {route}{}. Runs {}.",
                 mcp_managed_by.as_deref().map_or_else(
                     || mcp_suffix(mcp),
                     |path| format!(

@@ -9,7 +9,8 @@
 //   ~/.config editor settings, a keyring); `&platform=wsl` as a WSL distro (bash reading
 //   .profile and .bashrc, VS Code Server's machine settings, Windows editors connected remotely).
 // - `&check=` forces what Check Folder finds: routed (default: worked out from the config),
-//   managed (an admin's managed-mcp.json turns the profile's MCP servers off), shadowedOnPath,
+//   managed (an admin's managed-mcp.json turns the profile's MCP servers off), alias (the run
+//   goes through `alias claude='claude --model opus'`), shadowedOnPath,
 //   byPromptHook, shadowedByShell (an alias, so no origin), notFound,
 //   notInstalled, shimFailed (empty message, as when macOS kills a shim), timeout or noPath (the
 //   two ways the shell itself fails). Use it with a populated scenario, where the shell is on.
@@ -956,6 +957,7 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
               ? '/Library/Application Support/ClaudeCode/managed-mcp.json'
               : '/etc/claude-code/managed-mcp.json'
             : null,
+        viaAlias: forcedCheck === 'alias' ? `${command} --model opus` : null,
         real: `${HOME}/.local/bin/${command}`,
       } satisfies FolderCheck
     }

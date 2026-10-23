@@ -46,6 +46,7 @@ export function verdictOf(
       if (check.profile && trigger) values.push({ label: 'via', value: tildify(trigger, home) })
       // Alphabetical, as the card footer lists them.
       if (check.mcp.length > 0) values.push({ label: 'mcp', value: [...check.mcp].sort((a, b) => a.localeCompare(b)).join(', ') })
+      if (check.viaAlias) values.push({ label: 'alias', value: check.viaAlias })
       values.push({ label: 'runs', value: tildify(check.real, home) })
       if (!check.profile) return { tone: 'neutral', headline: 'No profile owns this folder', note: `${tool} uses its default config here.`, values }
       const managed = check.mcpManagedBy && `its MCP servers are off because ${tildify(check.mcpManagedBy, home)} manages them on this machine`
