@@ -794,3 +794,28 @@ fn runs_what_it_cant_route_rather_than_blocking_the_editor() {
     let output = f.run_wrapped("dev/work/app", &[odd_name.as_os_str(), OsStr::new("x")]);
     assert_eq!(stdout(&output), "unset 1 x\n", "{}", stderr(&output));
 }
+
+/// A CLI asks the installed shim this before a save, and installs its own shim when the
+/// answer is older than the config it writes. Through a tool's link, it's the tool's argument.
+#[test]
+fn answers_the_config_version_it_reads_only_by_its_own_name() {
+    let f = Fixture::new(Some("{ not json"));
+    let output = f.run_wrapped("dev/work/app", &[OsStr::new("--config-version")]);
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        stdout(&output),
+        format!("{}\n", envrouter_core::config::CONFIG_VERSION)
+    );
+    assert_eq!(stderr(&output), "", "answered without reading the config");
+
+    let output = Command::new(f.shims.join("claude"))
+        .arg("--config-version")
+        .current_dir(f.home.join("dev/work/app"))
+        .env("HOME", &f.home)
+        .env("PATH", f.default_path())
+        .env_remove("CLAUDE_CONFIG_DIR")
+        .env_remove("ENVROUTER_EXPLAIN")
+        .output()
+        .unwrap();
+    assert_eq!(stdout(&output), "unset 1 --config-version\n");
+}

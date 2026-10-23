@@ -5,6 +5,9 @@ use std::path::{Path, PathBuf};
 pub const SHIM_NAME: &str = "envrouter-shim";
 pub const KEYCHAIN_NAME: &str = "envrouter-keychain";
 pub const CLI_NAME: &str = "envrouter";
+/// `envrouter-shim --config-version` prints the newest config version the shim reads. A CLI
+/// asks before saving, so it never leaves an older shim than its own facing a config it refuses.
+pub const SHIM_CONFIG_VERSION_ARG: &str = "--config-version";
 
 pub fn root(home: &Path) -> PathBuf {
     home.join(".envrouter")
