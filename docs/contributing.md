@@ -101,7 +101,7 @@ shell startup files. Two ways to avoid that:
   |---|---|
   | `&platform=linux` | A Linux desktop: `/home/sam`, bash reading `.bashrc`, `~/.config` editor settings, the keyring |
   | `&platform=wsl` | A WSL distro: bash reading `.profile` and `.bashrc`, no zsh, the Credential Manager, VS Code Server and Cursor Server |
-  | `&check=<result>` | Forces a folder check's answer (use it with `populated` or `mcp`): `routed` (the default, worked out from the config), `shadowedOnPath`, `byPromptHook`, `shadowedByShell`, `notFound`, `notInstalled`, `shimFailed`, or the failures `timeout` and `noPath` |
+  | `&check=<result>` | Forces a folder check's answer (use it with `populated` or `mcp`): `routed` (the default, worked out from the config), `managed` (an admin's `managed-mcp.json` turns the profile's MCP servers off), `shadowedOnPath`, `byPromptHook`, `shadowedByShell`, `notFound`, `notInstalled`, `shimFailed`, or the failures `timeout` and `noPath` |
   | `&shim=stale` | The shim missing or out of date; any save or switch reinstalls it |
   | `&store=off` | No secret store: a save that adds or drops a secret fails as it would there |
 

@@ -9,7 +9,8 @@
 //   ~/.config editor settings, a keyring); `&platform=wsl` as a WSL distro (bash reading
 //   .profile and .bashrc, VS Code Server's machine settings, Windows editors connected remotely).
 // - `&check=` forces what Check Folder finds: routed (default: worked out from the config),
-//   shadowedOnPath, byPromptHook, shadowedByShell (an alias, so no origin), notFound,
+//   managed (an admin's managed-mcp.json turns the profile's MCP servers off), shadowedOnPath,
+//   byPromptHook, shadowedByShell (an alias, so no origin), notFound,
 //   notInstalled, shimFailed (empty message, as when macOS kills a shim), timeout or noPath (the
 //   two ways the shell itself fails). Use it with a populated scenario, where the shell is on.
 // - `&shim=stale`: the installed shim doesn't match the app's, until a save reinstalls it.
@@ -59,7 +60,7 @@ const forcedCheck = params.get('check')
 const storeOff = params.get('store') === 'off'
 
 /** `config::CONFIG_VERSION`: every save writes it. */
-const CONFIG_VERSION = 3
+const CONFIG_VERSION = 5
 
 /** What each platform's store says when it can't be used (`crates/keychain/src/store/`). */
 const storeError = {
@@ -430,6 +431,7 @@ const validateAgent = (name: string, agent: AgentDef) => {
   const isPrefix = (arg: string) => arg.startsWith('-') && arg.indexOf('=') > 1 && !/\s/.test(arg)
   if (!isPrefix(agent.mcp.configArg) || (agent.mcp.denyArg !== null && !isPrefix(agent.mcp.denyArg)))
     throw `The MCP arguments for ${name} must each be one option of the form --flag=.`
+  if (agent.mcp.skipIfPresent.some((path) => !path.startsWith('/'))) throw `The files that turn MCP servers off for ${name} must be absolute paths.`
 }
 
 const validate = (cfg: ConfigState) => {
@@ -940,7 +942,13 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
         profile: p?.name ?? null,
         envVar: settings ? settings.envVar : null,
         value: settings ? expandHome(settings.path.trim()) : null,
-        mcp: mcpFor(config, p, command),
+        mcp: forcedCheck === 'managed' ? [] : mcpFor(config, p, command),
+        mcpManagedBy:
+          forcedCheck === 'managed'
+            ? macos
+              ? '/Library/Application Support/ClaudeCode/managed-mcp.json'
+              : '/etc/claude-code/managed-mcp.json'
+            : null,
         real: `${HOME}/.local/bin/${command}`,
       } satisfies FolderCheck
     }

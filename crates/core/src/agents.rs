@@ -3,6 +3,8 @@
 //! never saved (a server, a WSL distro). Nothing here branches on an agent's name: an entry is
 //! data, the same data the window writes.
 
+use std::collections::btree_map::Entry;
+
 use serde::Deserialize;
 
 use crate::config::{AgentDef, ConfigState};
@@ -29,12 +31,33 @@ pub fn known() -> Vec<KnownAgent> {
 /// `config` with each registry agent it doesn't name yet added, for callers without the window.
 /// An agent it already names keeps what it has: the window rewrites those from its own registry
 /// on every save, and a CLI a release apart from the app mustn't undo that with its older (or
-/// newer) copy.
+/// newer) copy. Except that it gains the registry's skip rules it lacks (`skipAnyArgs`,
+/// `skipSubcommands`, `skipIfPresent`): each only turns injection off for a run it would break,
+/// and without this a machine with no window would never see one a release adds.
 pub fn with_agents(mut config: ConfigState) -> ConfigState {
     for agent in known() {
-        config.agents.entry(agent.command).or_insert(agent.def);
+        match config.agents.entry(agent.command) {
+            Entry::Vacant(entry) => {
+                entry.insert(agent.def);
+            }
+            Entry::Occupied(mut entry) => {
+                if let (Some(mcp), Some(known)) = (entry.get_mut().mcp.as_mut(), agent.def.mcp) {
+                    add_missing(&mut mcp.skip_any_args, known.skip_any_args);
+                    add_missing(&mut mcp.skip_subcommands, known.skip_subcommands);
+                    add_missing(&mut mcp.skip_if_present, known.skip_if_present);
+                }
+            }
+        }
     }
     config
+}
+
+fn add_missing(ours: &mut Vec<String>, theirs: Vec<String>) {
+    for item in theirs {
+        if !ours.contains(&item) {
+            ours.push(item);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -64,6 +87,35 @@ mod tests {
             Some(McpDialect::Claude)
         );
         assert!(claude.def.ide.is_some());
+    }
+
+    /// A machine with no window keeps the agents its config names, so a skip rule a release
+    /// adds to the registry (version 5's `skipIfPresent`) would never reach it.
+    #[test]
+    fn adds_the_registrys_skip_rules_to_an_agent_already_named() {
+        let registry = known();
+        let claude = registry.iter().find(|a| a.command == "claude").unwrap();
+        let known = claude.def.mcp.as_ref().unwrap();
+        let mut old = claude.def.clone();
+        let mcp = old.mcp.as_mut().unwrap();
+        mcp.skip_if_present.clear();
+        mcp.skip_subcommands = vec!["mine".into()];
+        let config = ConfigState {
+            agents: [("claude".to_string(), old)].into(),
+            ..ConfigState::default()
+        };
+
+        let filled = with_agents(config);
+        let mcp = filled.agents["claude"].mcp.as_ref().unwrap();
+        assert_eq!(mcp.skip_if_present, known.skip_if_present);
+        assert!(mcp
+            .skip_if_present
+            .iter()
+            .any(|p| p.ends_with("managed-mcp.json")));
+        // Its own entries stay, first, and nothing is listed twice.
+        assert_eq!(mcp.skip_subcommands[0], "mine");
+        assert_eq!(mcp.skip_subcommands[1..], known.skip_subcommands[..]);
+        assert_eq!(with_agents(filled.clone()), filled);
     }
 
     #[test]

@@ -34,6 +34,10 @@ pub struct Launch {
     /// A run whose first argument is one of these subcommands gets no injection.
     #[serde(default)]
     pub skip_subcommands: Vec<String>,
+    /// While any of these files exists, no run gets injection: the agent refuses servers given
+    /// at launch then.
+    #[serde(default)]
+    pub skip_if_present: Vec<String>,
     #[serde(default)]
     pub servers: Vec<LaunchServer>,
 }
@@ -71,6 +75,15 @@ impl Launch {
             && !user_args
                 .iter()
                 .any(|arg| self.skip_any_args.iter().any(|skip| arg == skip.as_str()))
+    }
+
+    /// The first of [`Launch::skip_if_present`] that exists. Checked on every run, since a
+    /// machine can come under management after the last save.
+    pub fn managed_by(&self) -> Option<&str> {
+        self.skip_if_present
+            .iter()
+            .map(String::as_str)
+            .find(|path| Path::new(path).exists())
     }
 
     pub fn secret_ids(&self) -> BTreeSet<&str> {
@@ -153,6 +166,7 @@ pub fn render(config: &ConfigState, home: &Path) -> Vec<(PathBuf, String)> {
             let mut launch = Launch {
                 skip_any_args: injection.skip_any_args.clone(),
                 skip_subcommands: injection.skip_subcommands.clone(),
+                skip_if_present: injection.skip_if_present.clone(),
                 servers: Vec::new(),
             };
             for (name, using) in &profile.mcp_servers {
@@ -328,6 +342,7 @@ mod tests {
                 deny_arg: Some("--disallowedTools=".into()),
                 skip_any_args: vec!["--strict-mcp-config".into()],
                 skip_subcommands: vec!["plugin".into()],
+                skip_if_present: vec!["/etc/claude-code/managed-mcp.json".into()],
             }),
             ..Default::default()
         }
@@ -341,6 +356,7 @@ mod tests {
                 deny_arg: Some("--deny-tool=".into()),
                 skip_any_args: Vec::new(),
                 skip_subcommands: Vec::new(),
+                skip_if_present: Vec::new(),
             }),
             ..Default::default()
         }
@@ -470,6 +486,7 @@ mod tests {
             Launch {
                 skip_any_args: vec!["--strict-mcp-config".into()],
                 skip_subcommands: vec!["plugin".into()],
+                skip_if_present: vec!["/etc/claude-code/managed-mcp.json".into()],
                 servers: vec![
                     LaunchServer {
                         name: "github".into(),
@@ -543,6 +560,22 @@ mod tests {
         };
         assert!(launch.applies_to(&["-p".into(), "hi".into()]));
         assert!(!launch.applies_to(&["--strict-mcp-config".into()]));
+    }
+
+    #[test]
+    fn managed_by_names_the_first_skip_file_that_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let managed = dir.path().join("managed-mcp.json");
+        let launch = Launch {
+            skip_if_present: vec![
+                dir.path().join("absent.json").display().to_string(),
+                managed.display().to_string(),
+            ],
+            ..Default::default()
+        };
+        assert_eq!(launch.managed_by(), None);
+        fs::write(&managed, "{}").unwrap();
+        assert_eq!(launch.managed_by(), Some(managed.to_str().unwrap()));
     }
 
     #[test]

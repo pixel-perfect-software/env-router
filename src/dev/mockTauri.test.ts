@@ -101,7 +101,7 @@ describe('saving', () => {
     await call('save_config', { payload, secrets: {} })
     payload.profiles.pop()
     const saved = await call<ConfigState>('get_config')
-    expect(saved.version).toBe(3)
+    expect(saved.version).toBe(5)
     expect(saved.profiles).toHaveLength(count)
   })
 

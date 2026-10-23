@@ -464,6 +464,46 @@ fn skips_mcp_injection_when_asked() {
     assert!(stdout(&output).ends_with(" 1 x\n"), "{}", stdout(&output));
 }
 
+/// Claude Code exits at startup when it's given servers on a machine with an enterprise
+/// `managed-mcp.json`, so while such a file exists the run gets none, with one warning.
+#[test]
+fn skips_mcp_injection_while_a_managed_config_exists() {
+    let f = Fixture::new(Some(CONFIG));
+    let managed = f.home.join("managed-mcp.json");
+    let mut launch = fs_server();
+    launch["skipIfPresent"] = serde_json::json!([managed.display().to_string()]);
+    f.write_launch("2", &launch);
+
+    // Not there yet: servers as usual.
+    let output = f.run_with("dev/work/app", &["x"], &[]);
+    assert!(
+        stdout(&output).contains("--mcp-config=/m/fs.json"),
+        "{}",
+        stdout(&output)
+    );
+
+    fs::write(&managed, "{}").unwrap();
+    let output = f.run_with("dev/work/app", &["x"], &[]);
+    assert_eq!(
+        stdout(&output),
+        format!("{}/.claude-work 1 x\n", f.home.display())
+    );
+    assert_eq!(
+        stderr(&output),
+        format!(
+            "envrouter: {} manages this machine's MCP servers, so claude runs without the profile's.\n",
+            managed.display()
+        )
+    );
+
+    let output = f.run_with("dev/work/app", &[], &[("ENVROUTER_EXPLAIN", "1")]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let explanation: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(explanation["mcp"], serde_json::json!([]));
+    assert_eq!(explanation["mcpManagedBy"], managed.display().to_string());
+    assert_eq!(stderr(&output), "");
+}
+
 #[test]
 fn skips_mcp_injection_for_a_subcommand_that_takes_none() {
     let f = Fixture::new(Some(CONFIG));

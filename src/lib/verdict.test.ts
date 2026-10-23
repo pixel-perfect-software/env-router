@@ -68,6 +68,7 @@ describe('verdictOf', () => {
       envVar: 'CLAUDE_CONFIG_DIR',
       value: `${HOME}/.claude-work`,
       mcp: [],
+      mcpManagedBy: null,
       real: '/opt/bin/claude',
     }
     const v = verdictOf(routed, zsh(true), 'claude', true, SHIMS, HOME, `${HOME}/dev/work`)
@@ -81,7 +82,7 @@ describe('verdictOf', () => {
   })
 
   it('counts MCP servers as routing, even when the profile leaves the config alone', () => {
-    const base: FolderCheck = { status: 'routed', profile: 'Work', envVar: null, value: null, mcp: [], real: '/opt/bin/claude' }
+    const base: FolderCheck = { status: 'routed', profile: 'Work', envVar: null, value: null, mcp: [], mcpManagedBy: null, real: '/opt/bin/claude' }
     expect(verdict(base).tone).toBe('warn')
     const v = verdict({ ...base, mcp: ['github', 'linear'] })
     expect(v.tone).toBe('ok')
@@ -90,5 +91,25 @@ describe('verdictOf', () => {
       { label: 'mcp', value: 'github, linear' },
       { label: 'runs', value: '/opt/bin/claude' },
     ])
+  })
+
+  it("says the profile's MCP servers are off on a machine whose admin manages them", () => {
+    const managed = '/Library/Application Support/ClaudeCode/managed-mcp.json'
+    const base: FolderCheck = {
+      status: 'routed',
+      profile: 'Work',
+      envVar: null,
+      value: null,
+      mcp: [],
+      mcpManagedBy: managed,
+      real: '/opt/bin/claude',
+    }
+    const loose = verdict(base)
+    expect(loose.tone).toBe('warn')
+    expect(loose.note).toBe(`Work doesn't set claude, and its MCP servers are off because ${managed} manages them on this machine.`)
+    const routed = verdict({ ...base, envVar: 'CLAUDE_CONFIG_DIR', value: `${HOME}/.claude-work` })
+    expect(routed.tone).toBe('ok')
+    expect(routed.headline).toBe('Routed to Work')
+    expect(routed.note).toBe(`Work sets claude's config, but its MCP servers are off because ${managed} manages them on this machine.`)
   })
 })

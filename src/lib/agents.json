@@ -9,7 +9,8 @@
       "configArg": "--mcp-config=",
       "denyArg": "--disallowedTools=",
       "skipAnyArgs": ["--strict-mcp-config"],
-      "skipSubcommands": ["plugin"]
+      "skipSubcommands": ["plugin"],
+      "skipIfPresent": ["/Library/Application Support/ClaudeCode/managed-mcp.json", "/etc/claude-code/managed-mcp.json"]
     },
     "mcpFiles": { "userFile": ".claude.json", "defaultDir": "~", "projectFile": ".mcp.json" },
     "ide": { "setting": "claudeCode.claudeProcessWrapper", "extension": "anthropic.claude-code" }
@@ -19,7 +20,14 @@
     "label": "Copilot CLI",
     "envVar": "COPILOT_HOME",
     "defaultPath": "~/.copilot",
-    "mcp": { "dialect": "copilot", "configArg": "--additional-mcp-config=@", "denyArg": "--deny-tool=", "skipAnyArgs": [], "skipSubcommands": [] },
+    "mcp": {
+      "dialect": "copilot",
+      "configArg": "--additional-mcp-config=@",
+      "denyArg": "--deny-tool=",
+      "skipAnyArgs": [],
+      "skipSubcommands": [],
+      "skipIfPresent": []
+    },
     "mcpFiles": { "userFile": "mcp-config.json", "defaultDir": "~/.copilot", "projectFile": ".mcp.json" }
   }
 ]

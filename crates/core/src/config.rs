@@ -24,7 +24,11 @@ pub const CONFIG_FILE: &str = "config.json";
 ///
 /// 4 added the subcommands that take no injected MCP options (`agents.*.mcp.skipSubcommands`).
 /// It defaults to empty, so a version 3 file reads as is.
-pub const CONFIG_VERSION: u32 = 4;
+///
+/// 5 added the files whose presence turns injection off (`agents.*.mcp.skipIfPresent`). It
+/// defaults to empty, so a version 4 file reads as is; the window writes it on every save, and
+/// the CLI adds the registry's (`agents::with_agents`).
+pub const CONFIG_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -189,6 +193,11 @@ pub struct McpInjection {
     /// any option ahead of them (`claude plugin test`). Added in version 4.
     #[serde(default)]
     pub skip_subcommands: Vec<String>,
+    /// While any of these files exists, the agent gets no injection: it refuses MCP servers
+    /// given at launch (Claude Code exits at startup when an enterprise `managed-mcp.json` is
+    /// present). Absolute paths. Added in version 5.
+    #[serde(default)]
+    pub skip_if_present: Vec<String>,
 }
 
 /// An MCP config file format, named after the agent that defined it. Several agents can share
@@ -616,6 +625,16 @@ fn validate_agent(name: &str, agent: &AgentDef) -> Result<()> {
             "The MCP arguments for {name} must each be one option of the form --flag=."
         )));
     }
+    // A relative path would be looked up in whatever folder the agent starts in.
+    if mcp
+        .skip_if_present
+        .iter()
+        .any(|path| !Path::new(path).is_absolute())
+    {
+        return Err(Error::Invalid(format!(
+            "The files that turn MCP servers off for {name} must be absolute paths."
+        )));
+    }
     Ok(())
 }
 
@@ -711,6 +730,7 @@ mod tests {
                 deny_arg: Some("--disallowedTools=".into()),
                 skip_any_args: vec!["--strict-mcp-config".into()],
                 skip_subcommands: vec!["plugin".into()],
+                skip_if_present: Vec::new(),
             }),
             ..Default::default()
         }
@@ -778,6 +798,7 @@ mod tests {
                 "denyArg": "--disallowedTools=",
                 "skipAnyArgs": ["--strict-mcp-config"],
                 "skipSubcommands": ["plugin"],
+                "skipIfPresent": [],
             })
         );
         assert_eq!(serde_json::from_value::<ConfigState>(json).unwrap(), config);
@@ -861,6 +882,44 @@ mod tests {
         let mcp = config.agents["claude"].mcp.as_ref().unwrap();
         assert!(mcp.skip_subcommands.is_empty());
         assert_eq!(mcp.skip_any_args, ["--strict-mcp-config"]);
+    }
+
+    #[test]
+    fn load_reads_a_version_4_file_as_one_without_skip_files() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join(CONFIG_FILE),
+            r#"{ "version": 4, "profiles": [], "agents": { "claude": { "mcp": { "dialect": "claude", "configArg": "--mcp-config=", "skipSubcommands": ["plugin"] } } } }"#,
+        )
+        .unwrap();
+        let config = load(dir.path()).unwrap().unwrap();
+        let mcp = config.agents["claude"].mcp.as_ref().unwrap();
+        assert!(mcp.skip_if_present.is_empty());
+        assert_eq!(mcp.skip_subcommands, ["plugin"]);
+    }
+
+    #[test]
+    fn validate_rejects_a_relative_skip_file() {
+        let mut config = with_server(stdio("npx"), &[]);
+        let mcp = config
+            .agents
+            .get_mut("claude")
+            .unwrap()
+            .mcp
+            .as_mut()
+            .unwrap();
+        mcp.skip_if_present = vec!["/etc/claude-code/managed-mcp.json".into()];
+        validate(&config, &home()).unwrap();
+        let mcp = config
+            .agents
+            .get_mut("claude")
+            .unwrap()
+            .mcp
+            .as_mut()
+            .unwrap();
+        mcp.skip_if_present = vec!["managed-mcp.json".into()];
+        let err = validate(&config, &home()).unwrap_err().to_string();
+        assert!(err.contains("must be absolute paths"), "{err}");
     }
 
     #[test]
