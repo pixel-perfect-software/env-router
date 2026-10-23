@@ -106,7 +106,7 @@ A missing config means the tool runs silently. A broken one prints a warning and
 - **Bump `CONFIG_VERSION` in `config.rs`** for any change to the shape of `config.json`, and migrate older versions in `config::load`. The shim refuses configs from a newer version.
 
 ## Conventions
-- **pnpm only, versions in `.tool-versions`** (asdf): Node 24.21.0 and pnpm 12.14.0. `packageManager` in `package.json` repeats the pnpm version for `pnpm/action-setup` and pnpm's own version switching, so bump both together; the workflows read Node from `.tool-versions` (`node-version-file`).
+- **pnpm only, versions in `.tool-versions`** (asdf): Node 24.22.1 and pnpm 12.14.0. `packageManager` in `package.json` repeats the pnpm version for `pnpm/action-setup` and pnpm's own version switching, so bump both together; the workflows read Node from `.tool-versions` (`node-version-file`).
 - **Biome, not ESLint or Prettier:** 2-space indentation, **single quotes, no semicolons**, 150-column lines. Don't copy the double-quote/semicolon style from Tauri docs. Run `pnpm format-and-lint:fix`.
 - **Tailwind v4** through `@tailwindcss/vite`: no config file and no PostCSS; theme tokens go in `src/index.css` with `@theme`.
 - **Rust is a Cargo workspace** rooted at the repo (`crates/{build-support,cli,core,keychain,ops,shim}`, `src-tauri`), with one `target/` at the root. Use `cargo fmt --all`. Release profile settings live in the root `Cargo.toml`.
