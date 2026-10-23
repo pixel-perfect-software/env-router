@@ -289,6 +289,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write # to create the release
+      id-token: write # to sign the provenance attestations
+      attestations: write # to store them
     env:
       VERSION: ${{ needs.check.outputs.version }}
     steps:
@@ -299,12 +301,19 @@ jobs:
         with:
           path: out
           merge-multiple: true
+      - run: cd out && sha256sum -- * > SHA256SUMS
+      # A signed build provenance attestation for every asset in SHA256SUMS: it ties the file to
+      # this workflow, the tagged commit and this run. With no Developer ID or notarization, it's
+      # how a user checks a download came from here (`gh attestation verify <file> --repo
+      # pixel-perfect-software/env-router`). Made before the release, so assets are never
+      # published without one.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: out/SHA256SUMS
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          (cd out && sha256sum * > SHA256SUMS)
-          gh release create "$GITHUB_REF_NAME" out/* --verify-tag --title "EnvRouter $VERSION" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" out/* --verify-tag --title "EnvRouter $VERSION" --generate-notes
 
       # The built-in token can't write to another repository; TAP_TOKEN is a fine-grained token
       # with Contents read and write on homebrew-tap only.
