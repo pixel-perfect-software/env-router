@@ -57,6 +57,11 @@ secrets round trip through a GNOME Keyring, and a lint of the Windows secrets he
 job runs only what needs a Mac: clippy and the tests for the whole workspace, including the app
 and the Keychain. Run them before you push.
 
+Every Monday, and on demand from the Actions tab, `.github/workflows/advisories.yml` runs
+`cargo deny check advisories` and `pnpm audit --prod` against `main` and against the latest
+release, both with `main`'s `deny.toml`. A red release scan means users have a version with a
+known advisory: the fix is a release, not a change to the scan.
+
 Every action in the workflows is pinned to the full commit SHA of a release, with its version in
 a comment, and Dependabot (`.github/dependabot.yml`) opens a monthly pull request to update them.
 Keep new ones pinned the same way.

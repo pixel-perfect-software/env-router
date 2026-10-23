@@ -1,0 +1,67 @@
+name: Advisories
+
+# CI checks advisories only when a code change runs it, so a new advisory against what's
+# already shipped could go unseen for weeks. This scans every Monday, and on demand, both main
+# (what the next release ships) and the latest release (what users have installed). Both are
+# read with main's deny.toml: its targets and reasoned ignores are current, while an older
+# release's own config may predate them. A red run means a release or a dependency update is
+# due; GitHub notifies whoever last edited the schedule.
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+# Actions are pinned to the commit of a release, as in ci.yml.
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        scanned: [main, latest release]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: main
+          persist-credentials: false
+      - name: Find the latest release
+        id: ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SCANNED: ${{ matrix.scanned }}
+        run: |
+          if [ "$SCANNED" = main ]; then
+            echo "ref=main" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.ref.outputs.ref }}
+          path: scanned
+          persist-credentials: false
+      # cargo-deny reads the graph through `cargo metadata`; rustup installs the version the
+      # scanned rust-toolchain.toml pins.
+      - working-directory: scanned
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-deny@0.20.2
+      # pnpm 12 runs as a native executable, so no Node is needed to audit.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: scanned/package.json
+
+      - name: cargo deny check advisories (${{ steps.ref.outputs.ref }})
+        run: cargo deny --manifest-path scanned/Cargo.toml --config main/deny.toml --locked check advisories
+      # Production dependencies only: the window's bundle. Dev tooling never reaches users. It
+      # runs after a failed cargo-deny too, so one run reports both.
+      - name: pnpm audit --prod (${{ steps.ref.outputs.ref }})
+        if: ${{ !cancelled() }}
+        working-directory: scanned
+        run: pnpm audit --prod
