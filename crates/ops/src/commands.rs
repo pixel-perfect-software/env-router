@@ -2,7 +2,7 @@
 //! app wraps them in Tauri commands; `envrouter rpc` (the CLI) calls the same ones by name, so a
 //! window managing another machine, such as a WSL distro, gets identical answers.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use envrouter_core::config::{self, ConfigState, IdeHook, McpServer};
@@ -46,7 +46,7 @@ pub fn save_config(
     secrets: &HashMap<String, String>,
     base: Option<&ConfigState>,
 ) -> Result<SaveOutcome> {
-    save(home, payload, secrets, base, true)
+    save(home, payload, secrets, base, true, &Keychain)
 }
 
 /// [`save_config`] for the CLI: the same save, but it installs its own shim and helper only
@@ -58,7 +58,38 @@ pub fn save_config_from_cli(
     secrets: &HashMap<String, String>,
 ) -> Result<()> {
     let install = !paths::shim_binary(home).is_file();
-    save(home, payload, secrets, None, install).map(|_| ())
+    save(home, payload, secrets, None, install, &Keychain).map(|_| ())
+}
+
+/// Where a save keeps secret values: the platform's store, or a stand-in in tests, which
+/// mustn't touch the login Keychain.
+trait SecretStore {
+    /// Adds `new` and drops every secret not in `keep`.
+    fn update(
+        &self,
+        home: &Path,
+        new: &HashMap<String, String>,
+        keep: &BTreeSet<&str>,
+    ) -> Result<()>;
+    /// Drops every secret not in `keep`.
+    fn prune(&self, home: &Path, keep: &BTreeSet<&str>) -> Result<()>;
+}
+
+struct Keychain;
+
+impl SecretStore for Keychain {
+    fn update(
+        &self,
+        home: &Path,
+        new: &HashMap<String, String>,
+        keep: &BTreeSet<&str>,
+    ) -> Result<()> {
+        envrouter_keychain::update(home, new, keep)
+    }
+
+    fn prune(&self, home: &Path, keep: &BTreeSet<&str>) -> Result<()> {
+        envrouter_keychain::prune(home, keep)
+    }
 }
 
 fn save(
@@ -67,6 +98,7 @@ fn save(
     secrets: &HashMap<String, String>,
     base: Option<&ConfigState>,
     install: bool,
+    store: &impl SecretStore,
 ) -> Result<SaveOutcome> {
     let root = paths::root(home);
     let _lock = config::lock(&root)?;
@@ -91,6 +123,8 @@ fn save(
             "A new secret isn't used by any server. Save the server again.".into(),
         ));
     }
+    // Found after writing, a shim in the way would leave a saved config whose tools have none.
+    shims::check(home, payload)?;
     let fresh_shim = install && shims::install_bundled(home)?;
     // Only inside home: a typo'd absolute path shouldn't create folders elsewhere.
     for dir in config::tool_dirs(payload, home) {
@@ -98,18 +132,23 @@ fn save(
             std::fs::create_dir_all(&dir).map_err(|source| Error::Io { path: dir, source })?;
         }
     }
-    // The store is read only when this save adds a secret or stops using one.
-    let dropped = previous.is_some_and(|previous| {
-        config::secret_ids(&previous)
-            .iter()
-            .any(|id| !referenced.contains(id))
-    });
-    if !secrets.is_empty() || dropped {
-        envrouter_keychain::update(home, secrets, &referenced)?;
+    // The store is read only when this save adds a secret or stops using one. New values go
+    // in first, and every secret either config names stays until this one is written, so a
+    // failure from here on never leaves config.json naming a secret that's gone.
+    let before = previous
+        .as_ref()
+        .map(config::secret_ids)
+        .unwrap_or_default();
+    if !secrets.is_empty() {
+        let keep = referenced.union(&before).copied().collect();
+        store.update(home, secrets, &keep)?;
     }
     config::save(&root, payload)?;
     mcp::sync(payload, home)?;
     shims::sync(home, payload)?;
+    if before.iter().any(|id| !referenced.contains(id)) {
+        store.prune(home, &referenced)?;
+    }
     if fresh_shim && !referenced.is_empty() {
         shims::ask_keychain_access(home);
     }
@@ -317,14 +356,119 @@ mod tests {
         }
     }
 
-    /// The window's save, minus installing the bundled shim, which a test binary has none of.
+    /// The window's save, minus installing the bundled shim, which a test binary has none of,
+    /// and with a store that holds nothing.
     fn save_config(
         home: &Path,
         payload: &ConfigState,
         secrets: &HashMap<String, String>,
         base: Option<&ConfigState>,
     ) -> Result<SaveOutcome> {
-        save(home, payload, secrets, base, false)
+        save(home, payload, secrets, base, false, &FakeStore::default())
+    }
+
+    /// The secret store in memory, as the platform's would hold it.
+    #[derive(Default)]
+    struct FakeStore {
+        secrets: std::cell::RefCell<HashMap<String, String>>,
+    }
+
+    impl SecretStore for FakeStore {
+        fn update(
+            &self,
+            _: &Path,
+            new: &HashMap<String, String>,
+            keep: &BTreeSet<&str>,
+        ) -> Result<()> {
+            let mut secrets = self.secrets.borrow_mut();
+            secrets.retain(|id, _| keep.contains(id.as_str()));
+            secrets.extend(new.clone());
+            Ok(())
+        }
+
+        fn prune(&self, home: &Path, keep: &BTreeSet<&str>) -> Result<()> {
+            self.update(home, &HashMap::new(), keep)
+        }
+    }
+
+    /// A profile using a library server whose env names the secret `id`.
+    fn with_secret_server(config: &ConfigState, server: &str, id: &str) -> ConfigState {
+        let mut config = with_profile(config, "p1", "Work");
+        config.mcp_servers.insert(
+            server.into(),
+            McpServer::Stdio {
+                command: "npx".into(),
+                args: Vec::new(),
+                env: BTreeMap::from([(
+                    "TOKEN".into(),
+                    config::McpValue::Secret { secret: id.into() },
+                )]),
+            },
+        );
+        config.profiles[0]
+            .mcp_servers
+            .insert(server.into(), config::McpUse::default());
+        config
+    }
+
+    /// The save that replaces a server: the old one's secret is pruned only once the config
+    /// and the files rendered from it no longer name it. A failure before that (here, rendering
+    /// the MCP files) used to leave the old `launch.json` naming a secret already gone, so its
+    /// server was dropped on every launch.
+    #[test]
+    fn keeps_a_dropped_secret_until_the_config_without_it_is_written() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let store = FakeStore::default();
+        let empty = get_config(home).unwrap();
+        let old = with_secret_server(&empty, "github", "7F3A");
+        let new_value = HashMap::from([("7F3A".to_string(), "ghp_old".to_string())]);
+        save(home, &old, &new_value, None, false, &store).unwrap();
+
+        let new = with_secret_server(&empty, "linear", "9B2C");
+        let new_value = HashMap::from([("9B2C".to_string(), "lin_new".to_string())]);
+        // Rendering MCP files fails after config.json is written: a file where the folder goes.
+        std::fs::write(paths::mcp(home), "").unwrap();
+        assert!(save(home, &new, &new_value, Some(&old), false, &store).is_err());
+        assert_eq!(
+            store.secrets.borrow().get("7F3A").map(String::as_str),
+            Some("ghp_old")
+        );
+        assert_eq!(
+            store.secrets.borrow().get("9B2C").map(String::as_str),
+            Some("lin_new")
+        );
+
+        // Once a save gets through, the secret nothing names is gone.
+        std::fs::remove_file(paths::mcp(home)).unwrap();
+        save(home, &new, &HashMap::new(), None, false, &store).unwrap();
+        assert_eq!(get_config(home).unwrap(), new);
+        // The previous save wrote `new`, so this one drops nothing; the next drop prunes.
+        save(home, &empty, &HashMap::new(), None, false, &store).unwrap();
+        assert!(store.secrets.borrow().is_empty());
+    }
+
+    /// The store isn't touched and config.json isn't written when a shim can't be made.
+    #[test]
+    fn refuses_a_save_whose_shim_is_in_the_way_before_writing_anything() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let store = FakeStore::default();
+        let empty = get_config(home).unwrap();
+        let shims = paths::shims(home);
+        std::fs::create_dir_all(&shims).unwrap();
+        std::fs::write(shims.join("claude"), "#!/bin/sh\n").unwrap();
+        let mut config = with_secret_server(&empty, "github", "7F3A");
+        config.agents = envrouter_core::agents::with_agents(ConfigState::default()).agents;
+        let value = HashMap::from([("7F3A".to_string(), "ghp_x".to_string())]);
+
+        let err = save(home, &config, &value, Some(&empty), false, &store).unwrap_err();
+        assert!(
+            err.to_string().contains("wasn't made by EnvRouter"),
+            "{err}"
+        );
+        assert!(store.secrets.borrow().is_empty());
+        assert_eq!(get_config(home).unwrap(), empty);
     }
 
     fn with_profile(config: &ConfigState, id: &str, name: &str) -> ConfigState {
