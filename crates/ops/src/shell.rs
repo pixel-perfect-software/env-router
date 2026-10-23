@@ -123,12 +123,12 @@ impl Shell {
             // `check_folder` runs this as a script file, not with `-c`: only a script's
             // commands run at the shell's top level, and direnv's hook does nothing elsewhere.
             Shell::Zsh => format!(
-                "print -r -- \"{STARTUP_PATH}$PATH\"; for __envrouter_hook in chpwd $chpwd_functions precmd $precmd_functions; do (( $+functions[$__envrouter_hook] )) && $__envrouter_hook >/dev/null; done; print -r -- \"{KIND}$(whence -w -- {tool})\"; print -r -- \"{ORIGIN}$(whence -v -- {tool})\"; print -r -- \"{PATH_MARK}$PATH\""
+                "print -r -- \"{STARTUP_PATH}$PATH\"; for __envrouter_hook in chpwd $chpwd_functions precmd $precmd_functions; do (( $+functions[$__envrouter_hook] )) && $__envrouter_hook >/dev/null; done; print -r -- \"{KIND}$(whence -w -- {tool})\"; print -r -- \"{ORIGIN}$(whence -v -- {tool})\"; print -r -- \"{ALIAS}${{aliases[{tool}]}}\"; print -r -- \"{PATH_MARK}$PATH\""
             ),
             // PROMPT_COMMAND is a string, or an array from bash 5.1; `[@]` reads both. With
             // extdebug, `declare -F` prints "claude 12 /Users/me/.bashrc".
             Shell::Bash => format!(
-                "printf '%s\\n' \"{STARTUP_PATH}$PATH\"; for __envrouter_hook in \"${{PROMPT_COMMAND[@]}}\"; do eval \"$__envrouter_hook\" >/dev/null; done; printf '%s\\n' \"{KIND}$(type -t -- {tool})\" \"{ORIGIN}$(shopt -s extdebug; declare -F -- {tool} 2>/dev/null)\" \"{PATH_MARK}$PATH\""
+                "printf '%s\\n' \"{STARTUP_PATH}$PATH\"; for __envrouter_hook in \"${{PROMPT_COMMAND[@]}}\"; do eval \"$__envrouter_hook\" >/dev/null; done; printf '%s\\n' \"{KIND}$(type -t -- {tool})\" \"{ORIGIN}$(shopt -s extdebug; declare -F -- {tool} 2>/dev/null)\" \"{ALIAS}$(alias -- {tool} 2>/dev/null)\" \"{PATH_MARK}$PATH\""
             ),
             // Prompt hooks are `--on-event fish_prompt` functions. An empty command
             // substitution would drop the whole argument in fish, so each value goes through
@@ -137,6 +137,18 @@ impl Shell {
                 "set -l startup (string join : $PATH); emit fish_prompt >/dev/null; set -l kind (type -t {tool} 2>/dev/null); set -l origin (functions --details {tool} 2>/dev/null); printf '%s\\n' \"{STARTUP_PATH}$startup\" \"{KIND}$kind\" \"{ORIGIN}$origin\" \"{PATH_MARK}\"(string join : $PATH)"
             ),
         }
+    }
+
+    /// What an alias named `tool` expands to, from the probe's alias line: zsh prints the
+    /// text, bash its definition (`alias claude='claude --model opus'`). fish's aliases are
+    /// functions, which a check can't see through.
+    fn alias_expansion(self, line: &str, tool: &str) -> Option<String> {
+        match self {
+            Shell::Zsh => Some(line.to_string()),
+            Shell::Bash => unquote(line.strip_prefix(&format!("alias {tool}="))?),
+            Shell::Fish => None,
+        }
+        .filter(|expansion| !expansion.is_empty())
     }
 
     /// The file named in this shell's origin line, if it names one.
@@ -374,6 +386,8 @@ fn block_range(text: &str) -> Option<(usize, usize)> {
 const KIND: &str = "__ENVROUTER_KIND__=";
 const PATH_MARK: &str = "__ENVROUTER_PATH__=";
 const ORIGIN: &str = "__ENVROUTER_ORIGIN__=";
+/// What an alias with the tool's name expands to.
+const ALIAS: &str = "__ENVROUTER_ALIAS__=";
 /// PATH as the startup files left it, before any prompt hook ran.
 const STARTUP_PATH: &str = "__ENVROUTER_STARTUP_PATH__=";
 const ZDOTDIR_MARK: &str = "__ENVROUTER_ZDOTDIR__=";
@@ -396,6 +410,9 @@ pub enum FolderCheck {
         /// A file that turns the profile's MCP servers off on this machine, such as Claude
         /// Code's enterprise `managed-mcp.json`. `mcp` is empty then.
         mcp_managed_by: Option<String>,
+        /// The run goes through an alias with the tool's name that runs the tool itself, as
+        /// `alias claude='claude --model opus'` does: what it expands to.
+        via_alias: Option<String>,
         real: String,
     },
     /// An alias or function with the tool's name runs instead of anything on PATH.
@@ -531,7 +548,14 @@ pub fn check_folder(shell: Shell, home: &Path, folder: &Path, tool: &str) -> Res
     };
     // zsh says "claude: function"; bash and fish say "function".
     let kind = kind.rsplit(": ").next().unwrap_or(kind);
+    // An alias that runs the tool itself, adding arguments, still goes through PATH. Read from
+    // its text, never run: an alias or function can run anything, the real tool included.
+    let alias = (kind == "alias")
+        .then(|| field(ALIAS).and_then(|line| shell.alias_expansion(line, tool)))
+        .flatten()
+        .and_then(|expansion| alias_args(&expansion, tool).map(|args| (expansion, args)));
     match kind {
+        "alias" if alias.is_some() => {}
         "alias" | "function" | "builtin" | "keyword" | "reserved" => {
             return Ok(FolderCheck::ShadowedByShell {
                 kind: kind.into(),
@@ -558,6 +582,10 @@ pub fn check_folder(shell: Shell, home: &Path, folder: &Path, tool: &str) -> Res
     }
 
     let mut explain = Command::new(&first);
+    // The alias's own arguments, so one like `--strict-mcp-config` is accounted for.
+    if let Some((_, args)) = &alias {
+        explain.args(args);
+    }
     explain
         .current_dir(folder)
         .env("HOME", home)
@@ -584,8 +612,41 @@ pub fn check_folder(shell: Shell, home: &Path, folder: &Path, tool: &str) -> Res
         value: explanation.value,
         mcp: explanation.mcp,
         mcp_managed_by: explanation.mcp_managed_by,
+        via_alias: alias.map(|(expansion, _)| expansion),
         real: explanation.real,
     })
+}
+
+/// The arguments an alias adds when it runs `tool` itself (`claude --model opus`, or
+/// `command claude …`), so the run still reaches PATH. `None` when it runs anything else.
+/// Words are split on whitespace: close enough to tell whether a flag is among them.
+fn alias_args(expansion: &str, tool: &str) -> Option<Vec<String>> {
+    let mut words = expansion.split_whitespace();
+    let mut first = words.next()?;
+    if first == "command" {
+        first = words.next()?;
+    }
+    (first == tool).then(|| words.map(str::to_string).collect())
+}
+
+/// One shell word as bash's `alias` prints it: single-quoted, with a quote inside written as
+/// `'\''`.
+fn unquote(word: &str) -> Option<String> {
+    let mut out = String::new();
+    let mut chars = word.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' => loop {
+                match chars.next()? {
+                    '\'' => break,
+                    c => out.push(c),
+                }
+            },
+            '\\' => out.push(chars.next()?),
+            c => out.push(c),
+        }
+    }
+    Some(out)
 }
 
 /// What the app would route for `tool` in `folder`, from the config alone. Instant, and
@@ -764,9 +825,10 @@ mod tests {
                 value: Some("/x".into()),
                 mcp: vec!["github".into()],
                 mcp_managed_by: None,
+                via_alias: Some("t -v".into()),
                 real: "/bin/t".into(),
             }),
-            r#"{"status":"routed","profile":null,"envVar":"V","value":"/x","mcp":["github"],"mcpManagedBy":null,"real":"/bin/t"}"#
+            r#"{"status":"routed","profile":null,"envVar":"V","value":"/x","mcp":["github"],"mcpManagedBy":null,"viaAlias":"t -v","real":"/bin/t"}"#
         );
         assert_eq!(
             json(&Preview {
@@ -1060,6 +1122,7 @@ mod tests {
                 value: Some(home.join(".claude-work").display().to_string()),
                 mcp: Vec::new(),
                 mcp_managed_by: None,
+                via_alias: None,
                 real: home.join("bin/claude").display().to_string(),
             }
         );
@@ -1073,6 +1136,80 @@ mod tests {
                 origin: Some(home.join(".zshrc").display().to_string()),
             }
         );
+    }
+
+    /// `alias claude='claude --model opus'` still runs the shim, through PATH: it used to be
+    /// reported as blocked. An alias that runs something else still is.
+    #[test]
+    fn check_folder_sees_through_an_alias_that_runs_the_tool() {
+        if missing(Shell::Zsh) {
+            return;
+        }
+        let (_root, home) = zsh_home("alias claude='claude --model opus'\n");
+        set_integration(Shell::Zsh, &home, true).unwrap();
+        assert!(
+            matches!(
+                check(&home),
+                FolderCheck::Routed { ref profile, ref via_alias, .. }
+                    if profile.as_deref() == Some("Work") && via_alias.as_deref() == Some("claude --model opus")
+            ),
+            "{:?}",
+            check(&home)
+        );
+
+        let (_root, home) = zsh_home("alias claude='echo mine'\n");
+        set_integration(Shell::Zsh, &home, true).unwrap();
+        assert!(
+            matches!(check(&home), FolderCheck::ShadowedByShell { ref kind, .. } if kind == "alias"),
+            "{:?}",
+            check(&home)
+        );
+
+        if missing(Shell::Bash) {
+            return;
+        }
+        let (_root, home) = zsh_home("");
+        let profile = first_bash_file(&home);
+        fs::write(
+            &profile,
+            "export PATH=\"$HOME/bin:$PATH\"\nalias claude='command claude --append-system-prompt '\\''be brief'\\'''\n",
+        )
+        .unwrap();
+        set_integration(Shell::Bash, &home, true).unwrap();
+        let check = check_folder(Shell::Bash, &home, &home.join("work/app"), "claude").unwrap();
+        assert!(
+            matches!(
+                check,
+                FolderCheck::Routed { ref via_alias, .. }
+                    if via_alias.as_deref() == Some("command claude --append-system-prompt 'be brief'")
+            ),
+            "{check:?}"
+        );
+    }
+
+    #[test]
+    fn reads_the_arguments_an_alias_adds_to_the_tool() {
+        assert_eq!(
+            alias_args("claude --model opus", "claude").unwrap(),
+            ["--model", "opus"]
+        );
+        assert_eq!(
+            alias_args("command claude", "claude").unwrap(),
+            Vec::<String>::new()
+        );
+        assert_eq!(alias_args("npx claude", "claude"), None);
+        assert_eq!(alias_args("claudex", "claude"), None);
+        assert_eq!(
+            unquote(r"'claude --x='\''q'\'' -y'").as_deref(),
+            Some("claude --x='q' -y")
+        );
+        assert_eq!(
+            Shell::Bash
+                .alias_expansion("alias claude='claude -c'", "claude")
+                .as_deref(),
+            Some("claude -c")
+        );
+        assert_eq!(Shell::Zsh.alias_expansion("", "claude"), None);
     }
 
     /// mise and direnv change PATH from a prompt hook, after every startup file has run. Like

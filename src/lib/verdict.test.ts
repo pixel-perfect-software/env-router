@@ -69,6 +69,7 @@ describe('verdictOf', () => {
       value: `${HOME}/.claude-work`,
       mcp: [],
       mcpManagedBy: null,
+      viaAlias: null,
       real: '/opt/bin/claude',
     }
     const v = verdictOf(routed, zsh(true), 'claude', true, SHIMS, HOME, `${HOME}/dev/work`)
@@ -82,7 +83,16 @@ describe('verdictOf', () => {
   })
 
   it('counts MCP servers as routing, even when the profile leaves the config alone', () => {
-    const base: FolderCheck = { status: 'routed', profile: 'Work', envVar: null, value: null, mcp: [], mcpManagedBy: null, real: '/opt/bin/claude' }
+    const base: FolderCheck = {
+      status: 'routed',
+      profile: 'Work',
+      envVar: null,
+      value: null,
+      mcp: [],
+      mcpManagedBy: null,
+      viaAlias: null,
+      real: '/opt/bin/claude',
+    }
     expect(verdict(base).tone).toBe('warn')
     const v = verdict({ ...base, mcp: ['github', 'linear'] })
     expect(v.tone).toBe('ok')
@@ -91,6 +101,22 @@ describe('verdictOf', () => {
       { label: 'mcp', value: 'github, linear' },
       { label: 'runs', value: '/opt/bin/claude' },
     ])
+  })
+
+  it('names an alias the run goes through on its way to the shim', () => {
+    const v = verdict({
+      status: 'routed',
+      profile: 'Work',
+      envVar: 'CLAUDE_CONFIG_DIR',
+      value: `${HOME}/.claude-work`,
+      mcp: [],
+      mcpManagedBy: null,
+      viaAlias: 'claude --model opus',
+      real: '/opt/bin/claude',
+    })
+    expect(v.tone).toBe('ok')
+    expect(v.headline).toBe('Routed to Work')
+    expect(v.values).toContainEqual({ label: 'alias', value: 'claude --model opus' })
   })
 
   it("says the profile's MCP servers are off on a machine whose admin manages them", () => {
@@ -102,6 +128,7 @@ describe('verdictOf', () => {
       value: null,
       mcp: [],
       mcpManagedBy: managed,
+      viaAlias: null,
       real: '/opt/bin/claude',
     }
     const loose = verdict(base)

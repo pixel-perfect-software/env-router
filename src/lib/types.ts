@@ -178,6 +178,8 @@ export type FolderCheck =
       mcp: string[]
       /** A file that turns the profile's MCP servers off on this machine, such as Claude Code's `managed-mcp.json`. `mcp` is empty then. */
       mcpManagedBy: string | null
+      /** The run goes through an alias with the tool's name that runs the tool itself (`alias claude='claude --model opus'`): what it expands to. */
+      viaAlias: string | null
       real: string
     }
   /** An alias or function with the tool's name runs before PATH is searched. `origin`: the file defining it, when the shell can say. */
