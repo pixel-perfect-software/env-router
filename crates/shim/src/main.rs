@@ -16,12 +16,14 @@ use std::collections::HashMap;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs;
+use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
+use std::sync::mpsc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use envrouter_core::config::ConfigState;
 use envrouter_core::mcp::{self, Launch};
@@ -119,7 +121,8 @@ fn main() -> ExitCode {
             "value": value,
             "mcp": servers,
             "mcpManagedBy": managed_by,
-            "real": real,
+            // A path that isn't UTF-8 can't go in JSON as is, and failing here would abort.
+            "real": real.to_string_lossy(),
         });
         println!("{explanation}");
         return ExitCode::SUCCESS;
@@ -238,25 +241,36 @@ fn read_secrets(home: &Path, ids: &[&str]) -> Result<HashMap<String, String>, St
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|err| format!("couldn't start {}: {err}", helper.display()))?;
-    let deadline = Instant::now() + KEYCHAIN_TIMEOUT;
-    while child.try_wait().map_err(|err| err.to_string())?.is_none() {
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(format!(
-                "the {} didn't answer within 20 seconds",
-                Platform::current().secret_store_name()
-            ));
-        }
-        thread::sleep(Duration::from_millis(5));
+    // Both pipes are read while the helper runs: an answer bigger than a pipe's buffer would
+    // otherwise block the helper on its write until the deadline.
+    let stdout = child.stdout.take().expect("stdout is piped");
+    let stderr = child.stderr.take().expect("stderr is piped");
+    let errors = thread::spawn(move || read_all(stderr));
+    let (sender, answer) = mpsc::channel();
+    thread::spawn(move || sender.send(read_all(stdout)));
+    // The pipe closes when the helper exits.
+    let Ok(stdout) = answer.recv_timeout(KEYCHAIN_TIMEOUT) else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!(
+            "the {} didn't answer within 20 seconds",
+            Platform::current().secret_store_name()
+        ));
+    };
+    let status = child.wait().map_err(|err| err.to_string())?;
+    if !status.success() {
+        let errors = errors.join().unwrap_or_default();
+        return Err(String::from_utf8_lossy(&errors).trim().to_string());
     }
-    // The answer is one short line, well inside a pipe's buffer, so waiting first can't stall.
-    let output = child.wait_with_output().map_err(|err| err.to_string())?;
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
-    }
-    serde_json::from_slice(&output.stdout)
+    serde_json::from_slice(&stdout)
         .map_err(|err| format!("the secrets helper's answer was unreadable: {err}"))
+}
+
+/// Everything until the pipe closes. A failed read keeps what came before it.
+fn read_all(mut pipe: impl Read) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let _ = pipe.read_to_end(&mut bytes);
+    bytes
 }
 
 /// One line on stderr: what went wrong, then what the shim does about it.
