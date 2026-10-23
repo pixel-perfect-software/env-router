@@ -96,6 +96,20 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read # to pull the image
+    # The packages the Linux jobs need are in this image (.github/ci/Containerfile), so no job
+    # waits on Ubuntu's mirror. ci-image.yml builds it and prints the digest to pin, here, in
+    # app-linux and in release.yml.
+    container:
+      image: ghcr.io/pixel-perfect-software/envrouter-ci@sha256:1b639186db92d6dd43fe1dc81af93002f9180666150941bb4c45ae379c759658
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+      # An init as PID 1 reaps orphans, as launchd or systemd would; GitHub's own PID 1 doesn't,
+      # so a process the tests kill would linger as a zombie (mcp_probe's stop test).
+      options: --init
     env:
       # The shell tests skip a shell that isn't installed; here a missing one fails the run.
       ENVROUTER_REQUIRE_SHELLS: 1
@@ -103,10 +117,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Retries a slow mirror instead of waiting on it (see the script). Only the x86_64 mingw
-      # compiler, to link the Windows helper, as the release does.
-      - run: sh .github/scripts/apt-install.sh zsh fish gnome-keyring dbus gcc-mingw-w64-x86-64
-        timeout-minutes: 13
       - run: rustup show active-toolchain || rustup toolchain install
       - run: rustup target add x86_64-pc-windows-gnu
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -126,18 +136,24 @@ jobs:
       - run: cargo build --locked -p envrouter-keychain --target x86_64-pc-windows-gnu
 
   # The desktop app crate on Linux: tauri.linux.conf.json, GTK and WebKitGTK, which only the
-  # release built before. On 22.04, where the release builds, with the packages compiling it needs.
+  # release built before. In the image the release builds in.
   app-linux:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read # to pull the image
+    container:
+      image: ghcr.io/pixel-perfect-software/envrouter-ci@sha256:1b639186db92d6dd43fe1dc81af93002f9180666150941bb4c45ae379c759658
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: sh .github/scripts/apt-install.sh libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
-        timeout-minutes: 13
       - run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
