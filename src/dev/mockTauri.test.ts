@@ -115,6 +115,13 @@ describe('saving', () => {
     await expect(call('save_config', { payload: withTrigger('dev'), secrets: {} })).rejects.toBe(
       'Trigger path "dev" must be absolute or start with ~.',
     )
+    const twin = { ...config.profiles[1], id: config.profiles[0].id, triggerPaths: [] }
+    await expect(call('save_config', { payload: { ...config, profiles: [config.profiles[0], twin] }, secrets: {} })).rejects.toBe(
+      `Profiles "${config.profiles[0].name}" and "${twin.name}" both have the id "${twin.id}". Give each its own id in config.json.`,
+    )
+    await expect(call('save_config', { payload: { ...config, profiles: [{ ...twin, id: '' }] }, secrets: {} })).rejects.toBe(
+      `Profile "${twin.name}" has no id. Give it one in config.json.`,
+    )
     await expect(call('save_config', { payload: config, secrets: { ABCD: 'x' } })).rejects.toBe(
       "A new secret isn't used by any server. Save the server again.",
     )
