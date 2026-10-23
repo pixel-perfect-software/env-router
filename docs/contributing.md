@@ -81,7 +81,7 @@ as an advisory lands.
 
 `dev/containers/compose.yaml` runs the Linux and Windows checks in containers, with Podman or
 Docker. Everything is grouped under the project `envrouter-dev`; the checkout is mounted
-read-only, and builds persist in named volumes.
+read-only, and builds persist in named volumes. A change to `dev/containers/` builds both images in CI (`.github/workflows/dev-containers.yml`).
 
 ```sh
 podman compose -f dev/containers/compose.yaml run --rm linux-test            # backend tests, keyring round trip
