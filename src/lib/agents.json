@@ -9,7 +9,7 @@
       "configArg": "--mcp-config=",
       "denyArg": "--disallowedTools=",
       "skipAnyArgs": ["--strict-mcp-config"],
-      "skipSubcommands": ["plugin"],
+      "skipSubcommands": ["attach", "daemon", "kill", "logs", "plugin", "plugins", "remote-control", "respawn", "rm", "self-hosted-runner", "stop"],
       "skipIfPresent": ["/Library/Application Support/ClaudeCode/managed-mcp.json", "/etc/claude-code/managed-mcp.json"]
     },
     "mcpFiles": { "userFile": ".claude.json", "defaultDir": "~", "projectFile": ".mcp.json" },
