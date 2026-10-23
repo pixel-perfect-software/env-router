@@ -127,7 +127,16 @@ current itself. Without Homebrew, unpack `envrouter-cli-<version>-<target>.tar.g
 and run `./envrouter install` from that folder.
 
 Every release comes with `SHA256SUMS`; `sha256sum -c SHA256SUMS --ignore-missing` checks the
-files you downloaded.
+files you downloaded. From 0.7.1 on, every file also has a signed build provenance attestation,
+which ties it to the release workflow run and the tagged commit that built it. With the
+[GitHub CLI](https://cli.github.com):
+
+```sh
+gh attestation verify envrouter-cli-<version>-<target>.tar.gz --repo pixel-perfect-software/env-router \
+  --signer-workflow pixel-perfect-software/env-router/.github/workflows/release.yml
+```
+
+`--signer-workflow` accepts only files built by the release workflow.
 
 The cask and formula come from [pixel-perfect-software/homebrew-tap](https://github.com/pixel-perfect-software/homebrew-tap).
 Every build in a release comes from its tagged source, built by this repository's
