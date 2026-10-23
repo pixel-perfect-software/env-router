@@ -4,8 +4,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File};
-use std::io::{ErrorKind, Write};
+use std::io::{self, ErrorKind, Write};
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use serde::{Deserialize, Serialize};
 
@@ -327,30 +328,55 @@ fn write_through_temp(path: &Path, contents: &[u8], mode: Option<u32>) -> Result
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).map_err(io_err)?;
     }
-    let mut tmp = path.as_os_str().to_owned();
-    tmp.push(".envrouter-tmp");
-    let mut options = File::options();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    if let Some(mode) = mode {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(mode);
-    }
-    let mut file = options.open(&tmp).map_err(io_err)?;
-    file.write_all(contents).map_err(io_err)?;
-    file.sync_all().map_err(io_err)?;
-    drop(file);
-    match (mode, fs::metadata(path)) {
-        // A stale temp file from a crash keeps its old mode through `open`, so set it again.
-        #[cfg(unix)]
-        (Some(mode), _) => {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&tmp, fs::Permissions::from_mode(mode)).map_err(io_err)?;
+    let (tmp, mut file) = create_temp(path, mode).map_err(io_err)?;
+    let written = (|| {
+        file.write_all(contents)?;
+        file.sync_all()?;
+        drop(file);
+        match (mode, fs::metadata(path)) {
+            // The process umask applies at creation, so set the mode exactly.
+            #[cfg(unix)]
+            (Some(mode), _) => {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&tmp, fs::Permissions::from_mode(mode))?;
+            }
+            (_, Ok(meta)) => fs::set_permissions(&tmp, meta.permissions())?,
+            _ => {}
         }
-        (_, Ok(meta)) => fs::set_permissions(&tmp, meta.permissions()).map_err(io_err)?,
-        _ => {}
+        fs::rename(&tmp, path)
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&tmp);
     }
-    fs::rename(&tmp, path).map_err(io_err)
+    written.map_err(io_err)
+}
+
+/// A new file beside `path` that no other writer can have open. With one fixed temp name, the
+/// CLI's `install` and the app's could share a file: the second `O_TRUNC` cut the first's
+/// half-written shim, and a truncated shim breaks every agent launch.
+fn create_temp(path: &Path, mode: Option<u32>) -> io::Result<(PathBuf, File)> {
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+    loop {
+        let mut tmp = path.as_os_str().to_owned();
+        tmp.push(format!(
+            ".envrouter-tmp.{}.{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let mut options = File::options();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        if let Some(mode) = mode {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(mode);
+        }
+        match options.open(&tmp) {
+            Ok(file) => return Ok((tmp.into(), file)),
+            // Left by a crash of a process that had this id.
+            Err(err) if err.kind() == ErrorKind::AlreadyExists => {}
+            Err(err) => return Err(err),
+        }
+    }
 }
 
 /// The ids of every Keychain secret the server library refers to.
@@ -1148,6 +1174,53 @@ mod tests {
             fs::read_to_string(dir.path().join(CONFIG_FILE)).unwrap(),
             "{ not json"
         );
+    }
+
+    /// Writers racing on one file (the CLI's `install` and the app's both writing the shim)
+    /// each leave a whole file. With one shared temp name, a second writer's truncation cut the
+    /// first's contents, and the rename installed what was left.
+    #[test]
+    fn write_atomic_from_racing_writers_leaves_one_whole_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("envrouter-shim");
+        let writers: Vec<_> = (0..8u8)
+            .map(|n| {
+                let file = file.clone();
+                std::thread::spawn(move || {
+                    let contents = vec![b'a' + n; 1 << 20];
+                    for _ in 0..20 {
+                        write_atomic(&file, &contents).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for writer in writers {
+            writer.join().unwrap();
+        }
+        let written = fs::read(&file).unwrap();
+        assert_eq!(written.len(), 1 << 20);
+        assert!(written.iter().all(|&b| b == written[0]));
+        // No temp file is left behind.
+        let names: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["envrouter-shim"]);
+    }
+
+    #[test]
+    fn write_atomic_removes_its_temp_file_when_the_rename_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        // A folder where the file should go: the rename fails.
+        let target = dir.path().join("taken");
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("inside"), "").unwrap();
+        assert!(write_atomic(&target, "new").is_err());
+        let names: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["taken"]);
     }
 
     #[cfg(unix)]
