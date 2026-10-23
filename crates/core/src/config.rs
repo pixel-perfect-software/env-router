@@ -275,7 +275,26 @@ pub fn load_or_init(dir: &Path) -> Result<ConfigState> {
 pub fn save(dir: &Path, config: &ConfigState) -> Result<()> {
     let json =
         serde_json::to_string_pretty(&as_saved(config)).expect("ConfigState always serializes");
-    write_atomic(&dir.join(CONFIG_FILE), format!("{json}\n"))
+    let file = dir.join(CONFIG_FILE);
+    let Some(target) = write_target(&file) else {
+        return Err(Error::Invalid(format!(
+            "{} links to a file that doesn't exist. Fix the link, then save again.",
+            file.display()
+        )));
+    };
+    write_atomic(&target, format!("{json}\n"))
+}
+
+/// Where a write to `file` lands: through symlinks, so a file kept in a dotfiles repository
+/// and linked into place stays a link (the rename in [`write_atomic`] would replace the link
+/// itself). `None` for a link whose target is missing, say dotfiles on a volume that isn't
+/// mounted: writing would replace the link with a new file, so the caller refuses.
+pub fn write_target(file: &Path) -> Option<PathBuf> {
+    match fs::canonicalize(file) {
+        Ok(target) => Some(target),
+        Err(_) if fs::symlink_metadata(file).is_ok_and(|meta| meta.is_symlink()) => None,
+        Err(_) => Some(file.to_path_buf()),
+    }
 }
 
 /// `config` as [`save`] writes it: at the current version.
@@ -847,6 +866,39 @@ mod tests {
         ] {
             assert!(!hook.is_installed_copy(name), "{name}");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_writes_through_a_linked_config_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("dotfiles/envrouter.json");
+        fs::create_dir_all(real.parent().unwrap()).unwrap();
+        fs::write(&real, "{}").unwrap();
+        let link = dir.path().join(CONFIG_FILE);
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        save(dir.path(), &ConfigState::default()).unwrap();
+        assert!(fs::symlink_metadata(&link).unwrap().is_symlink());
+        assert_eq!(load(dir.path()).unwrap(), Some(ConfigState::default()));
+        assert!(fs::read_to_string(&real).unwrap().contains("\"version\""));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_refuses_a_link_to_a_missing_config_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join(CONFIG_FILE);
+        std::os::unix::fs::symlink(dir.path().join("unmounted/envrouter.json"), &link).unwrap();
+
+        let err = save(dir.path(), &ConfigState::default()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("links to a file that doesn't exist"),
+            "{err}"
+        );
+        assert!(fs::symlink_metadata(&link).unwrap().is_symlink());
+        assert!(!dir.path().join("unmounted").exists());
     }
 
     #[test]

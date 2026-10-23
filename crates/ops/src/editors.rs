@@ -161,9 +161,17 @@ pub fn set_integration(
     hook: &IdeHook,
     enabled: bool,
 ) -> Result<EditorStatus> {
-    let file = editor.settings_file(home);
-    // Write through symlinks, so a dotfiles-managed file stays a link.
-    let file = fs::canonicalize(&file).unwrap_or(file);
+    let link = editor.settings_file(home);
+    let Some(file) = config::write_target(&link) else {
+        if !enabled {
+            return Ok(status(editor, home, command, hook)); // Nothing to clear.
+        }
+        return Err(Error::Invalid(format!(
+            "{} links to a file that doesn't exist. Fix the link, then turn {} on again.",
+            link.display(),
+            editor.label()
+        )));
+    };
     let current = match fs::read_to_string(&file) {
         Ok(text) => text,
         Err(err) if err.kind() == ErrorKind::NotFound => {
@@ -442,5 +450,28 @@ mod tests {
         set_integration(Editor::Code, home, "claude", &hook(), true).unwrap();
         assert!(fs::symlink_metadata(&link).unwrap().is_symlink());
         assert!(fs::read_to_string(&real).unwrap().contains(KEY));
+    }
+
+    /// `envrouter editor on code` replaced a link to dotfiles that weren't there with a new
+    /// file, since a failed `canonicalize` fell back to the link's own path.
+    #[test]
+    fn leaves_a_link_to_a_missing_settings_file_alone() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let link = Editor::Code.settings_file(home);
+        fs::create_dir_all(link.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(home.join("unmounted/settings.json"), &link).unwrap();
+
+        let err = set_integration(Editor::Code, home, "claude", &hook(), true).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("links to a file that doesn't exist"),
+            "{err}"
+        );
+        assert!(fs::symlink_metadata(&link).unwrap().is_symlink());
+        // Turning it off has nothing to clear, so it isn't an error.
+        set_integration(Editor::Code, home, "claude", &hook(), false).unwrap();
+        assert!(fs::symlink_metadata(&link).unwrap().is_symlink());
+        assert!(!home.join("unmounted").exists());
     }
 }

@@ -291,22 +291,15 @@ pub fn set_integration(shell: Shell, home: &Path, enabled: bool) -> Result<Shell
         })?;
     }
     for file in shell.startup_files(home) {
-        // Write through symlinks, so a dotfiles-managed file stays a link.
-        let file = match fs::canonicalize(&file) {
-            Ok(target) => target,
-            // A link to a file that's missing, say dotfiles on a volume that isn't mounted.
-            // Writing would replace the link with a new file, so leave it for the user to fix.
-            Err(_) if fs::symlink_metadata(&file).is_ok_and(|meta| meta.is_symlink()) => {
-                if !enabled {
-                    continue; // No block to remove from a file that isn't there.
-                }
-                return Err(Error::Invalid(format!(
-                    "{} links to a file that doesn't exist. Fix the link, then turn {} on again.",
-                    file.display(),
-                    shell.name()
-                )));
+        let Some(file) = config::write_target(&file) else {
+            if !enabled {
+                continue; // No block to remove from a file that isn't there.
             }
-            Err(_) => file,
+            return Err(Error::Invalid(format!(
+                "{} links to a file that doesn't exist. Fix the link, then turn {} on again.",
+                file.display(),
+                shell.name()
+            )));
         };
         let current = match fs::read_to_string(&file) {
             Ok(text) => text,
