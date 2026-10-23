@@ -35,6 +35,12 @@ export const saveConfig = (payload: ConfigState, secrets: Record<string, string>
 
 export const getSetupStatus = () => invoke<SetupStatus>('get_setup_status')
 
+/** Tells the app whether the window holds unsaved edits, so quitting asks first. Also the answer "keep editing" to a quit. */
+export const setUnsavedEdits = (unsaved: boolean) => invoke<void>('set_unsaved_edits', { unsaved })
+
+/** Quits without saving, once the user has said so. */
+export const quitApp = () => invoke<void>('quit_app')
+
 /** Adds or removes EnvRouter's block in the shell's startup files. */
 export const setShellIntegration = (shell: Shell, enabled: boolean) => invoke<ShellStatus>('set_shell_integration', { shell, enabled })
 

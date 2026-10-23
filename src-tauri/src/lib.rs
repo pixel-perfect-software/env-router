@@ -1,3 +1,4 @@
+mod quit;
 mod tray;
 
 use std::collections::{BTreeMap, HashMap};
@@ -182,6 +183,22 @@ async fn preview_folder(
     .await
 }
 
+/// Whether the window holds edits it hasn't saved, so quitting asks first. See `quit`.
+#[tauri::command]
+fn set_unsaved_edits(unsaved: bool) {
+    quit::set_unsaved_edits(unsaved);
+}
+
+/// Quits without saving, once the user has said so.
+#[tauri::command]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Tauri hands a command its arguments by value"
+)]
+fn quit_app(app: AppHandle) {
+    quit::quit_app(&app);
+}
+
 /// Lists the window's commands once, for Tauri's handler and for the test that holds
 /// `envrouter rpc` to the same set.
 macro_rules! window_commands {
@@ -197,6 +214,8 @@ macro_rules! window_commands {
 
 window_commands![
     get_config,
+    set_unsaved_edits,
+    quit_app,
     save_config,
     get_setup_status,
     set_shell_integration,
@@ -213,9 +232,12 @@ window_commands![
 ];
 
 pub fn run() {
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_opener::init());
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(quit::app_menu);
+    let app = builder
         .setup(|app| {
             // Refresh the installed shim after an app update. A failure here isn't fatal:
             // get_setup_status reports it and saving retries it.
@@ -238,13 +260,24 @@ pub fn run() {
             tray::create(app.handle())?;
             Ok(())
         })
+        // ⌘Q quits through `AppHandle::exit`, so it asks first with unsaved edits (see `quit`).
+        .on_menu_event(|app, event| {
+            if event.id() == quit::APP_QUIT_ID {
+                app.exit(0);
+            }
+        })
         // On macOS, closing the window keeps EnvRouter in the menu bar; Quit lives in its menu.
         // Elsewhere closing quits: a Linux desktop may show no tray icon (GNOME has none by
-        // default), and a hidden window would leave no way back.
+        // default), and a hidden window would leave no way back. So there it asks first, as
+        // quitting does, when the window holds unsaved edits.
         .on_window_event(|window, event| match event {
             WindowEvent::CloseRequested { api, .. } if cfg!(target_os = "macos") => {
                 api.prevent_close();
                 tray::hide_window(window.app_handle());
+            }
+            // The guard has a side effect: with unsaved edits, it shows the window and asks.
+            WindowEvent::CloseRequested { api, .. } if !quit::may_quit(window.app_handle()) => {
+                api.prevent_close();
             }
             _ => {}
         })
@@ -252,12 +285,14 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|_app, _event| {
+    app.run(|app, event| match event {
+        // ⌘Q, Quit from the menu bar (`AppHandle::exit`), or the last window closing. The guard
+        // has a side effect: with unsaved edits, it shows the window and asks.
+        tauri::RunEvent::ExitRequested { api, .. } if !quit::may_quit(app) => api.prevent_exit(),
         // Clicking the Dock icon while the window is hidden.
         #[cfg(target_os = "macos")]
-        if let tauri::RunEvent::Reopen { .. } = _event {
-            tray::show_window(_app);
-        }
+        tauri::RunEvent::Reopen { .. } => tray::show_window(app),
+        _ => {}
     });
 }
 
@@ -266,13 +301,15 @@ mod tests {
     use super::*;
 
     /// A remote window (a WSL distro's, over `envrouter rpc`) must be able to make every call
-    /// the local one makes, except opening a file, which would open it on the other machine.
+    /// the local one makes, except opening a file, which would open it on the other machine,
+    /// and quitting this app, which isn't the other machine's business.
     #[test]
-    fn rpc_serves_every_window_command_but_open_in_editor() {
+    fn rpc_serves_every_window_command_but_the_local_ones() {
+        const LOCAL: &[&str] = &["open_in_editor", "set_unsaved_edits", "quit_app"];
         let mut window: Vec<&str> = WINDOW_COMMANDS
             .iter()
             .copied()
-            .filter(|&command| command != "open_in_editor")
+            .filter(|command| !LOCAL.contains(command))
             .collect();
         let mut served = envrouter_ops::rpc::COMMANDS.to_vec();
         window.sort_unstable();

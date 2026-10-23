@@ -11,6 +11,7 @@ import { splitLeaf, tildify } from '../lib/paths'
 import { shortcutLabel, usePlatform } from '../lib/platform'
 import { KNOWN_TOOLS } from '../lib/tools'
 import type { McpServer, Profile, ToolInfo } from '../lib/types'
+import { setUnsaved } from '../lib/unsaved'
 import { AgentMark } from './icons'
 import { ServerMark } from './ServerMark'
 import { Button, CheckBox, ChevronIcon, CloseIcon, FolderIcon, Footer, IconButton, PlusIcon, ProfileDot, TextField } from './ui'
@@ -84,6 +85,11 @@ export function ProfileInspector({
     KNOWN_TOOLS.some((tool) => toolPaths[tool.command] !== (base?.tools[tool.command]?.path ?? '')) ||
     servers.size !== Object.keys(base?.mcpServers ?? {}).length ||
     [...servers].some((name) => !base?.mcpServers[name] || !sameTools(disabled[name] ?? [], base.mcpServers[name].disabledTools))
+
+  useEffect(() => {
+    setUnsaved('profile', dirty)
+    return () => setUnsaved('profile', false)
+  }, [dirty])
 
   /** Escape, the close button and Cancel. Unsaved edits are only dropped once the user says so. */
   const close = async () => {
