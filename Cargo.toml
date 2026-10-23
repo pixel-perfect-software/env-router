@@ -6,7 +6,7 @@ members = ["crates/build-support", "crates/cli", "crates/core", "crates/keychain
 # it from src-tauri's Cargo.toml, since tauri.conf.json names none. package.json repeats it; the
 # release checks the tag against both.
 [workspace.package]
-version = "0.7.0"
+version = "0.7.1"
 
 [workspace.dependencies]
 envrouter-build-support = { path = "crates/build-support" }
