@@ -51,8 +51,8 @@ selection of MCP servers from a library you keep in the app:
   vendors' own servers (hosted or local, and what each needs to sign in), or add one by hand.
   Duplicate a server or a profile to start from one you have.
 - 🔑 **Secrets in your system's store.** API keys and tokens you enter go to the macOS Keychain,
-  the Linux keyring, or, inside WSL, the Windows Credential Manager. Never `config.json`, a
-  rendered file or a command line.
+  the Linux keyring, or, inside WSL, the Windows Credential Manager. Never `config.json` or a
+  rendered file, and, kept in an environment variable or a header, never a command line.
 - 🧩 **Editor extensions too.** Claude Code for VS Code (and in Cursor, Windsurf, VSCodium) runs
   its own copy of `claude`; **Editors…** routes it through EnvRouter as well, including VS Code
   connected to WSL or over SSH.
@@ -235,8 +235,10 @@ shown again; **Replace**
 sets a new one. EnvRouter also warns when a value that looks like a credential would be saved as
 plain text, such as an `--api-key=` argument or a password in a connection string.
 
-Copilot CLI expands `${VAR}` in environment variables and headers but not in arguments, so give
-a server its secret through an environment variable or a header rather than an argument.
+Give a server its secret through an environment variable or a header. An argument can hold one
+too, but the value then sits on the server's command line once it starts (and while you check
+it), where other programs you run can read it. Copilot CLI doesn't expand `${VAR}` in arguments
+at all, so there a secret in an argument never reaches the server.
 
 ### 🧰 Check a server and turn tools off
 
@@ -295,7 +297,7 @@ with an ID of uppercase hex:
 
 ```json
 {
-  "version": 3,
+  "version": 5,
   "profiles": [
     {
       "id": "work",
@@ -325,10 +327,15 @@ envrouter secret set A1         # paste the token, then Return (or: … secret s
 envrouter explain ~/dev/work    # Work: CLAUDE_CONFIG_DIR=~/.claude-work, with MCP servers github
 ```
 
+Each profile needs its own `id`: it names the folder the profile's MCP files are rendered into,
+so `apply` refuses two profiles with the same one. Once a profile uses a server, its id may hold
+only letters, digits, `-` and `_`. A copied profile block needs a new id as well as a new name.
+
 A hand-written config doesn't need the `agents` section: `apply` adds each agent's MCP and
-editor details to it, and `install` and `editor` use them without saving. The CLI only fills in
-agents the config doesn't name yet, and where the app is installed it leaves the app's own shim
-and helper in place.
+editor details to it, and `install` and `editor` use them without saving. The CLI fills in
+agents the config doesn't name yet, and adds the newest rules for runs that take no injected
+servers to the ones it does; it leaves the rest of an agent as it is, and where the app is
+installed it leaves the app's own shim and helper in place.
 
 ## 🪟 Using EnvRouter in WSL
 
@@ -390,8 +397,11 @@ Your agents' own config folders are yours; EnvRouter only creates missing ones.
 
 EnvRouter has no account, no telemetry and no background process. It makes network requests
 only when you check an MCP server (a remote one, or an `npx` one npm has to download) or look up
-a package's version, which runs your own npm. Secret values never appear in `config.json`, in a
-rendered file or on a command line, and the window never reads them back once they're saved.
+a package's version, which runs your own npm. Secret values never appear in `config.json` or in
+a rendered file, and the window never reads them back once they're saved. They reach an agent
+through its environment, never its command line; a server gets one the way you wrote it, so a
+secret in an environment variable or header stays off command lines, and one in an argument
+appears on that server's command line while it runs.
 
 ## 🩺 Troubleshooting
 
