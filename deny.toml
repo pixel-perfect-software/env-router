@@ -1,13 +1,34 @@
-# cargo-deny: run `cargo deny check` (CI does). EnvRouter ships only for Apple silicon Macs,
-# so the graph is checked for that target alone.
+# cargo-deny: run `cargo deny check` (CI does). The graph is checked for every target a
+# release ships, the same four `packaging/notices/about.toml` lists: Apple silicon Macs, Linux
+# on x86_64 and arm64, and the Windows secrets helper that Linux builds carry for WSL. Linux's
+# graph (GTK, the Secret Service) is most of what macOS alone never saw.
 
 [graph]
-targets = ["aarch64-apple-darwin"]
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-gnu",
+]
 all-features = false
 
 [advisories]
 # RustSec advisories for anything in the graph fail the check; yanked crates do too.
 yanked = "deny"
+# Each entry is an unmaintained notice with no maintained release to move to yet, reached only
+# through a dependency EnvRouter can't swap on its own. Drop an entry when its way out ships;
+# `cargo deny check` warns once an entry matches nothing.
+ignore = [
+  # zbus 5's wire and name crates, folded into zbus 6 (2026-10-16). Reached on Linux through
+  # secret-service 5.2.0 (the keyring, its latest release) and tauri-plugin-opener 2.7.0, both
+  # still on zbus 5. Gone when both move to zbus 6.
+  { id = "RUSTSEC-2026-0370", reason = "zvariant: in zbus 6 as `wire`; secret-service and tauri-plugin-opener are on zbus 5" },
+  { id = "RUSTSEC-2026-0371", reason = "zbus_names: in zbus 6 as `names`; secret-service and tauri-plugin-opener are on zbus 5" },
+  { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: in zbus 6; secret-service and tauri-plugin-opener are on zbus 5" },
+  # A proc macro, so build time only, from gtk-rs 0.18 (glib-macros, gtk3-macros), the GTK 3
+  # bindings under Tauri's Linux webview. Gone when Tauri moves off gtk-rs 0.18.
+  { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: build-time only, through gtk-rs 0.18 under Tauri on Linux" },
+]
 
 [licenses]
 # Permissive licences only. EnvRouter is GPL-3.0-or-later and could take GPL-3.0 code, but GPL,
