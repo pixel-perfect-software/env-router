@@ -460,6 +460,25 @@ pub fn trigger_base(raw: &str, home: &Path) -> Result<PathBuf> {
 /// environment variable names, tool folders that aren't absolute, bad trigger paths, and a
 /// folder claimed by two profiles.
 pub fn validate(config: &ConfigState, home: &Path) -> Result<()> {
+    // The id keys a profile everywhere: the folder its MCP files render into, the window's
+    // merge, the card a folder check points at. Two profiles sharing one would hand one's
+    // servers, and their secrets, to the other's folders. The window never shows an id, so the
+    // fix is named in config.json.
+    let mut ids: HashMap<&str, &Profile> = HashMap::new();
+    for profile in &config.profiles {
+        if profile.id.trim().is_empty() {
+            return Err(Error::Invalid(format!(
+                "Profile \"{}\" has no id. Give it one in config.json.",
+                profile.name
+            )));
+        }
+        if let Some(other) = ids.insert(&profile.id, profile) {
+            return Err(Error::Invalid(format!(
+                "Profiles \"{}\" and \"{}\" both have the id \"{}\". Give each its own id in config.json.",
+                other.name, profile.name, profile.id
+            )));
+        }
+    }
     let mut owners: HashMap<PathBuf, &Profile> = HashMap::new();
     for profile in &config.profiles {
         for (name, tool) in &profile.tools {
@@ -492,6 +511,7 @@ pub fn validate(config: &ConfigState, home: &Path) -> Result<()> {
             // Compared as `resolve` compares them: through symlinks and letter case, two
             // spellings of one folder are still one folder.
             let folder = fs::canonicalize(&base).unwrap_or(base);
+            // The same profile may name one folder twice; ids are unique by now.
             if let Some(other) = owners.insert(folder.clone(), profile) {
                 if other.id != profile.id {
                     return Err(Error::Invalid(format!(
@@ -932,6 +952,31 @@ mod tests {
         // The id only names a folder once the profile uses a server.
         bad_id.profiles[0].mcp_servers.clear();
         validate(&bad_id, &home()).unwrap();
+    }
+
+    /// Two profiles with one id rendered into one `mcp/<id>/` folder, the second winning, so the
+    /// first profile's folders injected the second's servers and secrets.
+    #[test]
+    fn validate_rejects_duplicate_and_empty_profile_ids() {
+        let mut config = with_server(stdio("npx"), &[]);
+        let mut personal = config.profiles[0].clone();
+        personal.name = "Personal".into();
+        personal.trigger_paths = vec!["~/personal".into()];
+        config.profiles.push(personal);
+        let err = validate(&config, &home()).unwrap_err().to_string();
+        assert!(err.contains("both have the id"), "{err}");
+        // Without servers too: the id still keys the window's merge.
+        for profile in &mut config.profiles {
+            profile.mcp_servers.clear();
+        }
+        assert!(validate(&config, &home()).is_err());
+
+        config.profiles[1].id = "personal".into();
+        validate(&config, &home()).unwrap();
+
+        config.profiles[1].id = " ".into();
+        let err = validate(&config, &home()).unwrap_err().to_string();
+        assert!(err.contains("has no id"), "{err}");
     }
 
     #[test]

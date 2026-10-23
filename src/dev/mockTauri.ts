@@ -433,6 +433,13 @@ const validateAgent = (name: string, agent: AgentDef) => {
 }
 
 const validate = (cfg: ConfigState) => {
+  const ids = new Map<string, Profile>()
+  for (const p of cfg.profiles) {
+    if (!p.id.trim()) throw `Profile "${p.name}" has no id. Give it one in config.json.`
+    const other = ids.get(p.id)
+    if (other) throw `Profiles "${other.name}" and "${p.name}" both have the id "${p.id}". Give each its own id in config.json.`
+    ids.set(p.id, p)
+  }
   const owners = new Map<string, Profile>()
   for (const p of cfg.profiles) {
     for (const [name, settings] of sorted(p.tools)) {
