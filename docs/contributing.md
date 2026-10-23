@@ -66,9 +66,10 @@ known advisory: the fix is a release, not a change to the scan.
 The Linux jobs, in CI and in the release, run in a prebuilt image,
 `ghcr.io/pixel-perfect-software/envrouter-ci`, rather than installing packages from Ubuntu's
 mirror as they go. It's built from `.github/ci/Containerfile` (Ubuntu 22.04, the packages, rustup)
-by `.github/workflows/ci-image.yml` whenever that file changes, and the workflows pin it by
-digest. To add a package: edit the Containerfile, push, and copy the digest the CI image run
-prints into `ci.yml` and `release.yml`.
+by `.github/workflows/ci-image.yml`, and the workflows pin it by digest. To add a package: edit
+the Containerfile, push the branch, run `gh workflow run ci-image.yml --ref <branch>`, and copy the
+digest it prints into `ci.yml` and `release.yml`. On `main` it rebuilds by itself when the file
+changes.
 
 Every action in the workflows is pinned to the full commit SHA of a release, with its version in
 a comment, and Dependabot (`.github/dependabot.yml`) opens a monthly pull request to update them.
