@@ -616,6 +616,76 @@ fn passes_secrets_from_the_keychain_helper_as_environment_variables() {
     assert_eq!(stderr(&output), "");
 }
 
+/// An answer bigger than a pipe's buffer (64 KiB on Linux and macOS) used to block the helper
+/// on its write while the shim waited for it to exit, until the 20-second deadline dropped the
+/// server.
+#[test]
+fn reads_a_secrets_answer_bigger_than_a_pipe_buffer_without_waiting_out_the_deadline() {
+    let f = Fixture::new(Some(CONFIG));
+    let bin = f.home.join(".envrouter/bin");
+    fs::create_dir_all(&bin).unwrap();
+    write_executable(
+        &bin.join("envrouter-keychain"),
+        "#!/bin/sh\nprintf '{\"7F3A\":\"%s\"}\\n' \"$(head -c 70000 /dev/zero | tr '\\0' a)\"\n",
+    );
+    write_executable(
+        &f.real_bin.join("claude"),
+        "#!/bin/sh\necho \"${#ENVROUTER_SECRET_7F3A} $*\"\n",
+    );
+    f.write_launch(
+        "2",
+        &serde_json::json!({
+            "servers": [{ "name": "github", "args": ["--mcp-config=/m/github.json"], "secrets": ["7F3A"] }],
+        }),
+    );
+    let started = Instant::now();
+    let output = f.run_with("dev/work/app", &["x"], &[]);
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(
+        stdout(&output),
+        "70000 --mcp-config=/m/github.json x\n",
+        "{}",
+        stderr(&output)
+    );
+    assert_eq!(stderr(&output), "");
+}
+
+/// Explain mode reports a real path that isn't UTF-8 instead of aborting on it. macOS volumes
+/// only hold UTF-8 names, so this runs on Linux.
+#[cfg(target_os = "linux")]
+#[test]
+fn explains_a_real_path_that_is_not_utf8() {
+    use std::os::unix::ffi::OsStrExt;
+    let f = Fixture::new(Some(CONFIG));
+    let odd = f.home.join(OsStr::from_bytes(b"bin-\xff"));
+    fs::create_dir_all(&odd).unwrap();
+    write_executable(&odd.join("claude"), "#!/bin/sh\n");
+    // Built from the raw bytes: `display()` would turn the 0xff into U+FFFD, another folder.
+    let mut path = f.shims.as_os_str().to_owned();
+    path.push(":");
+    path.push(&odd);
+    let output = Command::new(f.shims.join("claude"))
+        .current_dir(f.home.join("dev/work/app"))
+        .env("HOME", &f.home)
+        .env("PATH", path)
+        .env("ENVROUTER_EXPLAIN", "1")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let explanation: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        explanation["real"]
+            .as_str()
+            .unwrap()
+            .ends_with("bin-\u{fffd}/claude"),
+        "{explanation}"
+    );
+}
+
 /// `CONFIG` with the editor hook the window saves for `claude`.
 fn config_with_editor_hook() -> String {
     CONFIG.replace(
