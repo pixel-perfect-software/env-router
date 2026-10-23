@@ -9,8 +9,12 @@ read in the vendor's own documentation.
 
 The eight milestones are on GitHub as
 [milestones](https://github.com/pixel-perfect-software/env-router/milestones). M0, M1 and M2 have
-their issues open there (17 to 54, in the order listed here); M3 to M7 keep theirs in this file
-until each is next. A new finding goes into its milestone here first, then into an issue.
+their issues there (17 to 54, in the order listed here, then later findings at the end of their
+milestone); M3 to M7 keep theirs in this file until each is next. A new finding goes into its
+milestone here first, then into an issue. PRs are assigned to the milestone they advance.
+
+**Status (2026-10-23):** M0 is done: all 12 issues fixed and merged (PRs #55 to #66), not yet
+released. M1 is next.
 
 Order: M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7. The first three are small and make the next
 release trustworthy. M4 (agents) is what brings users and can start as soon as M0 lands, since
@@ -18,7 +22,7 @@ it's mostly data and one new dialect. M7 can start after M3, which carries the W
 
 | Milestone | Goal | Size |
 |---|---|---|
-| M0: Correctness floor | Fix every verified bug that loses data, crosses profiles or blocks the tool | small |
+| M0: Correctness floor (done) | Fix every verified bug that loses data, crosses profiles or blocks the tool | small |
 | M1: Release integrity | A release can only ship what CI tested, and every shipped target is checked for advisories | small |
 | M2: Lean and fast | Ship only what each platform needs, and keep the shim's overhead flat as configs grow | small |
 | M3: Every state has a way out | No dead ends in the window, no silent losses, and the files the app touches are one click away | medium |
@@ -30,6 +34,10 @@ it's mostly data and one new dialect. M7 can start after M3, which carries the W
 ---
 
 ## M0: Correctness floor
+
+**Status:** done 2026-10-23. Every issue below was fixed with a regression test and merged (PRs
+#55 to #66). Verified with stand-ins rather than on a real machine: `claude daemon status`
+signed in, a real managed-MCP workstation, and ⌘Q in the built app.
 
 **Goal:** fix every verified bug that loses data, crosses profiles or blocks the tool. **Size:** small.
 
@@ -122,11 +130,13 @@ advisories. **Size:** small.
 Dependabot security updates, secret scanning and push protection on; the Linux app crate and the
 Windows helper link in CI; the release `check` job requires green CI on the SHA and cancels
 in-progress runs only for pull requests; one workspace version; build provenance attestations;
-Homebrew templates linted in CI; the 22.04 runners replaced before their 2027 retirement.
+Homebrew templates linted in CI; the 22.04 runners replaced before their 2027 retirement; a CLI
+upgrade never leaves an older shim reading a newer config.
 
 **Done when:** `cargo deny check` passes for every shipped target in CI and weekly; the release
 refuses a SHA without a green `linux` and `macos` check; a Linux-only compile error fails a
-pull request; each release asset has a provenance attestation.
+pull request; each release asset has a provenance attestation; `envrouter apply` from a newer
+CLI over an older shim leaves agents routed.
 
 ### Issues
 
@@ -176,11 +186,20 @@ pull request; each release asset has a provenance attestation.
     AppImage still builds.
 11. **ubuntu-22.04 runners retire on 2027-04-17, with brownouts from 2027-03-23.** The release
     uses them for an older glibc. Fix: build in an `ubuntu:22.04` container on a 24.04 runner
-    (or `cargo-zigbuild` with a glibc target) before March 2027.
+    (or `cargo-zigbuild` with a glibc target) before March 2027. Related: CI's `ubuntu-latest`
+    jobs move to Ubuntu 26 from 2026-10-19 (GitHub's notice on every run), so pin the image the
+    CI jobs run on too.
 12. **Release notes and doc drift.** `--generate-notes` is the only source; add
     `.github/release.yml` categories by label. `.tool-versions` says Node 24.22.1 while
     CLAUDE.md, project-structure.md and the Containerfile say 24.21.0; project-structure.md says
     TypeScript 6 (it's 7). Fix both.
+13. **A CLI upgrade that writes a newer config leaves every agent unrouted until
+    `envrouter install`** (verified, #67). A CLI save installs its own shim only where none is
+    (`commands::save_from_cli`), so after `brew upgrade envrouter-cli` the old shim stays in
+    `~/.envrouter/bin`; when the new CLI writes a newer `CONFIG_VERSION` (the next release writes 5), the old
+    shim refuses it and every run goes "without a profile". Only the formula's caveat guards it.
+    Fix: before writing a version the installed shim can't read, install the bundled one or refuse
+    and say to run `envrouter install`. Found while verifying M0's #19.
 
 ---
 
