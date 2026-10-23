@@ -1,7 +1,9 @@
-# Keeps the workflows' pinned actions current: Dependabot updates each commit SHA and the version
-# comment beside it together, in one grouped pull request a month.
+# Keeps the workflows' pinned actions and the Rust dependencies current, in one grouped pull
+# request a month each. Security updates (a repository setting) come as soon as an advisory
+# lands, and follow the same ignore rules. npm updates come from always-up-to-date instead.
 version: 2
 updates:
+  # Dependabot updates each commit SHA and the version comment beside it together.
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -9,3 +11,17 @@ updates:
     groups:
       actions:
         patterns: ['*']
+
+  # The workspace's one Cargo.lock. Minor and patch updates come grouped; a major one comes on
+  # its own, since it can need code changes.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly
+    ignore:
+      # tauri, tauri-build and the plugins move in step with @tauri-apps/* in package.json, and
+      # `tauri build` refuses a major.minor that differs from theirs, so they're updated with those.
+      - dependency-name: 'tauri*'
+    groups:
+      crates:
+        update-types: [minor, patch]
