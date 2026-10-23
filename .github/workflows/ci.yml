@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Docs, design notes, the local containers and the Homebrew templates don't change what CI
+  # Docs, design notes and the local containers don't change what CI
   # tests, so a change to only those skips the other jobs. The workflow itself still runs:
   # branch protection requires the linux and macos checks, and a skipped job counts as passing,
   # where a workflow that never started would block the merge.
@@ -48,7 +48,6 @@ jobs:
               - '!.impeccable/**'
               - '!.claude/**'
               - '!dev/containers/**'
-              - '!packaging/homebrew/**'
 
   # The frontend, formatting, licences and the release's notices, beside the Rust tests rather
   # than before them: none of it needs the other's build.
@@ -213,3 +212,7 @@ jobs:
       - run: mkdir -p dist
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - run: cargo test --locked --workspace
+      # The cask and formula, rendered as a release would and checked with brew style and
+      # brew audit --strict, so a broken template fails here instead of `brew install` after a
+      # release. The runner has Homebrew.
+      - run: sh .github/scripts/lint-homebrew.sh
