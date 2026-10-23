@@ -469,7 +469,7 @@ a WSL user can set up profiles and servers without hand-editing JSON.
    atomic (`windows.rs:107-120`). Fix: record the distro at first save; a generation header with
    retry on read.
 7. **Backend test gaps.** `commands::save` (refusing an unused secret, pruning, tool folders only
-   inside home, `save_config_from_cli`, a failure midway), `open_in_editor` escaping home,
+   inside home, `save_from_cli`, a failure midway), `open_in_editor` escaping home,
    `check_http` entirely (401, bad header, timeout), `shims::sync` replacing a foreign link,
    `editors` with a `[]` root, `resolve` with `/` or `~` triggers.
 8. **Document the launch paths that bypass PATH, and the undocumented behaviours.** Claude's

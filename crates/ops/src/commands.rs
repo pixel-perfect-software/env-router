@@ -49,16 +49,41 @@ pub fn save_config(
     save(home, payload, secrets, base, true, &Keychain)
 }
 
-/// [`save_config`] for the CLI: the same save, but it installs its own shim and helper only
-/// where none is installed. Where the app is in use, its builds stay; `envrouter install`
-/// replaces them on purpose.
-pub fn save_config_from_cli(
+/// [`save_config`] for the CLI: `edit` makes the config to save from config.json as it is, and
+/// the save names what it read as its base. When the window or a hand edit saved in between,
+/// the edit is made again over the file as it is now instead of overwriting it (`edit` may run
+/// more than once). Answers the config as saved, and whether it took more than one try. It
+/// installs its own shim and helper only where none is installed: where the app is in use, its
+/// builds stay; `envrouter install` replaces them on purpose.
+pub fn save_from_cli(
     home: &Path,
-    payload: &ConfigState,
     secrets: &HashMap<String, String>,
-) -> Result<()> {
+    edit: impl FnMut(ConfigState) -> Result<ConfigState>,
+) -> Result<(ConfigState, bool)> {
     let install = !paths::shim_binary(home).is_file();
-    save(home, payload, secrets, None, install, &Keychain).map(|_| ())
+    edit_and_save(home, secrets, install, &Keychain, edit)
+}
+
+fn edit_and_save(
+    home: &Path,
+    secrets: &HashMap<String, String>,
+    install: bool,
+    store: &impl SecretStore,
+    mut edit: impl FnMut(ConfigState) -> Result<ConfigState>,
+) -> Result<(ConfigState, bool)> {
+    // A file that keeps changing under the save gets a few tries, not a loop.
+    for tries in 0..3 {
+        let base = get_config(home)?;
+        let payload = edit(base.clone())?;
+        match save(home, &payload, secrets, Some(&base), install, store)? {
+            SaveOutcome::Saved { config } => return Ok((config, tries > 0)),
+            // Read again: a missing file is created empty, as the window's read does.
+            SaveOutcome::Changed { .. } | SaveOutcome::Missing => {}
+        }
+    }
+    Err(Error::Invalid(
+        "config.json kept changing while saving. Run the command again.".into(),
+    ))
 }
 
 /// Where a save keeps secret values: the platform's store, or a stand-in in tests, which
@@ -446,6 +471,62 @@ mod tests {
         // The previous save wrote `new`, so this one drops nothing; the next drop prunes.
         save(home, &empty, &HashMap::new(), None, false, &store).unwrap();
         assert!(store.secrets.borrow().is_empty());
+    }
+
+    /// `envrouter apply` and `secret set` read config.json, then save. A window save in
+    /// between used to be overwritten; now the CLI's edit is made again over it.
+    #[test]
+    fn a_cli_save_makes_its_edit_again_over_a_save_made_meanwhile() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let mut calls = 0;
+        let (saved, retried) = edit_and_save(
+            home,
+            &HashMap::new(),
+            false,
+            &FakeStore::default(),
+            |config| {
+                calls += 1;
+                if calls == 1 {
+                    // The window saves while the CLI is between its read and its write.
+                    let window = with_profile(&config, "p2", "Personal");
+                    save_config(home, &window, &HashMap::new(), Some(&config)).unwrap();
+                }
+                Ok(with_profile(&config, "p1", "Work"))
+            },
+        )
+        .unwrap();
+        assert_eq!(calls, 2);
+        assert!(retried);
+        let names: Vec<_> = saved.profiles.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["Personal", "Work"]);
+        assert_eq!(get_config(home).unwrap(), saved);
+    }
+
+    #[test]
+    fn a_cli_save_gives_up_on_a_file_that_keeps_changing() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let mut n = 0;
+        let err = edit_and_save(
+            home,
+            &HashMap::new(),
+            false,
+            &FakeStore::default(),
+            |config| {
+                n += 1;
+                let other = with_profile(&config, &format!("w{n}"), "Window");
+                save_config(home, &other, &HashMap::new(), Some(&config)).unwrap();
+                Ok(with_profile(&config, "p1", "Work"))
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("kept changing"), "{err}");
+        assert!(get_config(home)
+            .unwrap()
+            .profiles
+            .iter()
+            .all(|p| p.id != "p1"));
     }
 
     /// The store isn't touched and config.json isn't written when a shim can't be made.

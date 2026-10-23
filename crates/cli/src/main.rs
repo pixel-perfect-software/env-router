@@ -248,8 +248,12 @@ fn run(cli: &Cli, home: &Path) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         Command::Apply => {
-            let config = agents::with_agents(commands::get_config(home)?);
-            commands::save_config_from_cli(home, &config, &HashMap::new())?;
+            let (config, retried) = commands::save_from_cli(home, &HashMap::new(), |config| {
+                Ok(agents::with_agents(config))
+            })?;
+            if retried {
+                eprintln!("envrouter: config.json changed while applying (the app saved, or someone edited it), so this applied the new version.");
+            }
             let file = paths::root(home).join(config::CONFIG_FILE);
             let applied = serde_json::json!({
                 "config": file.display().to_string(),
@@ -361,18 +365,32 @@ fn install(cli: &Cli, home: &Path) -> Result<ExitCode> {
 /// Stores one secret through the same save the window makes, so it's checked and pruned the
 /// same way.
 fn set_secret(cli: &Cli, home: &Path, id: &str) -> Result<ExitCode> {
-    let config = agents::with_agents(commands::get_config(home)?);
-    // Asked before the value is typed, so nobody types a secret only to have it refused.
-    let Some(servers) = config::secret_users(&config)
-        .remove(id)
-        .map(|servers| servers.into_iter().map(str::to_string).collect::<Vec<_>>())
-    else {
-        return Err(Error::Invalid(format!(
+    let unused = || {
+        Error::Invalid(format!(
             "No server uses a secret named {id}. Refer to it as {{\"secret\": \"{id}\"}} in a server's env or headers in config.json first."
-        )));
+        ))
     };
+    // Asked before the value is typed, so nobody types a secret only to have it refused, and
+    // again when saving, since the app may have saved while it was typed.
+    if !config::secret_users(&commands::get_config(home)?).contains_key(id) {
+        return Err(unused());
+    }
     let value = read_secret(id)?;
-    commands::save_config_from_cli(home, &config, &HashMap::from([(id.to_string(), value)]))?;
+    let (config, retried) =
+        commands::save_from_cli(home, &HashMap::from([(id.to_string(), value)]), |config| {
+            if config::secret_users(&config).contains_key(id) {
+                Ok(agents::with_agents(config))
+            } else {
+                Err(unused())
+            }
+        })?;
+    if retried {
+        eprintln!("envrouter: config.json changed while you typed (the app saved, or someone edited it), so the secret was saved with the new version.");
+    }
+    let servers = config::secret_users(&config)
+        .remove(id)
+        .map(|servers| servers.into_iter().map(str::to_string).collect())
+        .unwrap_or_default();
     let stored = SecretUse {
         id: id.to_string(),
         servers,
