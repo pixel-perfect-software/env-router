@@ -53,15 +53,22 @@ pub fn save_config(
 /// the save names what it read as its base. When the window or a hand edit saved in between,
 /// the edit is made again over the file as it is now instead of overwriting it (`edit` may run
 /// more than once). Answers the config as saved, and whether it took more than one try. It
-/// installs its own shim and helper only where none is installed: where the app is in use, its
-/// builds stay; `envrouter install` replaces them on purpose.
+/// installs its own shim and helper only where the installed shim can't read the config it
+/// writes (none, or an older one): where the app is in use, its builds stay; `envrouter
+/// install` replaces them on purpose.
 pub fn save_from_cli(
     home: &Path,
     secrets: &HashMap<String, String>,
     edit: impl FnMut(ConfigState) -> Result<ConfigState>,
 ) -> Result<(ConfigState, bool)> {
-    let install = !paths::shim_binary(home).is_file();
-    edit_and_save(home, secrets, install, &Keychain, edit)
+    edit_and_save(home, secrets, cli_installs(home), &Keychain, edit)
+}
+
+/// Whether a CLI save installs its own shim and helper: where none is, or where the installed
+/// shim doesn't read the version this save writes. After `brew upgrade envrouter-cli` the old
+/// shim stays in ~/.envrouter/bin, and it would run every agent without a profile.
+fn cli_installs(home: &Path) -> bool {
+    shims::installed_config_version(home).is_none_or(|version| version < config::CONFIG_VERSION)
 }
 
 fn edit_and_save(
@@ -527,6 +534,47 @@ mod tests {
             .profiles
             .iter()
             .all(|p| p.id != "p1"));
+    }
+
+    /// After `brew upgrade envrouter-cli`, ~/.envrouter/bin still held the old shim, and a CLI
+    /// save installed its own only where none was. A save writing a config version the old
+    /// shim refuses then left every agent running without a profile until `envrouter install`.
+    #[test]
+    fn a_cli_save_replaces_a_shim_that_cant_read_the_config_it_writes() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        assert!(cli_installs(home), "no shim yet");
+        let shim = paths::shim_binary(home);
+        std::fs::create_dir_all(shim.parent().unwrap()).unwrap();
+        // A shim from 0.7.0 or earlier doesn't know the question: it exits 2, as 0.6.0's does.
+        // One that answers an older version is older too.
+        // Copied into place by `cp`, so no thread here holds it open for writing when it runs:
+        // on Linux, a fork meanwhile would make running it fail with "Text file busy".
+        let install_script = |script: &str| {
+            let source = shim.with_extension("src");
+            std::fs::write(&source, script).unwrap();
+            let copied = std::process::Command::new("cp")
+                .arg(&source)
+                .arg(&shim)
+                .status()
+                .unwrap();
+            assert!(copied.success());
+            std::fs::set_permissions(&shim, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+                .unwrap();
+        };
+        for old in [
+            "#!/bin/sh\nexit 2\n".to_string(),
+            format!("#!/bin/sh\necho {}\n", config::CONFIG_VERSION - 1),
+        ] {
+            install_script(&old);
+            assert!(cli_installs(home), "{old}");
+        }
+        // A shim that reads this version or a newer one stays: where the app is in use, it's
+        // the app's build.
+        install_script(&format!("#!/bin/sh\necho {}\n", config::CONFIG_VERSION + 1));
+        assert!(!cli_installs(home));
+        shims::install_binary(home, Path::new(env!("ENVROUTER_STAGED_SHIM"))).unwrap();
+        assert!(!cli_installs(home));
     }
 
     /// The store isn't touched and config.json isn't written when a shim can't be made.

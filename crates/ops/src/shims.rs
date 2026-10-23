@@ -98,6 +98,22 @@ pub fn is_installed(home: &Path, shim: &Path, keychain: &Path) -> bool {
     same(paths::shim_binary(home), shim) && same(paths::keychain_helper(home), keychain)
 }
 
+/// The newest config version the installed shim reads, as it answers itself. `None` without a
+/// shim, or with one from 0.7.0 or earlier, which doesn't know the question (it exits 2): those
+/// may read an older version than this build writes.
+pub fn installed_config_version(home: &Path) -> Option<u32> {
+    let output = std::process::Command::new(paths::shim_binary(home))
+        .arg(paths::SHIM_CONFIG_VERSION_ARG)
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout).ok()?.trim().parse().ok()
+}
+
 /// Refuses a config whose shims couldn't all be made: a file that isn't a link has a routed
 /// tool's name. A save checks this before writing anything, so it can't leave a config whose
 /// tools have no shim.

@@ -54,6 +54,15 @@ fn main() -> ExitCode {
         eprintln!("envrouter: can't tell which tool to run from {argv0:?}");
         return ExitCode::from(2);
     };
+    // Not an absolute path, so never a program an editor hands the wrapper.
+    if name == paths::SHIM_NAME
+        && user_args
+            .first()
+            .is_some_and(|arg| arg == paths::SHIM_CONFIG_VERSION_ARG)
+    {
+        println!("{}", config::CONFIG_VERSION);
+        return ExitCode::SUCCESS;
+    }
     // Loaded before the tool is known: an editor's script names its agent only through it.
     let config = home
         .as_deref()
