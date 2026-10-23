@@ -2,6 +2,12 @@
 resolver = "2"
 members = ["crates/build-support", "crates/cli", "crates/core", "crates/keychain", "crates/ops", "crates/shim", "src-tauri"]
 
+# EnvRouter's one version: every crate inherits it (`version.workspace = true`), and the app takes
+# it from src-tauri's Cargo.toml, since tauri.conf.json names none. package.json repeats it; the
+# release checks the tag against both.
+[workspace.package]
+version = "0.7.0"
+
 [workspace.dependencies]
 envrouter-build-support = { path = "crates/build-support" }
 envrouter-core = { path = "crates/core" }

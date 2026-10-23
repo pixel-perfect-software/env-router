@@ -222,8 +222,9 @@ The README screenshots in `docs/images/` come from the browser mock's `mcp` scen
 
 Releases go to GitHub and Homebrew. To cut one:
 
-1. Bump `version` in `src-tauri/tauri.conf.json` (and `package.json` and the crates' `Cargo.toml`
-   files, so they agree), and merge it to `main`.
+1. Bump `version` in two places, the root `Cargo.toml`'s `[workspace.package]` (every crate and the
+   app inherit it) and `package.json`, run `cargo check` so `Cargo.lock` follows, and merge it to
+   `main`.
 2. Tag that commit and push the tag: `git tag v0.2.0 && git push origin v0.2.0`.
 
 The [release workflow](../.github/workflows/release.yml) refuses a tag that doesn't match the
