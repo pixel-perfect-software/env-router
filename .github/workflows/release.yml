@@ -13,8 +13,10 @@ on:
 # a release builds only from its tagged source, so a poisoned cache can't reach what users
 # install. The Linux builds run in the CI image (.github/ci/Containerfile), pinned by digest like
 # an action, so they install nothing from Ubuntu's mirror while they run.
+# Read-only by default: the build jobs run third-party actions, and none of them needs to write.
+# Only publish, which creates the release, can.
 permissions:
-  contents: write # to create the release
+  contents: read
 
 # One release at a time, so two can't race to update the tap.
 concurrency:
@@ -174,8 +176,6 @@ jobs:
     needs: check
     runs-on: macos-15
     timeout-minutes: 30
-    permissions:
-      contents: read
     env:
       VERSION: ${{ needs.check.outputs.version }}
       TRIPLE: aarch64-apple-darwin
@@ -281,6 +281,8 @@ jobs:
     needs: [check, macos, linux, cli-macos, cli-linux]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write # to create the release
     env:
       VERSION: ${{ needs.check.outputs.version }}
     steps:
