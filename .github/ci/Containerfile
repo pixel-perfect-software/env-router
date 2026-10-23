@@ -13,14 +13,14 @@ FROM docker.io/library/ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535
 #   actions, xz and file for the bundler;
 # - the shell tests: zsh, fish (bash is in the base), and dbus with gnome-keyring for the
 #   secrets round trip;
-# - the desktop app: WebKitGTK and AppIndicator; librsvg and libxdo as the release has always
-#   installed them (#38 checks whether the AppImage still needs libxdo);
+# - the desktop app: WebKitGTK, AppIndicator and librsvg, from Tauri's Linux prerequisites. Not
+#   libxdo, which they list too: nothing in this graph links it (no libxdo-sys), #38;
 # - the Windows secrets helper: the x86_64 mingw compiler only.
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       build-essential pkg-config ca-certificates curl git jq xz-utils file \
       zsh fish dbus gnome-keyring \
-      libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev \
+      libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
       gcc-mingw-w64-x86-64 \
  && rm -rf /var/lib/apt/lists/*
 

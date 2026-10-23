@@ -134,7 +134,7 @@ jobs:
       packages: read # to pull the image
     # Ubuntu 22.04 inside, for its older glibc, so the builds run on more distros.
     container:
-      image: ghcr.io/pixel-perfect-software/envrouter-ci@sha256:1b639186db92d6dd43fe1dc81af93002f9180666150941bb4c45ae379c759658
+      image: ghcr.io/pixel-perfect-software/envrouter-ci@sha256:2d645642c11da781ffaf7647bb6cea427eff84a4da365e257dc99012ac196c62
       credentials:
         username: ${{ github.actor }}
         password: ${{ github.token }}
@@ -238,7 +238,7 @@ jobs:
       contents: read
       packages: read # to pull the image
     container:
-      image: ghcr.io/pixel-perfect-software/envrouter-ci@sha256:1b639186db92d6dd43fe1dc81af93002f9180666150941bb4c45ae379c759658
+      image: ghcr.io/pixel-perfect-software/envrouter-ci@sha256:2d645642c11da781ffaf7647bb6cea427eff84a4da365e257dc99012ac196c62
       credentials:
         username: ${{ github.actor }}
         password: ${{ github.token }}

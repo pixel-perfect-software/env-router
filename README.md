@@ -149,7 +149,7 @@ You need, once:
 
 1. On macOS, Xcode's command line tools: `xcode-select --install`. On Linux, a C toolchain and
    the WebKitGTK development packages: on Debian or Ubuntu, `sudo apt install build-essential
-   libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev`
+   libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev`
 2. Rust, from [rustup.rs](https://rustup.rs). The repository pins its toolchain in
    `rust-toolchain.toml`, and rustup installs that version on first build. (Homebrew's `rust`
    doesn't read the pin; if you use it, match the version by hand.)

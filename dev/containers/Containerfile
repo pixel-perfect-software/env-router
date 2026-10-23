@@ -6,7 +6,7 @@ FROM docker.io/library/rust:1-bookworm
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       zsh fish gnome-keyring dbus libsecret-tools \
-      libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev \
+      libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
       mingw-w64 \
  && rm -rf /var/lib/apt/lists/*
 
