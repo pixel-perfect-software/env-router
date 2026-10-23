@@ -24,7 +24,7 @@ import {
   setEditorIntegration,
   setShellIntegration,
 } from './lib/api'
-import { confirmDelete, confirmDiscardServer, confirmReplace } from './lib/confirm'
+import { confirmDelete, confirmDiscardServer, confirmReplace, confirmRestore } from './lib/confirm'
 import { withoutServer, withServer, withUsedBy } from './lib/mcp'
 import { mergeConfig } from './lib/merge'
 import { owningTrigger } from './lib/paths'
@@ -357,13 +357,14 @@ export default function App() {
   /**
    * Saves `edited`, an edit of the window's `config`. If config.json changed meanwhile (the CLI
    * saved, or a hand edit), the edit is folded into the file as it is now, and only a profile or
-   * server changed on both sides asks first. Declining shows the file's version and rejects.
+   * server changed on both sides asks first. Declining shows the file's version and rejects. If
+   * config.json is gone, the save asks before writing the window's version back.
    */
   const commit = async (edited: ConfigState, secrets: Record<string, string> = {}) => {
     if (!config) return
     const mine = withAgents(edited)
     let next = mine
-    let base = config
+    let base: ConfigState | null = config
     let replace = false
     // A file that keeps changing under the save gets a few tries, not a loop.
     for (let tries = 0; ; tries++) {
@@ -371,6 +372,11 @@ export default function App() {
       if (outcome.status === 'saved') {
         next = outcome.config
         break
+      }
+      if (outcome.status === 'missing') {
+        if (!(await confirmRestore())) throw new Error('Not saved. config.json is still missing.')
+        base = null
+        continue
       }
       if (tries === 2) throw new Error('config.json kept changing while saving. Save again.')
       const merged = mergeConfig(config, mine, outcome.config)

@@ -17,7 +17,8 @@
 //   a saved one) fails as it does there.
 // The mcp library has a server named `slow` whose check times out. `window.__mockDrop(path, x, y)`
 // simulates a Finder drop. `window.__mockEditConfig(edit)` changes config.json as the CLI or a
-// hand edit would, behind the window's back, so a save from an open editor meets it. npm knows
+// hand edit would, behind the window's back, so a save from an open editor meets it, and
+// `window.__mockDeleteConfig()` deletes it the same way. npm knows
 // every package (at 1.4.0, `next` at 2.0.0-beta.2) except one whose name ends in `-nope`.
 // The profile card's context menu pops up as a DOM stand-in.
 
@@ -148,6 +149,8 @@ const profile = (id: string, name: string, triggerPaths: string[], configDir?: s
 
 const populated = scenario !== 'first-run'
 let configBroken = scenario === 'broken'
+/** config.json was deleted behind the window's back; the next read creates an empty one. */
+let configMissing = false
 const withLibrary = scenario === 'mcp'
 const library: Record<string, McpServer> = withLibrary
   ? {
@@ -776,10 +779,16 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       return null
     case 'get_config':
       if (configBroken) throw `${HOME}/.envrouter/config.json is not valid JSON: expected \`,\` or \`}\` at line 7 column 5`
+      // `config::load_or_init`
+      if (configMissing) {
+        config = { version: CONFIG_VERSION, profiles: [], mcpServers: {}, agents: {} }
+        configMissing = false
+      }
       return config
     case 'save_config': {
       await delay(250)
       // `commands::save`: a save from a config the file no longer holds changes nothing.
+      if (a.base !== undefined && a.base !== null && configMissing) return { status: 'missing' } satisfies SaveOutcome
       if (a.base !== undefined && a.base !== null && (configBroken || !same(a.base, config))) {
         if (configBroken) return respond('get_config', {})
         return { status: 'changed', config } satisfies SaveOutcome
@@ -792,13 +801,14 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       // `shims::install_bundled` runs before the store is touched, so a failed save still reinstalls.
       shimInstalled = true
       // The store is read only when this save adds a secret or stops using one.
-      const dropped = [...secretIds(config)].some((id) => !referenced.has(id))
+      const dropped = !configMissing && [...secretIds(config)].some((id) => !referenced.has(id))
       if (Object.keys(secrets).length > 0 || dropped) {
         if (storeOff) throw `Couldn't save the secret: ${storeError.replace(/\.$/, '')}. Nothing was saved.`
         stored = new Set([...[...stored].filter((id) => referenced.has(id)), ...Object.keys(secrets)])
       }
       config = { ...next, version: CONFIG_VERSION }
       configBroken = false
+      configMissing = false
       return { status: 'saved', config } satisfies SaveOutcome
     }
     case 'npm_dist_tags': {
@@ -948,11 +958,16 @@ declare global {
   interface Window {
     __mockDrop: (path: string, x: number, y: number) => Promise<void>
     __mockEditConfig: (edit: (config: ConfigState) => ConfigState) => void
+    __mockDeleteConfig: () => void
   }
 }
 
 window.__mockEditConfig = (edit) => {
   config = edit(structuredClone(config))
+}
+
+window.__mockDeleteConfig = () => {
+  configMissing = true
 }
 
 window.__mockDrop = async (path, x, y) => {

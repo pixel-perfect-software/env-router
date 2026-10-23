@@ -52,3 +52,16 @@ export const confirmReplace = (conflicts: string[]) =>
     okLabel: 'Replace',
     cancelLabel: 'Cancel',
   })
+
+/**
+ * The native confirmation before a save writes config.json again after it was deleted outside
+ * the window. Merging into the empty file would drop everything the edit didn't touch, so the
+ * choice is the window's whole version or nothing.
+ */
+export const confirmRestore = () =>
+  ask('It was deleted after you started editing. Saving writes it again with every profile and server shown here.', {
+    title: 'Save config.json again?',
+    kind: 'warning',
+    okLabel: 'Save',
+    cancelLabel: 'Cancel',
+  })

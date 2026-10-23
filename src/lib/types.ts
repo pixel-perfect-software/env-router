@@ -202,12 +202,10 @@ export interface ToolInfo {
 /**
  * `commands::SaveOutcome`. `changed`: nothing was saved, because config.json no longer holds the
  * `base` the save named (the CLI or a hand edit changed it). Either way, `config` is what the
- * file holds now.
+ * file holds now. `missing`: nothing was saved, because config.json is gone since the edit
+ * started; saving again without a base writes the window's version.
  */
-export interface SaveOutcome {
-  status: 'saved' | 'changed'
-  config: ConfigState
-}
+export type SaveOutcome = { status: 'saved' | 'changed'; config: ConfigState } | { status: 'missing' }
 
 /** `mcp_probe::ServerCheck`: what starting a server and asking for its tools found. */
 export interface ServerCheck {

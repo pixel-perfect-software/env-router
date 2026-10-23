@@ -21,7 +21,7 @@ pub fn get_config(home: &Path) -> Result<ConfigState> {
 /// What a save did. A save that names the config it was edited from (`base`) is refused when
 /// config.json no longer holds that config, because the CLI or a hand edit changed it since:
 /// the answer then carries the file as it is, so the window can fold its edit into it and save
-/// again. A refused save changes nothing, the secret store included.
+/// again, or says the file is gone. A refused save changes nothing, the secret store included.
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum SaveOutcome {
@@ -29,6 +29,10 @@ pub enum SaveOutcome {
     Saved { config: ConfigState },
     /// Nothing was saved. `config` is what config.json holds now.
     Changed { config: ConfigState },
+    /// Nothing was saved: config.json is gone since the edit started (reading it creates it).
+    /// Folding the edit into an empty config would read as every profile and server deleted,
+    /// so the window asks, then saves its own version without a base.
+    Missing,
 }
 
 /// Validates and saves the config, then renders each profile's MCP files and updates the shims
@@ -70,12 +74,13 @@ fn save(
         // A file that can't be read now was readable when the edit started: someone is editing
         // it. Saving over that would throw their edit away.
         (Err(err), Some(_)) => return Err(err),
+        (Ok(None), Some(_)) => return Ok(SaveOutcome::Missing),
         (loaded, _) => loaded.ok().flatten(),
     };
-    if let Some(base) = base {
-        if previous.as_ref() != Some(base) {
+    if let (Some(base), Some(previous)) = (base, &previous) {
+        if previous != base {
             return Ok(SaveOutcome::Changed {
-                config: previous.unwrap_or_default(),
+                config: previous.clone(),
             });
         }
     }
@@ -368,6 +373,26 @@ mod tests {
         assert_eq!(get_config(home).unwrap(), edited);
     }
 
+    /// config.json was deleted after the window read it. Merging into an empty config would drop
+    /// every profile the edit didn't touch, so the save is refused and writes nothing.
+    #[test]
+    fn refuses_an_edit_after_the_file_is_deleted() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let base = with_profile(&get_config(home).unwrap(), "p1", "Work");
+        save_config(home, &base, &HashMap::new(), None).unwrap();
+        let file = paths::root(home).join(config::CONFIG_FILE);
+        std::fs::remove_file(&file).unwrap();
+
+        let edited = with_profile(&base, "p2", "Personal");
+        let outcome = save_config(home, &edited, &HashMap::new(), Some(&base)).unwrap();
+        assert_eq!(outcome, SaveOutcome::Missing);
+        assert!(!file.exists());
+        // Without a base, as the window saves once the user chooses to write its version back.
+        save_config(home, &edited, &HashMap::new(), None).unwrap();
+        assert_eq!(get_config(home).unwrap(), edited);
+    }
+
     #[test]
     fn refuses_an_edit_while_the_file_is_broken() {
         let home = tempfile::tempdir().unwrap();
@@ -393,5 +418,7 @@ mod tests {
         let changed = serde_json::to_value(SaveOutcome::Changed { config }).unwrap();
         assert_eq!(changed["status"], "changed");
         assert!(changed["config"]["profiles"].is_array());
+        let missing = serde_json::to_value(SaveOutcome::Missing).unwrap();
+        assert_eq!(missing, serde_json::json!({ "status": "missing" }));
     }
 }
