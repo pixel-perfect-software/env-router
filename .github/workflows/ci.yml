@@ -103,8 +103,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Retries a slow mirror instead of waiting on it (see the script).
-      - run: sh .github/scripts/apt-install.sh zsh fish gnome-keyring dbus
+      # Retries a slow mirror instead of waiting on it (see the script). Only the x86_64 mingw
+      # compiler, to link the Windows helper, as the release does.
+      - run: sh .github/scripts/apt-install.sh zsh fish gnome-keyring dbus gcc-mingw-w64-x86-64
         timeout-minutes: 13
       - run: rustup show active-toolchain || rustup toolchain install
       - run: rustup target add x86_64-pc-windows-gnu
@@ -118,16 +119,41 @@ jobs:
       - run: >-
           dbus-run-session -- sh -c 'printf ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null
           && cargo test --locked -p envrouter-keychain -- --ignored'
-      # The Windows secrets helper a WSL distro runs. Clippy only type-checks, so no mingw is
-      # needed; its Credential Manager round trip runs under Wine with dev/containers.
+      # The Windows secrets helper a WSL distro runs, linked as the release links it: clippy only
+      # type-checks, so a link failure first showed in the release. Its Credential Manager round
+      # trip runs under Wine with dev/containers.
       - run: cargo clippy --locked -p envrouter-keychain --target x86_64-pc-windows-gnu --all-targets -- -D warnings
+      - run: cargo build --locked -p envrouter-keychain --target x86_64-pc-windows-gnu
+
+  # The desktop app crate on Linux: tauri.linux.conf.json, GTK and WebKitGTK, which only the
+  # release built before. On 22.04, where the release builds, with the packages compiling it needs.
+  app-linux:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sh .github/scripts/apt-install.sh libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
+        timeout-minutes: 13
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The app crate embeds the built frontend at compile time; an empty one compiles, and the
+      # checks job builds the real one.
+      - run: mkdir -p dist
+      - run: cargo clippy --locked -p envrouter --all-targets -- -D warnings
+      - run: cargo test --locked -p envrouter
 
   # The check branch protection requires for everything that doesn't need a Mac. It passes only
-  # when checks and rust both passed, or both were skipped for a docs-only change. It runs
+  # when checks, rust and app-linux all passed, or all were skipped for a docs-only change. It runs
   # whatever they did (`always()`): left to the default, a failure above would skip it, and a
   # skipped job counts as passing.
   linux:
-    needs: [changes, checks, rust]
+    needs: [changes, checks, rust, app-linux]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -136,14 +162,15 @@ jobs:
           CHANGES: ${{ needs.changes.result }}
           CHECKS: ${{ needs.checks.result }}
           RUST: ${{ needs.rust.result }}
+          APP: ${{ needs.app-linux.result }}
           CODE: ${{ needs.changes.outputs.code }}
         run: |
-          echo "changes: $CHANGES, checks: $CHECKS, rust: $RUST"
+          echo "changes: $CHANGES, checks: $CHECKS, rust: $RUST, app-linux: $APP"
           [ "$CHANGES" = success ] || exit 1
           if [ "$CODE" = true ]; then
-            [ "$CHECKS" = success ] && [ "$RUST" = success ]
+            [ "$CHECKS" = success ] && [ "$RUST" = success ] && [ "$APP" = success ]
           else
-            [ "$CHECKS" = skipped ] && [ "$RUST" = skipped ]
+            [ "$CHECKS" = skipped ] && [ "$RUST" = skipped ] && [ "$APP" = skipped ]
           fi
 
   macos:
