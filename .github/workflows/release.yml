@@ -24,7 +24,12 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Long enough to wait out CI on a commit tagged right after its merge.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read # to find the commit's CI run
+      checks: read # and its linux and macos checks
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -45,6 +50,11 @@ jobs:
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      # Only a commit CI finished testing ships: the checks branch protection requires, passed on
+      # this commit. Waits for a run still going.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh .github/scripts/ci-passed.sh "$GITHUB_SHA" linux macos
 
   # Each platform's app and CLI build in jobs of their own, side by side, since the CLI needs
   # nothing from the app. They're separate cargo builds anyway: on macOS both binaries are named

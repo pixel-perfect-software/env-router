@@ -227,7 +227,9 @@ Releases go to GitHub and Homebrew. To cut one:
 2. Tag that commit and push the tag: `git tag v0.2.0 && git push origin v0.2.0`.
 
 The [release workflow](../.github/workflows/release.yml) refuses a tag that doesn't match the
-app's version or isn't on `main`. Then:
+app's version, isn't on `main`, or names a commit CI didn't pass on. A run still going is
+waited for, so tagging the merge commit right after merging is fine; a cancelled or failed run
+needs a rerun first. Then:
 
 - **macOS** (Apple Silicon): the app as `EnvRouter-<version>-arm64.zip`, and the CLI as
   `envrouter-cli-<version>-aarch64-apple-darwin.tar.gz`.

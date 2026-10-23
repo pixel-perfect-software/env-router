@@ -11,9 +11,12 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels its run in progress. On main every run finishes: the
+# release ships only a commit whose run passed (.github/scripts/ci-passed.sh), and v0.6.0 was
+# tagged on one whose run a later push cancelled.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Docs, design notes, the local containers and the Homebrew templates don't change what CI

@@ -22,7 +22,7 @@ token, Contents read and write on `homebrew-tap` only), so the tap holds only ge
 EnvRouter is GPL-3.0-or-later; every bundle and CLI archive carries `LICENSE` and
 `THIRD-PARTY-NOTICES.txt` (`pnpm notices`, from `packaging/notices/`; CI runs it so a dependency
 with no licence text fails there, not at release). Dependencies stay permissive (`deny.toml`).
-The tag must equal `version` in `tauri.conf.json` and be on `main`.
+The tag must equal `version` in `tauri.conf.json`, be on `main`, and name a commit CI passed on: the `check` job (`.github/scripts/ci-passed.sh`) waits for that commit's CI run and refuses one that was cancelled or failed or never ran, so tag the merge commit, not a branch commit. CI runs on `main` are never cancelled by a later push.
 
 **How it works: shims, like mise or volta.** `~/.envrouter/shims/<tool>` is a symlink to
 `~/.envrouter/bin/envrouter-shim`, a small Rust binary, and a marked block in the user's shell
