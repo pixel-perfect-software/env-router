@@ -120,6 +120,22 @@ describe('saving', () => {
     )
   })
 
+  it('refuses a save with a base after config.json is deleted, and writes one without', async () => {
+    const call = await boot('?scenario=mcp')
+    const base = await call<ConfigState>('get_config')
+    window.__mockDeleteConfig()
+    const payload = { ...base, profiles: base.profiles.slice(1) }
+    expect(await call('save_config', { payload, secrets: {}, base })).toEqual({ status: 'missing' })
+    expect(await call('save_config', { payload, secrets: {}, base: null })).toMatchObject({ status: 'saved' })
+    expect((await call<ConfigState>('get_config')).profiles).toHaveLength(base.profiles.length - 1)
+  })
+
+  it('reads an empty config after config.json is deleted', async () => {
+    const call = await boot('?scenario=mcp')
+    window.__mockDeleteConfig()
+    expect(await call<ConfigState>('get_config')).toMatchObject({ profiles: [], mcpServers: {} })
+  })
+
   it('fails to store a secret when there is no store', async () => {
     const call = await boot('?scenario=mcp&store=off&platform=linux')
     const config = await call<ConfigState>('get_config')

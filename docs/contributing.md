@@ -110,7 +110,8 @@ shell startup files. Two ways to avoid that:
   `window.__mockDrop('/Users/sam/dev/work/api', 400, 300)` in the console simulates dropping a
   folder from Finder (`/home/sam/…` with `platform=linux` or `wsl`).
   `window.__mockEditConfig((c) => ({ ...c, profiles: c.profiles.slice(1) }))` changes `config.json`
-  behind the window's back, as the CLI or a hand edit would, so the next save meets it. The mock's
+  behind the window's back, as the CLI or a hand edit would, so the next save meets it;
+  `window.__mockDeleteConfig()` deletes it the same way. The mock's
   npm knows every package at `1.4.0` (`next` at `2.0.0-beta.2`), except a name ending in `-nope`. When you change a command's behaviour, keep the mock answering the way the
   real backend does.
 - **A scratch home folder**, for the real app. Build it, then launch the binary with `HOME`

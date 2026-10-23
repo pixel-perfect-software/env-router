@@ -27,9 +27,10 @@ export const getConfig = () => invoke<ConfigState>('get_config')
  * Validates and saves, then updates the shims. Takes effect on the next run of each tool.
  * `secrets`: values typed since the last save, keyed by the ids `payload` refers to them by;
  * they go to the Keychain and never come back to the window. `base`: the config the edit
- * started from; if config.json has changed since, nothing is saved and the answer says so.
+ * started from; if config.json has changed since, or is gone, nothing is saved and the answer
+ * says so. `null` saves over whatever is there.
  */
-export const saveConfig = (payload: ConfigState, secrets: Record<string, string>, base: ConfigState) =>
+export const saveConfig = (payload: ConfigState, secrets: Record<string, string>, base: ConfigState | null) =>
   invoke<SaveOutcome>('save_config', { payload, secrets, base })
 
 export const getSetupStatus = () => invoke<SetupStatus>('get_setup_status')
