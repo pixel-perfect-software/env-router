@@ -318,12 +318,19 @@ pub fn as_saved(config: &ConfigState) -> ConfigState {
 /// Holds `dir`'s save lock until the returned file is dropped, so the window and the CLI never
 /// read, compare and write the config at the same time. Advisory: a hand edit doesn't take it.
 pub fn lock(dir: &Path) -> Result<File> {
-    let path = dir.join("config.lock");
+    lock_file(&dir.join("config.lock"))
+}
+
+/// Holds an exclusive lock on `path`, creating it, until the returned file is dropped.
+pub fn lock_file(path: &Path) -> Result<File> {
+    let path = path.to_path_buf();
     let io_err = |source| Error::Io {
         path: path.clone(),
         source,
     };
-    fs::create_dir_all(dir).map_err(io_err)?;
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(io_err)?;
+    }
     let file = File::options()
         .write(true)
         .create(true)

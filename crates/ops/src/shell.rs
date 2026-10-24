@@ -430,12 +430,15 @@ pub enum FolderCheck {
     ShimFailed { message: String },
 }
 
+/// What [`login_path`] last found, and for which home.
+static LOGIN_PATH: Mutex<Option<(PathBuf, String)>> = Mutex::new(None);
+
 /// The PATH a new terminal window gets from the user's shell, after its startup files. An app
 /// opened from Finder or a `.desktop` file may have a bare PATH, so MCP server checks start
-/// `npx` and the like with this one. Asked once per app run; a failure is reported, not cached.
+/// `npx` and the like with this one. Kept until [`forget_login_path`] (the window gaining
+/// focus); a failure is reported, not kept.
 pub fn login_path(home: &Path) -> Result<String> {
-    static CACHE: Mutex<Option<(PathBuf, String)>> = Mutex::new(None);
-    let mut cache = CACHE
+    let mut cache = LOGIN_PATH
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some((cached_home, path)) = cache.as_ref() {
@@ -479,6 +482,14 @@ pub fn login_path(home: &Path) -> Result<String> {
         })?;
     *cache = Some((home.to_path_buf(), path.clone()));
     Ok(path)
+}
+
+/// Makes the next [`login_path`] ask the shell again: the user may have changed their startup
+/// files since. Before, the first answer stood until the app quit.
+pub fn forget_login_path() {
+    *LOGIN_PATH
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
 }
 
 /// Starts the shell the way a new terminal window does (interactive, and a login shell where
@@ -760,6 +771,17 @@ mod tests {
     use super::*;
     use crate::shims;
     use envrouter_core::config::{Profile, ToolConfig};
+
+    /// The window gaining focus forgets the PATH a new terminal gets, so a check after the user
+    /// edited their startup files asks the shell again instead of using the app's first answer.
+    #[test]
+    fn focus_forgets_the_login_path() {
+        let home = PathBuf::from("/nonexistent/login-path-test-home");
+        *LOGIN_PATH.lock().unwrap() = Some((home.clone(), "/old/bin".into()));
+        assert_eq!(login_path(&home).unwrap(), "/old/bin", "kept until focus");
+        forget_login_path();
+        assert!(LOGIN_PATH.lock().unwrap().is_none());
+    }
 
     /// The file a new terminal's bash reads first in an empty home on this platform:
     /// `.bash_profile` on macOS, `.bashrc` on a Linux desktop, `.profile` in WSL.

@@ -178,6 +178,9 @@ fn save(
     config::save(&root, payload)?;
     mcp::sync(payload, home)?;
     shims::sync(home, payload)?;
+    // A cache: `known_tools` already ignores servers the library dropped, so a failed prune only
+    // leaves their lists on disk, and the save it follows has gone through.
+    let _ = mcp_probe::prune(home, payload);
     if before.iter().any(|id| !referenced.contains(id)) {
         store.prune(home, &referenced)?;
     }
@@ -239,7 +242,10 @@ pub struct SetupStatus {
     pub shells: Vec<ShellStatus>,
 }
 
+/// The window asks this whenever it gains focus, which is also when the user may have changed
+/// their startup files, so the PATH a new terminal gets is asked again on the next check.
 pub fn setup_status(home: &Path) -> Result<SetupStatus> {
+    shell::forget_login_path();
     let platform = Platform::current();
     Ok(SetupStatus {
         platform,
@@ -441,6 +447,26 @@ mod tests {
             .mcp_servers
             .insert(server.into(), config::McpUse::default());
         config
+    }
+
+    /// A server deleted from the library leaves the tool-list cache with the save that deletes it.
+    #[test]
+    fn a_save_prunes_the_tool_lists_of_deleted_servers() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let empty = get_config(home).unwrap();
+        let config = with_secret_server(&empty, "github", "7F3A");
+        let server = config.mcp_servers["github"].clone();
+        let tools = [mcp_probe::ToolInfo {
+            name: "t".into(),
+            description: None,
+        }];
+        mcp_probe::remember(home, "github", &server, &tools).unwrap();
+        mcp_probe::remember(home, "gone", &server, &tools).unwrap();
+        save_config(home, &config, &HashMap::new(), None).unwrap();
+        let cache = std::fs::read_to_string(paths::root(home).join("mcp-tools.json")).unwrap();
+        assert!(cache.contains("\"github\""));
+        assert!(!cache.contains("\"gone\""), "{cache}");
     }
 
     /// The save that replaces a server: the old one's secret is pruned only once the config

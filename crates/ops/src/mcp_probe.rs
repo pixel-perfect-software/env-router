@@ -350,16 +350,37 @@ fn read_cache(home: &Path) -> Cache {
         .unwrap_or_default()
 }
 
-/// Remembers a check that worked.
+/// Remembers a check that worked. Checks run side by side (in the window, and from the CLI),
+/// so the read, change and write happen under a lock: without it, two finishing together kept
+/// only one result.
 pub fn remember(home: &Path, name: &str, server: &McpServer, tools: &[ToolInfo]) -> Result<()> {
+    edit_cache(home, |cache| {
+        cache.servers.insert(
+            name.to_string(),
+            CachedTools {
+                server: server.clone(),
+                tools: tools.to_vec(),
+            },
+        );
+    })
+}
+
+/// Drops the tool lists of servers the library no longer has, after a save.
+pub fn prune(home: &Path, config: &ConfigState) -> Result<()> {
+    if !cache_path(home).exists() {
+        return Ok(());
+    }
+    edit_cache(home, |cache| {
+        cache
+            .servers
+            .retain(|name, _| config.mcp_servers.contains_key(name));
+    })
+}
+
+fn edit_cache(home: &Path, edit: impl FnOnce(&mut Cache)) -> Result<()> {
+    let _lock = config::lock_file(&cache_path(home).with_extension("lock"))?;
     let mut cache = read_cache(home);
-    cache.servers.insert(
-        name.to_string(),
-        CachedTools {
-            server: server.clone(),
-            tools: tools.to_vec(),
-        },
-    );
+    edit(&mut cache);
     let json =
         serde_json::to_string_pretty(&cache).map_err(|err| Error::Command(err.to_string()))?;
     config::write_atomic(&cache_path(home), format!("{json}\n"))
@@ -574,5 +595,29 @@ done
             ..Default::default()
         };
         assert_eq!(known_tools(&config, home).keys().collect::<Vec<_>>(), ["a"]);
+    }
+
+    /// The window runs checks side by side, and each one that worked is remembered. Each read
+    /// the cache, added its server and wrote it all back, so two at once kept only one.
+    #[test]
+    fn checks_finishing_together_are_all_remembered() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let server = stdio(Path::new("npx"), &[]);
+        let tools = [ToolInfo {
+            name: "t".into(),
+            description: None,
+        }];
+        let names: Vec<String> = (0..24).map(|n| format!("s{n}")).collect();
+        std::thread::scope(|scope| {
+            for name in &names {
+                scope.spawn(|| remember(home, name, &server, &tools).unwrap());
+            }
+        });
+        let config = ConfigState {
+            mcp_servers: names.iter().map(|n| (n.clone(), server.clone())).collect(),
+            ..Default::default()
+        };
+        assert_eq!(known_tools(&config, home).len(), names.len());
     }
 }
