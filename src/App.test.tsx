@@ -129,6 +129,14 @@ describe('focus', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit Mine' }))
   })
 
+  it('goes to Add Server when the inspector sends the user to MCP Servers for a first server', async () => {
+    const user = await open('?scenario=populated')
+    await user.click(await screen.findByRole('button', { name: 'Edit Work' }))
+    await user.click(inspector().getByRole('button', { name: 'MCP Servers' }))
+    await closed()
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add Server' })))
+  })
+
   it('goes to the next server when one is deleted', async () => {
     vi.stubGlobal('confirm', () => true)
     const user = await open('?scenario=mcp')
