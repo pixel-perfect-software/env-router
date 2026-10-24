@@ -185,9 +185,9 @@ function ProfileCard({
               <div key={c.base} data-folder={c.base} className="ml-[13px] flex items-center gap-1.5 py-0.5 pl-2.5 text-small text-ink-2 hair-l">
                 <BranchIcon />
                 <span className="min-w-0 truncate font-mono">{c.rel}</span>
-                <span className="ml-auto flex shrink-0 items-center gap-1 pr-1.5">
+                <span className="ml-auto flex max-w-[50%] shrink-0 items-center gap-1 pr-1.5" title={c.profile.name}>
                   <ProfileDot color={c.color} size={2} />
-                  {c.profile.name}
+                  <span className="min-w-0 truncate">{c.profile.name}</span>
                 </span>
               </div>
             ))}

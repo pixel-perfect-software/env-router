@@ -201,7 +201,8 @@ export function ServerEditor({
                     type="button"
                     aria-pressed={on}
                     onClick={() => setSwitched((s) => ({ ...s, [p.id]: !on }))}
-                    className={`flex h-[28px] items-center gap-1.5 rounded-full pr-3 pl-2.5 text-small transition-[background-color,box-shadow] duration-150 ease-settle ${
+                    title={p.name}
+                    className={`flex h-[28px] max-w-full items-center gap-1.5 rounded-full pr-3 pl-2.5 text-small transition-[background-color,box-shadow] duration-150 ease-settle ${
                       on
                         ? 'text-ink'
                         : 'text-ink-2 shadow-[inset_0_0_0_1px_var(--er-rule)] hover:bg-[color-mix(in_srgb,var(--er-ink)_5%,transparent)] hover:text-ink'
@@ -211,7 +212,7 @@ export function ServerEditor({
                     }
                   >
                     <ProfileDot color={p.color} size={2} className={on ? '' : 'opacity-70'} />
-                    {p.name}
+                    <span className="min-w-0 truncate">{p.name}</span>
                   </button>
                 )
               })}
