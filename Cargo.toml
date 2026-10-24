@@ -46,12 +46,12 @@ unnested_or_patterns = "warn"
 dbg_macro = "warn"
 todo = "warn"
 
-# The app and the CLI: parallel codegen, no cross-crate LTO (`false` still optimises within each
-# crate), optimised for size, since their speed is the webview's and the disk's, not Rust's.
-# Measured on a cold build of both on an M-series Mac: whole-program LTO with one codegen unit
-# took 127s for a 10.4MB binary (5.0MB compressed); this takes 60s for 11.5MB (4.4MB compressed).
+# The app and the CLI: parallel codegen, thin LTO, optimised for size, since their speed is the
+# webview's and the disk's, not Rust's. Measured on cold builds on an M-series Mac: whole-program
+# LTO with one codegen unit took 127s for a 10.4MB app binary (5.0MB compressed); no cross-crate
+# LTO took 57s for 11.24MB; thin takes 50s for 10.92MB, and the CLI 23s for 6.15MB (from 6.29MB).
 [profile.release]
-lto = false
+lto = "thin"
 opt-level = "s"
 panic = "abort"
 strip = true
