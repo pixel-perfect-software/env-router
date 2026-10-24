@@ -225,9 +225,16 @@ builds carry LICENSE and notices; the Windows helper built once and reproducibly
 module; the shim prefilters triggers and PATH entries, keeps the previous MCP generation during
 a save, and has a timing gate in CI.
 
-**Done when:** the measured sizes below drop; the shim's median overhead over a bare exec stays
-under 0.5 ms with 60 triggers and CI enforces it; a WSL user on the AppImage can store a secret;
-a save during an agent launch can't hand it a deleted file.
+**Done when:** the measured sizes below drop; with 60 triggers and 8 PATH entries ahead of the
+tool, a launch through the shim takes at most 1.8 times a bare exec's on CI's Linux runner, and CI
+enforces it; a WSL user on the AppImage can store a secret; a save during an agent launch can't
+hand it a deleted file.
+
+The shim target was first "under 0.5 ms median overhead". Restated on 2026-10-24 (#96): GitHub's
+macOS runners swing 16 times between identical runs, and its Linux machines differ by 40% in
+speed (a bare exec took 0.68 to 0.97 ms across three), so no millisecond limit both holds and
+catches a regression. The ratio does: 1.58 to 1.67 after #50 and #51, 1.94 to 2.08 before. About
+0.39 ms of any Rust shim's overhead is Rust starting up, which no routing change removes.
 
 The bundle is already close to minimal: the shim links only libSystem, TLS is rustls with no
 OpenSSL, the dev mock isn't in `dist/`, and the icon packages are tree-shaken. The items below
@@ -294,7 +301,7 @@ Measured on v0.6.0 (M-series Mac, 2026-10-23):
     the agent then starts with `--mcp-config=<deleted file>`. Fix: generation directories with a
     grace period, or render into a new dir and swap.
 13. **A shim timing gate in CI.** `hyperfine -N` the helpers-profile shim against an exec-only
-    wrapper on the macOS job with a 60-trigger config; fail over 0.5 ms median overhead.
+    wrapper with a 60-trigger config; fail over a ratio of the bare exec, on Linux (see Done when).
 14. **Small stale-state bugs.** `mcp-tools.json` is read-modify-written without a lock while the
     UI allows parallel checks, and deleted servers are never pruned
     (`crates/ops/src/mcp_probe.rs:354-366`); `login_path` is cached for the app's lifetime
