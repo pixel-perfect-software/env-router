@@ -51,7 +51,7 @@ recommends its extension and turns on format-on-save.
 | Unused Rust dependencies | `cargo machete` |
 
 CI (`.github/workflows/ci.yml`) runs these for every pull request and every push to `main`,
-except changes that only touch docs, design notes, `dev/containers` or `packaging/homebrew`. Most of it
+except changes that only touch docs, design notes or `dev/containers`. Most of it
 runs on Linux: the frontend, formatting, licences, the backend, shim, secrets and CLI tests, the
 secrets round trip through a GNOME Keyring, the Windows secrets helper (linted and linked with
 mingw), and the desktop app crate on Ubuntu 22.04, where the release builds it. The macOS
@@ -81,7 +81,7 @@ as an advisory lands.
 
 `dev/containers/compose.yaml` runs the Linux and Windows checks in containers, with Podman or
 Docker. Everything is grouped under the project `envrouter-dev`; the checkout is mounted
-read-only, and builds persist in named volumes.
+read-only, and builds persist in named volumes. A change to `dev/containers/` builds both images in CI (`.github/workflows/dev-containers.yml`).
 
 ```sh
 podman compose -f dev/containers/compose.yaml run --rm linux-test            # backend tests, keyring round trip

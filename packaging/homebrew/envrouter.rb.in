@@ -33,6 +33,7 @@ cask "envrouter" do
   zap trash: [
     "~/.envrouter",
     "~/Library/Caches/com.tylerrobertson.envrouter",
+    "~/Library/Preferences/com.tylerrobertson.envrouter.plist",
     "~/Library/WebKit/com.tylerrobertson.envrouter",
   ]
 
