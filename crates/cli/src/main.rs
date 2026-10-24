@@ -12,7 +12,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use envrouter_core::config;
 use envrouter_core::platform::Platform;
 use envrouter_core::{agents, paths, Error, Result};
-use envrouter_ops::commands::{self, SecretUse};
+use envrouter_ops::commands::{self, CliSave, SecretUse};
 use envrouter_ops::editors::{Editor, EditorStatus};
 use envrouter_ops::shell::{FolderCheck, Shell, ShellStatus};
 use envrouter_ops::{rpc, shims};
@@ -248,12 +248,17 @@ fn run(cli: &Cli, home: &Path) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         Command::Apply => {
-            let (config, retried) = commands::save_from_cli(home, &HashMap::new(), |config| {
+            let CliSave {
+                config,
+                retried,
+                warning,
+            } = commands::save_from_cli(home, &HashMap::new(), |config| {
                 Ok(agents::with_agents(config))
             })?;
             if retried {
                 eprintln!("envrouter: config.json changed while applying (the app saved, or someone edited it), so this applied the new version.");
             }
+            warn_saved(warning.as_deref());
             let file = paths::root(home).join(config::CONFIG_FILE);
             let applied = serde_json::json!({
                 "config": file.display().to_string(),
@@ -362,6 +367,14 @@ fn install(cli: &Cli, home: &Path) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+/// A save that went through but couldn't finish tidying the secret store says so, as the window
+/// does, without failing the command.
+fn warn_saved(warning: Option<&str>) {
+    if let Some(warning) = warning {
+        eprintln!("envrouter: saved, with a problem: {warning}");
+    }
+}
+
 /// Stores one secret through the same save the window makes, so it's checked and pruned the
 /// same way.
 fn set_secret(cli: &Cli, home: &Path, id: &str) -> Result<ExitCode> {
@@ -376,14 +389,18 @@ fn set_secret(cli: &Cli, home: &Path, id: &str) -> Result<ExitCode> {
         return Err(unused());
     }
     let value = read_secret(id)?;
-    let (config, retried) =
-        commands::save_from_cli(home, &HashMap::from([(id.to_string(), value)]), |config| {
-            if config::secret_users(&config).contains_key(id) {
-                Ok(agents::with_agents(config))
-            } else {
-                Err(unused())
-            }
-        })?;
+    let CliSave {
+        config,
+        retried,
+        warning,
+    } = commands::save_from_cli(home, &HashMap::from([(id.to_string(), value)]), |config| {
+        if config::secret_users(&config).contains_key(id) {
+            Ok(agents::with_agents(config))
+        } else {
+            Err(unused())
+        }
+    })?;
+    warn_saved(warning.as_deref());
     if retried {
         eprintln!("envrouter: config.json changed while you typed (the app saved, or someone edited it), so the secret was saved with the new version.");
     }
@@ -593,6 +610,7 @@ fn verdict(check: &FolderCheck, tool: &str, shell: Shell, home: &Path) -> String
             mcp_managed_by,
             via_alias,
             real,
+            ..
         } => {
             let route = match (profile, env_var, value) {
                 (None, _, _) => {

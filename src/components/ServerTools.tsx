@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import { checkMcpServer, errorMessage } from '../lib/api'
 import { type ProfileChip, type ServerDraft, serverOf } from '../lib/mcp'
+import { usePlatform } from '../lib/platform'
 import { plural } from '../lib/text'
 import type { ServerCheck, ToolInfo } from '../lib/types'
 import { CheckIcon } from './icons'
@@ -33,6 +34,7 @@ export function CheckSection({
   /** Per tool, the profiles that turn it off, so the list says where each one is off. */
   toolsOff: Record<string, ProfileChip[]>
 }) {
+  const { canLock } = usePlatform()
   const [state, setState] = useState<{ key: string; result: ServerCheck | 'running' | { error: string } } | null>(null)
   const key = JSON.stringify(draft)
   const current = state?.key === key ? state.result : null
@@ -41,7 +43,7 @@ export function CheckSection({
   const reveal = () => requestAnimationFrame(() => section.current?.scrollIntoView({ block: 'nearest' }))
 
   const run = async () => {
-    const built = serverOf(draft)
+    const built = serverOf(draft, canLock)
     if ('error' in built) {
       setState({ key, result: { error: built.error } })
       reveal()

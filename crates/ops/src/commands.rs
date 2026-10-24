@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use envrouter_core::config::{self, ConfigState, IdeHook, McpServer};
 use envrouter_core::platform::{self, Platform};
-use envrouter_core::{agents, mcp, paths, Error, Result};
+use envrouter_core::{agents, mcp, paths, Error, ErrorKind, Result};
 use serde::Serialize;
 
 use crate::editors::{self, Editor, EditorStatus};
@@ -18,6 +18,23 @@ pub fn get_config(home: &Path) -> Result<ConfigState> {
     config::load_or_init(&paths::root(home))
 }
 
+/// Why config.json couldn't be read, as the window's first read rejects with it: the message to
+/// show, and the kind, so the window offers Start Over only for a file that won't parse.
+#[derive(Debug, PartialEq, Serialize)]
+pub struct ConfigFault {
+    pub kind: ErrorKind,
+    pub message: String,
+}
+
+impl From<Error> for ConfigFault {
+    fn from(err: Error) -> Self {
+        Self {
+            kind: err.kind(),
+            message: err.to_string(),
+        }
+    }
+}
+
 /// What a save did. A save that names the config it was edited from (`base`) is refused when
 /// config.json no longer holds that config, because the CLI or a hand edit changed it since:
 /// the answer then carries the file as it is, so the window can fold its edit into it and save
@@ -25,8 +42,13 @@ pub fn get_config(home: &Path) -> Result<ConfigState> {
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum SaveOutcome {
-    /// `config` is what config.json holds now: the payload at the current version.
-    Saved { config: ConfigState },
+    /// `config` is what config.json holds now: the payload at the current version. `warning`:
+    /// something the save couldn't finish after writing the config (the secret store wouldn't
+    /// drop a secret nothing uses any more), worded to show as it is. The save still counts.
+    Saved {
+        config: ConfigState,
+        warning: Option<String>,
+    },
     /// Nothing was saved. `config` is what config.json holds now.
     Changed { config: ConfigState },
     /// Nothing was saved: config.json is gone since the edit started (reading it creates it).
@@ -52,15 +74,15 @@ pub fn save_config(
 /// [`save_config`] for the CLI: `edit` makes the config to save from config.json as it is, and
 /// the save names what it read as its base. When the window or a hand edit saved in between,
 /// the edit is made again over the file as it is now instead of overwriting it (`edit` may run
-/// more than once). Answers the config as saved, and whether it took more than one try. It
-/// installs its own shim and helper only where the installed shim can't read the config it
-/// writes (none, or an older one): where the app is in use, its builds stay; `envrouter
-/// install` replaces them on purpose.
+/// more than once). Answers the config as saved, whether it took more than one try, and the
+/// save's warning, if any. It installs its own shim and helper only where the installed shim
+/// can't read the config it writes (none, or an older one): where the app is in use, its builds
+/// stay; `envrouter install` replaces them on purpose.
 pub fn save_from_cli(
     home: &Path,
     secrets: &HashMap<String, String>,
     edit: impl FnMut(ConfigState) -> Result<ConfigState>,
-) -> Result<(ConfigState, bool)> {
+) -> Result<CliSave> {
     edit_and_save(home, secrets, cli_installs(home), &Keychain, edit)
 }
 
@@ -71,19 +93,33 @@ fn cli_installs(home: &Path) -> bool {
     shims::installed_config_version(home).is_none_or(|version| version < config::CONFIG_VERSION)
 }
 
+/// What a CLI save did: see [`save_from_cli`].
+#[derive(Debug)]
+pub struct CliSave {
+    pub config: ConfigState,
+    pub retried: bool,
+    pub warning: Option<String>,
+}
+
 fn edit_and_save(
     home: &Path,
     secrets: &HashMap<String, String>,
     install: bool,
     store: &impl SecretStore,
     mut edit: impl FnMut(ConfigState) -> Result<ConfigState>,
-) -> Result<(ConfigState, bool)> {
+) -> Result<CliSave> {
     // A file that keeps changing under the save gets a few tries, not a loop.
     for tries in 0..3 {
         let base = get_config(home)?;
         let payload = edit(base.clone())?;
         match save(home, &payload, secrets, Some(&base), install, store)? {
-            SaveOutcome::Saved { config } => return Ok((config, tries > 0)),
+            SaveOutcome::Saved { config, warning } => {
+                return Ok(CliSave {
+                    config,
+                    retried: tries > 0,
+                    warning,
+                })
+            }
             // Read again: a missing file is created empty, as the window's read does.
             SaveOutcome::Changed { .. } | SaveOutcome::Missing => {}
         }
@@ -166,13 +202,21 @@ fn save(
     }
     // The store is read only when this save adds a secret or stops using one. New values go
     // in first, and every secret either config names stays until this one is written, so a
-    // failure from here on never leaves config.json naming a secret that's gone.
+    // failure from here on never leaves config.json naming a secret that's gone. A secret
+    // Start Over's backup names stays too: restoring the backup would otherwise bring its
+    // servers back with no secrets.
     let before = previous
         .as_ref()
         .map(config::secret_ids)
         .unwrap_or_default();
+    let backed_up = config::backed_up_secret_ids(&root);
+    let kept: BTreeSet<&str> = referenced
+        .iter()
+        .copied()
+        .chain(backed_up.iter().map(String::as_str))
+        .collect();
     if !secrets.is_empty() {
-        let keep = referenced.union(&before).copied().collect();
+        let keep = kept.union(&before).copied().collect();
         store.update(home, secrets, &keep)?;
     }
     config::save(&root, payload)?;
@@ -181,15 +225,96 @@ fn save(
     // A cache: `known_tools` already ignores servers the library dropped, so a failed prune only
     // leaves their lists on disk, and the save it follows has gone through.
     let _ = mcp_probe::prune(home, payload);
-    if before.iter().any(|id| !referenced.contains(id)) {
-        store.prune(home, &referenced)?;
-    }
+    // The config is written and rendered by now, so a store that won't let go of a secret
+    // (none to ask, locked) is a warning, not a failed save: the window would keep the old base
+    // for a file that's already new. The next save that reaches the store drops it.
+    let warning = if before.iter().any(|id| !kept.contains(id)) {
+        store.prune(home, &kept).err().map(|err| err.to_string())
+    } else {
+        None
+    };
     if fresh_shim && !referenced.is_empty() {
         shims::ask_keychain_access(home);
     }
     Ok(SaveOutcome::Saved {
         config: config::as_saved(payload),
+        warning,
     })
+}
+
+/// Starts over from a config.json that isn't valid JSON: copies its bytes to the first free
+/// `config.json.bak`, `config.json.bak-2`, ... beside it in `~/.envrouter`, then writes an empty
+/// config in its place (through a symlink, as a save does), and answers the backup's path. Under
+/// the save lock, so a save in flight can't interleave. It acts only on a parse error: a file
+/// from a newer EnvRouter, one that can't be read, or one that reads fine by now is refused
+/// and left alone, and an earlier backup is never overwritten. The secret store, the rendered
+/// MCP files and the shims stay as they are.
+pub fn reset_unreadable_config(home: &Path) -> Result<PathBuf> {
+    let root = paths::root(home);
+    let _lock = config::lock(&root)?;
+    let file = root.join(config::CONFIG_FILE);
+    // Read once: what is judged unparseable is what gets backed up, even if someone saves
+    // while this runs (the lock keeps the app's and the CLI's saves out, not an editor's).
+    let bytes = match std::fs::read(&file) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Err(Error::Invalid(
+                "config.json is gone, so nothing was changed.".into(),
+            ))
+        }
+        Err(source) => return Err(Error::Io { path: file, source }),
+    };
+    match config::parse(&file, &bytes) {
+        Err(Error::Json { .. }) => {}
+        Err(err) => return Err(err),
+        Ok(_) => {
+            return Err(Error::Invalid(
+                "config.json can be read now, so nothing was changed.".into(),
+            ))
+        }
+    }
+    let backup = write_new_backup(&file, &bytes)?;
+    config::save(&root, &ConfigState::default())?;
+    Ok(backup)
+}
+
+/// Writes `bytes` to the first of `<file>.bak`, `<file>.bak-2`, ... that doesn't exist, which
+/// `create_new` decides atomically, so a backup is never replaced. A write that fails leaves no
+/// partial backup behind.
+fn write_new_backup(file: &Path, bytes: &[u8]) -> Result<PathBuf> {
+    use std::io::{ErrorKind, Write};
+
+    for n in 1..=1000 {
+        let backup = file.with_file_name(config::backup_file_name(n));
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        // The config may hold values the user typed in plain.
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let mut out = match options.open(&backup) {
+            Ok(out) => out,
+            Err(err) if err.kind() == ErrorKind::AlreadyExists => continue,
+            Err(source) => {
+                return Err(Error::Io {
+                    path: backup,
+                    source,
+                })
+            }
+        };
+        if let Err(source) = out.write_all(bytes).and_then(|()| out.sync_all()) {
+            drop(out);
+            let _ = std::fs::remove_file(&backup);
+            return Err(Error::Io {
+                path: backup,
+                source,
+            });
+        }
+        return Ok(backup);
+    }
+    Err(Error::Invalid(format!(
+        "{} has 1000 backups already. Remove some, then try again.",
+        file.display()
+    )))
 }
 
 /// A secret the server library refers to: who uses it and whether the store has it, never
@@ -237,6 +362,10 @@ pub struct SetupStatus {
     pub platform: Platform,
     /// What the store MCP secrets go to is called here: "Keychain", "keyring".
     pub secret_store: &'static str,
+    /// Why that store can't keep secrets right now (no Secret Service running, no Windows
+    /// helper in WSL), in its own words; `None` when it can. Asking never reads a secret or
+    /// prompts.
+    pub secret_store_problem: Option<String>,
     pub shim_installed: bool,
     pub shims_dir: String,
     pub shells: Vec<ShellStatus>,
@@ -250,6 +379,7 @@ pub fn setup_status(home: &Path) -> Result<SetupStatus> {
     Ok(SetupStatus {
         platform,
         secret_store: platform.secret_store_name(),
+        secret_store_problem: envrouter_keychain::problem(home),
         shim_installed: shims::is_installed(home, &shims::bundled()?, &shims::bundled_keychain()?),
         shims_dir: paths::shims(home).display().to_string(),
         shells: Shell::ALL.iter().map(|&s| shell::status(s, home)).collect(),
@@ -409,6 +539,8 @@ mod tests {
     #[derive(Default)]
     struct FakeStore {
         secrets: std::cell::RefCell<HashMap<String, String>>,
+        /// Drops nothing and says so, as a store that's gone or locked does.
+        wont_drop: std::cell::Cell<bool>,
     }
 
     impl SecretStore for FakeStore {
@@ -425,6 +557,9 @@ mod tests {
         }
 
         fn prune(&self, home: &Path, keep: &BTreeSet<&str>) -> Result<()> {
+            if self.wont_drop.get() {
+                return Err(Error::SecretStore("the keyring is locked".into()));
+            }
             self.update(home, &HashMap::new(), keep)
         }
     }
@@ -506,6 +641,62 @@ mod tests {
         assert!(store.secrets.borrow().is_empty());
     }
 
+    /// A store that won't drop a secret after the config is written (none to ask, locked) used to
+    /// fail the save: the window showed an error and kept its old base for a file that was
+    /// already new. Now the save counts and carries the store's reason.
+    #[test]
+    fn a_store_that_wont_drop_a_secret_warns_after_the_config_is_written() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let store = FakeStore::default();
+        let empty = get_config(home).unwrap();
+        let old = with_secret_server(&empty, "github", "7F3A");
+        let value = HashMap::from([("7F3A".to_string(), "ghp_old".to_string())]);
+        save(home, &old, &value, None, false, &store).unwrap();
+
+        store.wont_drop.set(true);
+        let SaveOutcome::Saved { config, warning } =
+            save(home, &empty, &HashMap::new(), Some(&old), false, &store).unwrap()
+        else {
+            panic!("the save should count");
+        };
+        assert_eq!(config, empty);
+        assert_eq!(get_config(home).unwrap(), empty);
+        assert!(warning.unwrap().contains("keyring is locked"));
+    }
+
+    /// Start Over leaves the store as it is and the broken file as a backup. A save after it used
+    /// to drop every secret the new config didn't name, so putting the backup back brought its
+    /// servers back without their secrets. A secret a backup names stays until the backup goes.
+    #[test]
+    fn a_secret_a_start_over_backup_names_outlives_the_saves_after_it() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let store = FakeStore::default();
+        let empty = get_config(home).unwrap();
+        let old = with_secret_server(&empty, "github", "7F3A");
+        let value = HashMap::from([("7F3A".to_string(), "ghp_old".to_string())]);
+        save(home, &old, &value, None, false, &store).unwrap();
+
+        let file = paths::root(home).join(config::CONFIG_FILE);
+        let text = std::fs::read_to_string(&file).unwrap();
+        std::fs::write(&file, format!("{text}{{ half-typed")).unwrap();
+        let backup = reset_unreadable_config(home).unwrap();
+
+        let new = with_secret_server(&empty, "linear", "9B2C");
+        let value = HashMap::from([("9B2C".to_string(), "lin_new".to_string())]);
+        save(home, &new, &value, None, false, &store).unwrap();
+        save(home, &empty, &HashMap::new(), None, false, &store).unwrap();
+        let mut stored: Vec<_> = store.secrets.borrow().keys().cloned().collect();
+        stored.sort();
+        assert_eq!(stored, ["7F3A"], "the backup still names it");
+
+        std::fs::remove_file(backup).unwrap();
+        save(home, &new, &HashMap::new(), None, false, &store).unwrap();
+        save(home, &empty, &HashMap::new(), None, false, &store).unwrap();
+        assert!(store.secrets.borrow().is_empty());
+    }
+
     /// `envrouter apply` and `secret set` read config.json, then save. A window save in
     /// between used to be overwritten; now the CLI's edit is made again over it.
     #[test]
@@ -513,7 +704,11 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let home = home.path();
         let mut calls = 0;
-        let (saved, retried) = edit_and_save(
+        let CliSave {
+            config: saved,
+            retried,
+            ..
+        } = edit_and_save(
             home,
             &HashMap::new(),
             false,
@@ -642,7 +837,8 @@ mod tests {
         assert_eq!(
             outcome,
             SaveOutcome::Saved {
-                config: edited.clone()
+                config: edited.clone(),
+                warning: None,
             }
         );
         assert_eq!(get_config(home).unwrap(), edited);
@@ -704,20 +900,78 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "{ half-typed");
     }
 
+    /// Starting over keeps the broken bytes: a file linked in from a dotfiles repository is
+    /// copied as it is, the link stays, its target becomes the empty config, and a second reset
+    /// takes the next free backup name instead of replacing the first.
+    #[cfg(unix)]
+    #[test]
+    fn starting_over_backs_up_the_broken_file_and_keeps_earlier_backups() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let root = paths::root(home);
+        std::fs::create_dir_all(&root).unwrap();
+        let target = home.join("dotfiles-config.json");
+        let link = root.join(config::CONFIG_FILE);
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        std::fs::write(&target, "{ half-typed").unwrap();
+        let first = reset_unreadable_config(home).unwrap();
+        assert_eq!(first, root.join("config.json.bak"));
+        assert_eq!(std::fs::read_to_string(&first).unwrap(), "{ half-typed");
+        assert!(std::fs::symlink_metadata(&link).unwrap().is_symlink());
+        assert_eq!(get_config(home).unwrap(), ConfigState::default());
+
+        std::fs::write(&target, "{ again").unwrap();
+        let second = reset_unreadable_config(home).unwrap();
+        assert_eq!(second, root.join("config.json.bak-2"));
+        assert_eq!(std::fs::read_to_string(&second).unwrap(), "{ again");
+        assert_eq!(std::fs::read_to_string(&first).unwrap(), "{ half-typed");
+    }
+
+    /// Only a parse error is reset: a config that reads, or one from a newer EnvRouter, is
+    /// refused with nothing written.
+    #[test]
+    fn starting_over_refuses_a_config_that_isnt_a_parse_error() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let root = paths::root(home);
+        let file = root.join(config::CONFIG_FILE);
+        let backup = root.join("config.json.bak");
+
+        get_config(home).unwrap();
+        let readable = std::fs::read_to_string(&file).unwrap();
+        assert!(reset_unreadable_config(home).is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), readable);
+
+        let newer = r#"{ "version": 99 }"#;
+        std::fs::write(&file, newer).unwrap();
+        assert!(reset_unreadable_config(home).is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), newer);
+        assert!(!backup.exists());
+    }
+
     /// `SaveOutcome` in `src/lib/types.ts`.
     #[test]
     fn wire_format_matches_the_typescript_types() {
         let config = ConfigState::default();
         let saved = serde_json::to_value(SaveOutcome::Saved {
             config: config.clone(),
+            warning: Some("w".into()),
         })
         .unwrap();
         assert_eq!(saved["status"], "saved");
+        assert_eq!(saved["warning"], "w");
         assert_eq!(saved["config"], serde_json::to_value(&config).unwrap());
         let changed = serde_json::to_value(SaveOutcome::Changed { config }).unwrap();
         assert_eq!(changed["status"], "changed");
         assert!(changed["config"]["profiles"].is_array());
         let missing = serde_json::to_value(SaveOutcome::Missing).unwrap();
         assert_eq!(missing, serde_json::json!({ "status": "missing" }));
+        // `ConfigFault` in src/lib/types.ts: the one rejection that carries a kind.
+        let fault = ConfigFault::from(Error::Invalid("m".into()));
+        assert_eq!(
+            serde_json::to_value(fault).unwrap(),
+            serde_json::json!({ "kind": "other", "message": "m" })
+        );
     }
 }

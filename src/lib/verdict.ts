@@ -3,9 +3,24 @@
 
 import type { Tone } from '../components/ui'
 import { tildify } from './paths'
-import type { FolderCheck, ShellStatus } from './types'
+import { toolByCommand } from './tools'
+import type { FolderCheck, Preview, ShellStatus } from './types'
 
-export type VerdictAction = { kind: 'enableShell' } | { kind: 'openFile'; path: string } | { kind: 'reinstall' }
+export type VerdictAction =
+  | { kind: 'enableShell' }
+  | { kind: 'openFile'; path: string }
+  | { kind: 'reinstall' }
+  | { kind: 'editProfile'; profileId: string; name: string }
+  /** A profile for the checked folder, which starts as that folder's. */
+  | { kind: 'newProfile' }
+  /** Nothing in the window fixes it; the user does, then asks again. */
+  | { kind: 'recheck' }
+
+/** The profile that owns the checked folder, as the config (not a shell) says. */
+export type Owner = { profileId: string; name: string }
+
+export const ownerOf = (preview: Preview | null): Owner | null =>
+  preview?.profileId && preview.profile ? { profileId: preview.profileId, name: preview.profile } : null
 
 export type Verdict = {
   /** The status tile: routed (ok), owned but this agent unset (warn), nobody's folder (neutral). */
@@ -20,6 +35,12 @@ export type Verdict = {
   blocksShell?: boolean
 }
 
+/**
+ * Whether the verdict's action fixes a problem, so it may be the window's one accent button. A verdict that only
+ * describes the folder (Owned by, No profile owns it) and Check Again, which fixes nothing itself, stay push buttons.
+ */
+export const offersFix = (v: Verdict) => v.tone === 'problem' && v.action !== undefined && v.action.kind !== 'recheck'
+
 export function verdictOf(
   check: FolderCheck,
   shell: ShellStatus,
@@ -30,6 +51,7 @@ export function verdictOf(
   home: string,
   /** The trigger folder that matched, so the verdict can say which path won. */
   trigger: string | null = null,
+  owner: Owner | null = null,
 ): Verdict {
   const name = shell.shell
   const startupFile = shell.startupFiles[0] ?? ''
@@ -40,6 +62,13 @@ export function verdictOf(
     values: [...(runs ? [{ label: 'runs', value: tildify(runs, home) }] : []), { label: 'adds a block to', value: tildify(startupFile, home) }],
     action: { kind: 'enableShell' },
   })
+  /** Edit the profile that owns the folder, else make one for it. */
+  const profileAction = (): VerdictAction => (owner ? { kind: 'editProfile', ...owner } : { kind: 'newProfile' })
+  /** The agent isn't installed: the vendor's own installer, to copy, and a check once it has run. */
+  const install = (values: Verdict['values'] = []): Pick<Verdict, 'values' | 'action'> => {
+    const command = toolByCommand(tool)?.install
+    return { values: command ? [...values, { label: 'install', value: command }] : values, action: { kind: 'recheck' } }
+  }
   switch (check.status) {
     case 'routed': {
       const values = check.envVar && check.value ? [{ label: 'sets', value: `${check.envVar}=${tildify(check.value, home)}` }] : []
@@ -48,7 +77,15 @@ export function verdictOf(
       if (check.mcp.length > 0) values.push({ label: 'mcp', value: [...check.mcp].sort((a, b) => a.localeCompare(b)).join(', ') })
       if (check.viaAlias) values.push({ label: 'alias', value: check.viaAlias })
       values.push({ label: 'runs', value: tildify(check.real, home) })
-      if (!check.profile) return { tone: 'neutral', headline: 'No profile owns this folder', note: `${tool} uses its default config here.`, values }
+      if (!check.profile) {
+        return {
+          tone: 'neutral',
+          headline: 'No profile owns this folder',
+          note: `${tool} uses its default config here.`,
+          values,
+          action: { kind: 'newProfile' },
+        }
+      }
       const managed = check.mcpManagedBy && `its MCP servers are off because ${tildify(check.mcpManagedBy, home)} manages them on this machine`
       // Loading the profile's MCP servers is routing too, even with the agent's own config.
       if (!check.envVar && check.mcp.length > 0) {
@@ -60,6 +97,8 @@ export function verdictOf(
         }
       }
       if (!check.envVar) {
+        // The config named another owner by now (or none): editing that one wouldn't be this verdict's profile. By id: names repeat.
+        const action: VerdictAction = owner && owner.profileId === check.profileId ? { kind: 'editProfile', ...owner } : { kind: 'recheck' }
         return {
           tone: 'warn',
           headline: `Owned by ${check.profile}`,
@@ -67,6 +106,7 @@ export function verdictOf(
             ? `${check.profile} doesn't set ${tool}, and ${managed}.`
             : `${check.profile} doesn't set ${tool}, so it uses its default config here.`,
           values,
+          action,
         }
       }
       if (managed)
@@ -91,6 +131,7 @@ export function verdictOf(
           headline: `No profile sets ${tool} yet`,
           note: `With no shim for it, new windows run ${tool} directly.`,
           values: [{ label: 'runs', value: tildify(check.path, home) }],
+          action: profileAction(),
         }
       }
       // Nothing is "ahead of" the shim when its directory isn't on PATH in the first place.
@@ -125,14 +166,14 @@ export function verdictOf(
         tone: 'problem',
         headline: `${tool} isn't on PATH in new ${name} windows`,
         note: `No profile sets ${tool}, and ${tool} itself isn't installed.`,
-        values: [],
+        ...install(),
       }
     case 'notInstalled':
       return {
         tone: 'problem',
         headline: `${tool} isn't installed`,
         note: `EnvRouter's shim is first on PATH, but there's no ${tool} after it to run. Install it, then check again.`,
-        values: [{ label: 'shim', value: tildify(`${shimsDir}/${tool}`, home) }],
+        ...install([{ label: 'shim', value: tildify(`${shimsDir}/${tool}`, home) }]),
       }
     case 'shimFailed':
       return {

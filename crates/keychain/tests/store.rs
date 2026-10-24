@@ -24,3 +24,10 @@ fn saves_reads_updates_and_deletes_the_secrets() {
     envrouter_keychain::write(home, &HashMap::new()).unwrap();
     assert!(envrouter_keychain::read(home).unwrap().is_empty());
 }
+
+#[test]
+#[ignore = "uses the machine's secret store"]
+fn finds_no_problem_with_a_store_it_can_use() {
+    let home = tempfile::tempdir().unwrap();
+    assert_eq!(envrouter_keychain::problem(home.path()), None);
+}

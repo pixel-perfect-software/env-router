@@ -126,6 +126,7 @@ fn main() -> ExitCode {
         let explanation = serde_json::json!({
             "tool": tool,
             "profile": route.profile,
+            "profileId": route.profile_id,
             "envVar": var,
             "value": value,
             "mcp": servers,
@@ -161,6 +162,8 @@ fn main() -> ExitCode {
 struct Route {
     /// The active profile's name.
     profile: Option<String>,
+    /// Its id, which unlike the name is unique: the window compares owners by it.
+    profile_id: Option<String>,
     /// The variable to set, if any.
     env: Option<(String, String)>,
     /// The MCP servers the profile hands this tool, if any.
@@ -171,6 +174,7 @@ impl Route {
     fn none() -> Self {
         Self {
             profile: None,
+            profile_id: None,
             env: None,
             launch: None,
         }
@@ -206,6 +210,7 @@ fn route(
     });
     Route {
         profile: resolution.profile.map(|p| p.name.clone()),
+        profile_id: resolution.profile.map(|p| p.id.clone()),
         env: resolution.env,
         launch,
     }

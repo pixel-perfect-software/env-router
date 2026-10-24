@@ -14,6 +14,13 @@ pub fn get(service: &str, account: &str) -> Result<Option<Vec<u8>>> {
     }
 }
 
+/// The login Keychain is part of every Mac user account, so there is nothing to ask. A locked
+/// or unreadable one shows when a value is saved, which is when macOS may prompt; asking here
+/// would prompt on every window focus.
+pub fn usable(_account: &str) -> Result<()> {
+    Ok(())
+}
+
 pub fn set(service: &str, account: &str, value: &[u8]) -> Result<()> {
     passwords::set_generic_password(service, account, value).map_err(|err| keychain_error(&err))
 }

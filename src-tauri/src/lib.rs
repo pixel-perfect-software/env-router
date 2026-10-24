@@ -8,7 +8,7 @@ use envrouter_core::config::{self, ConfigState, IdeHook, McpServer};
 use envrouter_core::{paths, Error, Result};
 use tauri::{AppHandle, Manager, WindowEvent};
 
-use envrouter_ops::commands::{self, SaveOutcome, SetupStatus};
+use envrouter_ops::commands::{self, ConfigFault, SaveOutcome, SetupStatus};
 use envrouter_ops::editors::{Editor, EditorStatus};
 use envrouter_ops::shell::{self, FolderCheck, Preview, Shell, ShellStatus};
 use envrouter_ops::{mcp_import, mcp_probe, shims};
@@ -29,10 +29,12 @@ async fn blocking<T: Send + 'static>(
         .map_err(|err| Error::Command(err.to_string()))?
 }
 
+/// Rejects with the kind of failure as well as its message (`ConfigFault`), unlike the other
+/// commands, because the window offers Start Over only for a file that won't parse.
 #[tauri::command]
-async fn get_config(app: AppHandle) -> Result<ConfigState> {
+async fn get_config(app: AppHandle) -> std::result::Result<ConfigState, ConfigFault> {
     let home = home(&app)?;
-    blocking(move || commands::get_config(&home)).await
+    Ok(blocking(move || commands::get_config(&home)).await?)
 }
 
 #[tauri::command]
@@ -47,6 +49,17 @@ async fn save_config(
         let outcome = commands::save_config(&home, &payload, &secrets, base.as_ref())?;
         tray::refresh(&app);
         Ok(outcome)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn reset_unreadable_config(app: AppHandle) -> Result<PathBuf> {
+    let home = home(&app)?;
+    blocking(move || {
+        let backup = commands::reset_unreadable_config(&home)?;
+        tray::refresh(&app);
+        Ok(backup)
     })
     .await
 }
@@ -217,6 +230,7 @@ window_commands![
     set_unsaved_edits,
     quit_app,
     save_config,
+    reset_unreadable_config,
     get_setup_status,
     set_shell_integration,
     get_editor_status,

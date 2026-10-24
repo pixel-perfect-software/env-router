@@ -4,6 +4,7 @@
     "label": "Claude Code",
     "envVar": "CLAUDE_CONFIG_DIR",
     "defaultPath": "~/.claude",
+    "install": "curl -fsSL https://claude.ai/install.sh | bash",
     "mcp": {
       "dialect": "claude",
       "configArg": "--mcp-config=",
@@ -20,6 +21,7 @@
     "label": "Copilot CLI",
     "envVar": "COPILOT_HOME",
     "defaultPath": "~/.copilot",
+    "install": "curl -fsSL https://gh.io/copilot-install | bash",
     "mcp": {
       "dialect": "copilot",
       "configArg": "--additional-mcp-config=@",

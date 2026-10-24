@@ -8,6 +8,10 @@ fn unavailable() -> Error {
     Error::SecretStore("there's no secret store EnvRouter can use on this system".into())
 }
 
+pub fn usable(_account: &str) -> Result<()> {
+    Err(unavailable())
+}
+
 pub fn get(_service: &str, _account: &str) -> Result<Option<Vec<u8>>> {
     Err(unavailable())
 }

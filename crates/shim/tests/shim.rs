@@ -267,6 +267,7 @@ fn explain_reports_the_route_without_running_the_tool() {
     assert!(output.status.success(), "{}", stderr(&output));
     let explanation: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(explanation["profile"], "Work");
+    assert_eq!(explanation["profileId"], "2");
     assert_eq!(explanation["envVar"], "CLAUDE_CONFIG_DIR");
     assert_eq!(
         explanation["value"],

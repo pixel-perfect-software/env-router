@@ -3,6 +3,7 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import type {
+  ConfigFault,
   ConfigState,
   Editor,
   EditorStatus,
@@ -20,8 +21,14 @@ import type {
   ToolInfo,
 } from './types'
 
-/** Reads `~/.envrouter/config.json`, creating an empty one on first run. */
-export const getConfig = () => invoke<ConfigState>('get_config')
+/**
+ * Reads `~/.envrouter/config.json`, creating an empty one on first run. Unlike the other commands it rejects with a `ConfigFault`, the
+ * message and the kind of trouble, since only a file that won't parse can be started over.
+ */
+export const getConfig = () =>
+  invoke<ConfigState>('get_config').catch((err) => {
+    throw faultOf(err)
+  })
 
 /**
  * Validates and saves, then updates the shims. Takes effect on the next run of each tool.
@@ -32,6 +39,12 @@ export const getConfig = () => invoke<ConfigState>('get_config')
  */
 export const saveConfig = (payload: ConfigState, secrets: Record<string, string>, base: ConfigState | null) =>
   invoke<SaveOutcome>('save_config', { payload, secrets, base })
+
+/**
+ * Starts over from a config.json that isn't valid JSON: copies it to the first free `config.json.bak`, `.bak-2`, … beside it, writes an
+ * empty config, and answers the backup's path. Rejects, changing nothing, for any other trouble with the file.
+ */
+export const resetUnreadableConfig = () => invoke<string>('reset_unreadable_config')
 
 export const getSetupStatus = () => invoke<SetupStatus>('get_setup_status')
 
@@ -81,3 +94,14 @@ export const openInEditor = (path: string) => invoke<void>('open_in_editor', { p
 
 /** Normalizes a rejection, which is a string from our commands but may be an Error from Tauri itself. */
 export const errorMessage = (err: unknown) => (typeof err === 'string' ? err : err instanceof Error ? err.message : String(err))
+
+/** A failed config read as a `ConfigFault`: the backend's own, or (for a rejection that isn't one) a message of the `other` kind. */
+export const faultOf = (err: unknown): ConfigFault =>
+  typeof err === 'object' &&
+  err !== null &&
+  'kind' in err &&
+  'message' in err &&
+  typeof err.message === 'string' &&
+  (err.kind === 'parse' || err.kind === 'other')
+    ? { kind: err.kind, message: err.message }
+    : { kind: 'other', message: errorMessage(err) }

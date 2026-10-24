@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { FolderCheck, ShellStatus } from './types'
-import { verdictOf } from './verdict'
+import { type Owner, offersFix, verdictOf } from './verdict'
 
 const HOME = '/Users/sam'
 const SHIMS = `${HOME}/.envrouter/shims`
 const zsh = (installed: boolean): ShellStatus => ({ shell: 'zsh', available: true, isDefault: true, installed, startupFiles: [`${HOME}/.zshrc`] })
-const verdict = (check: FolderCheck, installed = true, toolRouted = true) => verdictOf(check, zsh(installed), 'claude', toolRouted, SHIMS, HOME)
+const WORK: Owner = { profileId: 'p2', name: 'Work' }
+const verdict = (check: FolderCheck, installed = true, toolRouted = true, owner: Owner | null = null) =>
+  verdictOf(check, zsh(installed), 'claude', toolRouted, SHIMS, HOME, null, owner)
 
 describe('verdictOf', () => {
   it('says EnvRouter is off, not that PATH is wrong, when the shell has no block', () => {
@@ -35,15 +37,24 @@ describe('verdictOf', () => {
     expect(v.blocksShell).toBe(true)
   })
 
-  it('names the missing profile setting before anything about the shell', () => {
-    const v = verdict({ status: 'shadowedOnPath', path: `${HOME}/.local/bin/claude`, byPromptHook: false }, false, false)
+  it('names the missing profile setting before anything about the shell, and edits the folder owner or makes a profile', () => {
+    const onPath: FolderCheck = { status: 'shadowedOnPath', path: `${HOME}/.local/bin/claude`, byPromptHook: false }
+    const v = verdict(onPath, false, false)
     expect(v.headline).toBe('No profile sets claude yet')
-    expect(v.action).toBeUndefined()
+    expect(v.action).toEqual({ kind: 'newProfile' })
+    expect(offersFix(v)).toBe(true)
+    expect(verdict(onPath, false, false, WORK).action).toEqual({ kind: 'editProfile', ...WORK })
   })
 
   it('offers to turn the shell on when nothing is on PATH and it is off', () => {
     expect(verdict({ status: 'notFound' }, false).action).toEqual({ kind: 'enableShell' })
-    expect(verdict({ status: 'notFound' }, true, false).action).toBeUndefined()
+  })
+
+  it('asks to check again, with the vendor install command, when no profile sets a tool that is not installed', () => {
+    const v = verdict({ status: 'notFound' }, true, false)
+    expect(v.action).toEqual({ kind: 'recheck' })
+    expect(v.values).toEqual([{ label: 'install', value: 'curl -fsSL https://claude.ai/install.sh | bash' }])
+    expect(offersFix(v)).toBe(false)
   })
 
   it('offers to reinstall when a profile sets the tool but its shim link is missing', () => {
@@ -56,7 +67,11 @@ describe('verdictOf', () => {
   it('does not offer to reinstall the shim when the tool itself is missing', () => {
     const v = verdict({ status: 'notInstalled' })
     expect(v.headline).toBe("claude isn't installed")
-    expect(v.action).toBeUndefined()
+    expect(v.action).toEqual({ kind: 'recheck' })
+    expect(v.values).toEqual([
+      { label: 'shim', value: '~/.envrouter/shims/claude' },
+      { label: 'install', value: 'curl -fsSL https://claude.ai/install.sh | bash' },
+    ])
     expect(v.blocksShell).toBeUndefined()
     expect(verdict({ status: 'shimFailed', message: 'boom' }).action).toEqual({ kind: 'reinstall' })
   })
@@ -65,6 +80,7 @@ describe('verdictOf', () => {
     const routed: FolderCheck = {
       status: 'routed',
       profile: 'Work',
+      profileId: 'p2',
       envVar: 'CLAUDE_CONFIG_DIR',
       value: `${HOME}/.claude-work`,
       mcp: [],
@@ -86,6 +102,7 @@ describe('verdictOf', () => {
     const base: FolderCheck = {
       status: 'routed',
       profile: 'Work',
+      profileId: 'p2',
       envVar: null,
       value: null,
       mcp: [],
@@ -107,6 +124,7 @@ describe('verdictOf', () => {
     const v = verdict({
       status: 'routed',
       profile: 'Work',
+      profileId: 'p2',
       envVar: 'CLAUDE_CONFIG_DIR',
       value: `${HOME}/.claude-work`,
       mcp: [],
@@ -124,6 +142,7 @@ describe('verdictOf', () => {
     const base: FolderCheck = {
       status: 'routed',
       profile: 'Work',
+      profileId: 'p2',
       envVar: null,
       value: null,
       mcp: [],
@@ -144,6 +163,7 @@ describe('verdictOf', () => {
     const v = verdict({
       status: 'routed',
       profile: 'Work',
+      profileId: 'p2',
       envVar: null,
       value: null,
       mcp: [],
@@ -156,10 +176,31 @@ describe('verdictOf', () => {
     expect(v.note).toBe("Work doesn't set claude, so it uses its default config here.")
   })
 
+  it('edits the owner when it is the one the verdict names, and checks again when the config has moved on', () => {
+    const owned: FolderCheck = {
+      status: 'routed',
+      profile: 'Work',
+      profileId: 'p2',
+      envVar: null,
+      value: null,
+      mcp: [],
+      mcpManagedBy: null,
+      viaAlias: null,
+      real: '/opt/bin/claude',
+    }
+    expect(verdict(owned, true, true, WORK).action).toEqual({ kind: 'editProfile', ...WORK })
+    expect(verdict(owned, true, true, { profileId: 'p3', name: 'Home' }).action).toEqual({ kind: 'recheck' })
+    // Names repeat; a different profile called Work isn't this one.
+    expect(verdict(owned, true, true, { profileId: 'p9', name: 'Work' }).action).toEqual({ kind: 'recheck' })
+    expect(verdict(owned).action).toEqual({ kind: 'recheck' })
+    expect(offersFix(verdict(owned, true, true, WORK))).toBe(false)
+  })
+
   it('says no profile owns a folder, and names no trigger for it', () => {
     const unowned: FolderCheck = {
       status: 'routed',
       profile: null,
+      profileId: null,
       envVar: null,
       value: null,
       mcp: [],
@@ -172,6 +213,8 @@ describe('verdictOf', () => {
     expect(v.headline).toBe('No profile owns this folder')
     expect(v.note).toBe('claude uses its default config here.')
     expect(v.values).toEqual([{ label: 'runs', value: '/opt/bin/claude' }])
+    expect(v.action).toEqual({ kind: 'newProfile' })
+    expect(offersFix(v)).toBe(false)
   })
 
   it('names a shell function that runs before the shim, and opens the file that defines it', () => {

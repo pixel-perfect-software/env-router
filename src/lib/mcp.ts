@@ -1,6 +1,7 @@
 // The MCP server library as the window edits it: one-line summaries, an editable draft of a
 // server, and the config changes that rename or remove one everywhere it's used.
 
+import type { PlatformInfo } from './platform'
 import { listOf } from './text'
 import { KNOWN_TOOLS, toolLabel } from './tools'
 import type { ConfigState, McpServer, McpValue, Profile } from './types'
@@ -83,13 +84,18 @@ export function draftOf(name: string, server: McpServer | undefined): ServerDraf
   return draft
 }
 
-/** The server a draft describes and the secrets typed into it, or the first thing to fix, worded for the inspector footer. */
-export function serverOf(draft: ServerDraft): { server: McpServer; secrets: Record<string, string> } | { error: string } {
+/**
+ * The server a draft describes and the secrets typed into it, or the first thing to fix, worded for the inspector footer.
+ * `canLock` is `PlatformInfo.canLock`: with no store to keep them in, a value marked for it is saved as plain text instead, so
+ * every path that fills a draft (the catalog, a copy, an import, the lock itself) can mark a value without asking.
+ */
+export function serverOf(draft: ServerDraft, canLock: boolean): { server: McpServer; secrets: Record<string, string> } | { error: string } {
   const secrets: Record<string, string> = {}
   /** The stored form of a value; a typed secret is set aside for the Keychain. */
   const stored = (value: DraftValue, what: string): McpValue | { error: string } => {
     if (!isPending(value)) return value
     if (!value.value) return { error: `Enter a value for ${what}, or remove it.` }
+    if (!canLock) return value.value
     secrets[value.secret] = value.value
     return { secret: value.secret }
   }
@@ -149,13 +155,17 @@ const isReference = (value: string) => /^\$\{[^}]+\}$/.test(value.trim())
  * Arguments aren't locked for the user, since Copilot doesn't expand a stored secret there.
  * Named for the editor and the import review: `argument 3`, `the URL`.
  */
-export function plainCredentials(draft: ServerDraft): string[] {
+export function plainCredentials(draft: ServerDraft, canLock: boolean): string[] {
+  // With no secret store (`serverOf` saves a value marked for it as plain), an env or header value that would have been locked
+  // is named by its key.
+  const unlocked = (rows: Pair[]) => (canLock ? [] : rows.filter(holdsCredential).map((row) => row.key))
   if (draft.transport !== 'stdio') {
     const url = draft.url.trim()
     const inQuery = /[?&][\w-]*(key|token|secret|password|auth)[\w-]*=[^&\s]/i.test(url)
-    return url && (URL_WITH_PASSWORD.test(url) || /^[a-z]+:\/\/[^/@\s]+@/i.test(url) || inQuery) ? ['the URL'] : []
+    const inUrl = url && (URL_WITH_PASSWORD.test(url) || /^[a-z]+:\/\/[^/@\s]+@/i.test(url) || inQuery) ? ['the URL'] : []
+    return [...inUrl, ...unlocked(draft.headers)]
   }
-  return draft.args.flatMap((arg, i) => {
+  const inArgs = draft.args.flatMap((arg, i) => {
     if (typeof arg !== 'string' || !arg.trim() || isReference(arg)) return []
     const option = arg.match(/^--?([\w-]+)=(.+)$/)
     const previous = draft.args[i - 1]
@@ -163,15 +173,18 @@ export function plainCredentials(draft: ServerDraft): string[] {
     const plain = (option && CREDENTIAL_WORD.test(option[1]) && !isReference(option[2])) || looksLikeCredential(option?.[2] ?? arg) || afterOption
     return plain ? [`argument ${i + 1}`] : []
   })
+  return [...inArgs, ...unlocked(draft.env)]
 }
 
 /** The warning for `plainCredentials`, as one line: "Argument 3 looks like a credential…". */
-export function plainNote(where: string[]): string {
+export function plainNote(where: string[], platform: Pick<PlatformInfo, 'canLock' | 'secretStore'>): string {
   const list = listOf(where)
   const first = list.charAt(0).toUpperCase() + list.slice(1)
-  const fix = where.includes('the URL')
-    ? 'use a header if the server takes one'
-    : 'pass it in an env var if the server takes one, or lock it (Claude Code only)'
+  const fix = !platform.canLock
+    ? `the ${platform.secretStore} can't keep it, so it goes in config.json`
+    : where.includes('the URL')
+      ? 'use a header if the server takes one'
+      : 'pass it in an env var if the server takes one, or lock it (Claude Code only)'
   return `${first} ${where.length > 1 ? 'look' : 'looks'} like a credential and would be saved as plain text: ${fix}.`
 }
 
@@ -182,6 +195,13 @@ export const asServerName = (text: string) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 64) || 'server'
 
+/** A plain env or header value that `withSecretsLocked` locks: a credential by its name or its shape, and not a `${VAR}` reference. */
+const isUnlocked = (row: Pair): row is Pair & { value: string } =>
+  typeof row.value === 'string' && !!row.value && (SECRET_NAME.test(row.key) || looksLikeCredential(row.value)) && !isReference(row.value)
+
+/** A value that holds a credential, locked or not: one marked for the store with something typed in, or one `isUnlocked` finds. */
+const holdsCredential = (row: Pair) => (isPending(row.value) ? row.value.value !== '' : isUnlocked(row))
+
 /**
  * A draft whose credential-looking env and header values are headed for the Keychain: by name,
  * as `SECRET_NAME` decides, or by shape (a URL with a password, a vendor's token prefix, a
@@ -190,10 +210,7 @@ export const asServerName = (text: string) =>
  * doesn't expand a stored secret there, so `plainCredentials` flags them instead.
  */
 export function withSecretsLocked(draft: ServerDraft): ServerDraft {
-  const lock = (row: Pair): Pair =>
-    typeof row.value === 'string' && row.value && (SECRET_NAME.test(row.key) || looksLikeCredential(row.value)) && !isReference(row.value)
-      ? { ...row, value: { secret: newSecretId(), value: row.value } }
-      : row
+  const lock = (row: Pair): Pair => (isUnlocked(row) ? { ...row, value: { secret: newSecretId(), value: row.value } } : row)
   return { ...draft, env: draft.env.map(lock), headers: draft.headers.map(lock) }
 }
 

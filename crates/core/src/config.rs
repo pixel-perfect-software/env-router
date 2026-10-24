@@ -253,13 +253,23 @@ impl Default for ConfigState {
 /// Reads `config.json` from `dir`, or `None` if there isn't one yet.
 pub fn load(dir: &Path) -> Result<Option<ConfigState>> {
     let path = dir.join(CONFIG_FILE);
-    let text = match fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(err) if err.kind() == ErrorKind::NotFound => return Ok(None),
-        Err(source) => return Err(Error::Io { path, source }),
-    };
-    let config: ConfigState = serde_json::from_str(&text).map_err(|source| Error::Json {
-        path: path.clone(),
+    match fs::read(&path) {
+        Ok(bytes) => parse(&path, &bytes).map(Some),
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(Error::Io { path, source }),
+    }
+}
+
+/// What `bytes`, read from `path`, make of config.json: the config, or why not. [`load`] is
+/// this over a read; a caller that has to act on the very bytes it classified (Start Over backs
+/// them up) reads once and calls this.
+pub fn parse(path: &Path, bytes: &[u8]) -> Result<ConfigState> {
+    let text = std::str::from_utf8(bytes).map_err(|_| Error::Io {
+        path: path.to_path_buf(),
+        source: std::io::Error::new(ErrorKind::InvalidData, "stream did not contain valid UTF-8"),
+    })?;
+    let config: ConfigState = serde_json::from_str(text).map_err(|source| Error::Json {
+        path: path.to_path_buf(),
         source,
     })?;
     if config.version > CONFIG_VERSION {
@@ -268,7 +278,59 @@ pub fn load(dir: &Path) -> Result<Option<ConfigState>> {
             path.display()
         )));
     }
-    Ok(Some(config))
+    Ok(config)
+}
+
+/// The name of Start Over's `n`th backup of config.json: `config.json.bak`, then
+/// `config.json.bak-2`, ...
+pub fn backup_file_name(n: u32) -> String {
+    if n <= 1 {
+        format!("{CONFIG_FILE}.bak")
+    } else {
+        format!("{CONFIG_FILE}.bak-{n}")
+    }
+}
+
+/// The ids of the secrets Start Over's backups in `dir` still name. A backup is a config.json
+/// that wouldn't parse, so its ids are found by looking for `"secret": "<ID>"` in the text. A
+/// secret stays in the store while a backup names it, so putting the backup back brings the
+/// servers' secrets with it.
+pub fn backed_up_secret_ids(dir: &Path) -> BTreeSet<String> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return BTreeSet::new();
+    };
+    let is_backup = |name: &str| {
+        name == backup_file_name(1)
+            || name
+                .strip_prefix(&format!("{CONFIG_FILE}.bak-"))
+                .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+    };
+    entries
+        .filter_map(std::result::Result::ok)
+        .filter(|entry| entry.file_name().to_str().is_some_and(is_backup))
+        .filter_map(|entry| fs::read(entry.path()).ok())
+        .flat_map(|bytes| secret_ids_in(&String::from_utf8_lossy(&bytes)))
+        .collect()
+}
+
+/// Every `"secret": "<ID>"` in `text`, which needn't be valid JSON.
+fn secret_ids_in(text: &str) -> Vec<String> {
+    let mut ids = Vec::new();
+    for (at, _) in text.match_indices("\"secret\"") {
+        let rest = text[at + "\"secret\"".len()..].trim_start();
+        let Some(rest) = rest.strip_prefix(':') else {
+            continue;
+        };
+        let Some(rest) = rest.trim_start().strip_prefix('"') else {
+            continue;
+        };
+        if let Some((id, _)) = rest.split_once('"') {
+            if is_secret_id(id) {
+                ids.push(id.to_string());
+            }
+        }
+    }
+    ids
 }
 
 /// Like [`load`], but creates the directory and an empty config if they're missing. A

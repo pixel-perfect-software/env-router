@@ -9,8 +9,9 @@
 //! The item's account is the canonical home folder, so a run under a scratch `HOME` (every
 //! test, and the safe way to try the app) never reads or writes the real secrets.
 //!
-//! Each platform's store is a module in `store/` with the same three functions on one item:
-//! `get`, `set` and `delete`: the macOS Keychain, the Secret Service (GNOME Keyring, KWallet) on
+//! Each platform's store is a module in `store/` with the same functions on one item: `get`,
+//! `set` and `delete`, and `usable`, which asks whether the store can be used without touching
+//! the item. They are the macOS Keychain, the Secret Service (GNOME Keyring, KWallet) on
 //! Linux, the Credential Manager on Windows, and inside WSL the Windows Credential Manager
 //! through the Windows build of the helper. Where there's no store, every call says so, and a
 //! server that needs a secret is left out.
@@ -20,6 +21,10 @@ use std::fs;
 use std::path::Path;
 
 use envrouter_core::{Error, Result};
+
+// Compiled for tests everywhere, so the logic is tested off Linux too.
+#[cfg(any(test, all(unix, not(target_os = "macos"))))]
+mod checker;
 
 #[cfg_attr(target_os = "macos", path = "store/macos.rs")]
 #[cfg_attr(all(unix, not(target_os = "macos")), path = "store/linux.rs")]
@@ -41,6 +46,15 @@ fn account(home: &Path) -> String {
         .unwrap_or_else(|_| home.to_path_buf())
         .to_string_lossy()
         .into_owned()
+}
+
+/// Why the store can't keep secrets right now, or `None` when it can or when it hasn't said
+/// (a store that is slow to answer isn't known to be missing). The window asks this whenever it
+/// gains focus, so it touches no secret and never unlocks or prompts: see each store's `usable`.
+pub fn problem(home: &Path) -> Option<String> {
+    store::usable(&account(home))
+        .err()
+        .map(|err| err.to_string())
 }
 
 /// Every secret, or an empty map if none were ever saved.
@@ -74,11 +88,12 @@ pub fn update(home: &Path, new: &HashMap<String, String>, keep: &BTreeSet<&str>)
 }
 
 /// Drops every secret not in `keep`. A save calls it last, once the config it wrote names
-/// none of them, so a failure leaves only a secret nothing uses, and says the save happened.
+/// none of them, so a failure leaves only a secret nothing uses. The save counts, and carries
+/// the failure as its warning.
 pub fn prune(home: &Path, keep: &BTreeSet<&str>) -> Result<()> {
     rewrite(home, &HashMap::new(), keep).map_err(|err| {
         reworded(err, |why| {
-            format!("Saved, but couldn't remove a secret no server uses any more: {why}.")
+            format!("Couldn't remove a secret no server uses any more: {why}.")
         })
     })
 }

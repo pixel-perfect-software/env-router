@@ -3,7 +3,7 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ConfigState, EditorStatus, ImportCandidate, McpServer, Pasted, ToolInfo } from '../lib/types'
+import type { ConfigState, EditorStatus, ImportCandidate, McpServer, Pasted, SaveOutcome, SetupStatus, ToolInfo } from '../lib/types'
 
 const boot = async (search: string) => {
   vi.resetModules()
@@ -143,6 +143,13 @@ describe('saving', () => {
     expect(await call<ConfigState>('get_config')).toMatchObject({ profiles: [], mcpServers: {} })
   })
 
+  it("says up front that there's no store, except on macOS, where nothing can tell without asking the Keychain", async () => {
+    const problem = async (search: string) => (await (await boot(search))<SetupStatus>('get_setup_status')).secretStoreProblem
+    expect(await problem('?scenario=mcp&store=off&platform=linux')).toMatch(/^there's no Secret Service/)
+    expect(await problem('?scenario=mcp&store=off')).toBeNull()
+    expect(await problem('?scenario=mcp&platform=linux')).toBeNull()
+  })
+
   it('fails to store a secret when there is no store', async () => {
     const call = await boot('?scenario=mcp&store=off&platform=linux')
     const config = await call<ConfigState>('get_config')
@@ -151,7 +158,7 @@ describe('saving', () => {
     )
   })
 
-  it("saves a config that drops a secret even when the store can't remove it, and says so", async () => {
+  it("saves a config that drops a secret even when the store can't remove it, and warns instead of failing", async () => {
     const call = await boot('?scenario=mcp&store=off&platform=linux')
     const config = await call<ConfigState>('get_config')
     const { github: _, ...rest } = config.mcpServers
@@ -159,9 +166,11 @@ describe('saving', () => {
       const { github: __, ...uses } = p.mcpServers
       return { ...p, mcpServers: uses }
     })
-    await expect(call('save_config', { payload: { ...config, mcpServers: rest, profiles }, secrets: {} })).rejects.toMatch(
-      /^Saved, but couldn't remove a secret no server uses any more: there's no Secret Service.*\.$/,
-    )
+    const outcome = await call<SaveOutcome>('save_config', { payload: { ...config, mcpServers: rest, profiles }, secrets: {} })
+    expect(outcome).toMatchObject({
+      status: 'saved',
+      warning: expect.stringMatching(/^Couldn't remove a secret no server uses any more: there's no Secret Service.*\.$/),
+    })
     expect(Object.keys((await call<ConfigState>('get_config')).mcpServers)).not.toContain('github')
   })
 })
@@ -198,6 +207,16 @@ describe('checks and files', () => {
   it('opens only files in the home folder', async () => {
     const call = await boot('')
     await expect(call('open_in_editor', { path: '/etc/zshrc' })).rejects.toBe("/etc/zshrc isn't a file in your home folder.")
+  })
+
+  it('starts over only from a config.json that cannot be parsed, as reset_unreadable_config does', async () => {
+    const readable = await boot('?scenario=populated')
+    await expect(readable('reset_unreadable_config')).rejects.toBe('config.json can be read now, so nothing was changed.')
+
+    const broken = await boot('?scenario=broken')
+    await expect(broken('get_config')).rejects.toMatchObject({ kind: 'parse', message: expect.stringMatching(/is not valid JSON/) })
+    expect(await broken('reset_unreadable_config')).toBe('/Users/sam/.envrouter/config.json.bak')
+    expect((await broken<ConfigState>('get_config')).profiles).toEqual([])
   })
 
   it('lists one row per editor per hook, with remote servers in WSL', async () => {

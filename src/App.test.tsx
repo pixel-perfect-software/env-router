@@ -52,6 +52,123 @@ describe('the one accent button', () => {
   })
 })
 
+describe('Try Again', () => {
+  it('asks for the setup status again after a failed refresh, as a push button', async () => {
+    const user = await open('?scenario=populated&fail=status')
+    const tryAgain = await screen.findByRole('button', { name: 'Try Again' })
+    expect(reachableAccents()).toEqual([screen.getByRole('button', { name: 'Check Folder…' })])
+
+    window.__mockFix()
+    await user.click(tryAgain)
+    await screen.findByText(/Routing is on in zsh/)
+  })
+
+  it('does the failed action again, not just clears the error', async () => {
+    const user = await open('?scenario=first-run&fail=shell')
+    await user.click(await screen.findByRole('button', { name: 'New Profile' }))
+    await user.type(inspector().getByLabelText('Name'), 'Mine')
+    await user.click(inspector().getByRole('button', { name: 'Save' }))
+    await user.click(await screen.findByRole('button', { name: 'Turn On zsh' }))
+    const tryAgain = await screen.findByRole('button', { name: 'Try Again' })
+    const zsh = () => screen.getByRole('switch', { name: 'EnvRouter in zsh' })
+    expect(zsh().getAttribute('aria-checked')).toBe('false')
+
+    window.__mockFix()
+    // The click outside closes the popover that the failure opened.
+    await user.click(tryAgain)
+    await user.click(await screen.findByRole('button', { name: /Shells/ }))
+    await waitFor(() => expect(zsh().getAttribute('aria-checked')).toBe('true'))
+  })
+})
+
+describe('an unreadable config.json', () => {
+  it('offers Open config.json as the accent and Reveal beside it, until opening fails and Reveal takes the accent', async () => {
+    const user = await open('?scenario=broken&fail=editor')
+    const openConfig = await screen.findByRole('button', { name: 'Open config.json' })
+    const reveal = screen.getByRole('button', { name: 'Reveal in Finder' })
+    expect(reachableAccents()).toEqual([openConfig])
+
+    await user.click(openConfig)
+    await screen.findByText(/couldn't open/)
+    expect(reachableAccents()).toEqual([reveal])
+  })
+
+  it('keeps the accent on Open when only Reveal fails, and shows why', async () => {
+    const user = await open('?scenario=broken&fail=reveal')
+    const openConfig = await screen.findByRole('button', { name: 'Open config.json' })
+    await user.click(screen.getByRole('button', { name: 'Reveal in Finder' }))
+    await screen.findByText('No file manager could show the file.')
+    expect(reachableAccents()).toEqual([openConfig])
+  })
+
+  it('offers to start over only when the file will not parse, not for one from a newer version', async () => {
+    await open('?scenario=newer')
+    await screen.findByRole('button', { name: 'Open config.json' })
+    expect(screen.getByText(/is from a newer version of EnvRouter/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Back Up and Start Over…' })).toBeNull()
+  })
+
+  it('backs it up and starts over only once the user agrees, as a push button beside the one accent', async () => {
+    // The mock stands the browser's confirm in for the native sheet; happy-dom has none, so this is the user's answer.
+    const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true)
+    vi.stubGlobal('confirm', confirm)
+    const user = await open('?scenario=broken')
+    const { __TAURI_INTERNALS__: internals } = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string) => Promise<unknown> } }
+    const invoked = vi.spyOn(internals, 'invoke')
+    const startOver = await screen.findByRole('button', { name: 'Back Up and Start Over…' })
+    expect(reachableAccents()).toEqual([screen.getByRole('button', { name: 'Open config.json' })])
+
+    await user.click(startOver)
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Back up config.json and start over?'))
+    await new Promise((resolve) => setTimeout(resolve))
+    expect(invoked.mock.calls.map(([command]) => command)).not.toContain('reset_unreadable_config')
+    expect(screen.getByText("EnvRouter can't read config.json")).toBeTruthy()
+
+    await user.click(startOver)
+    await screen.findByText('The folder decides')
+    expect(invoked.mock.calls.map(([command]) => command)).toContain('reset_unreadable_config')
+    await vi.waitFor(() =>
+      expect(confirm).toHaveBeenLastCalledWith(expect.stringContaining('Your old config.json is at ~/.envrouter/config.json.bak.')),
+    )
+  })
+})
+
+describe('a verdict that has somewhere to go', () => {
+  it('makes a profile for the folder from New Profile…, which only describes the folder, so Check Folder… keeps the accent', async () => {
+    const user = await open('?scenario=populated&check=unowned')
+    await screen.findByText(/Routing is on in zsh/)
+    await window.__mockDrop('/Users/sam/elsewhere', 400, 300)
+    const newProfile = await screen.findByRole('button', { name: 'New Profile…' }, { timeout: 3000 })
+    await screen.findByText('No profile owns this folder')
+    expect(reachableAccents()).toEqual([screen.getByRole('button', { name: 'Check Folder…' })])
+
+    await user.click(newProfile)
+    expect(await inspector().findByTitle('~/elsewhere')).toBeTruthy()
+  })
+
+  it('sets the checked agent in the new profile when no profile sets it, so saving gives it a shim', async () => {
+    const user = await open('?scenario=unrouted')
+    await screen.findByText(/Routing is on in zsh/)
+    await window.__mockDrop('/Users/sam/elsewhere', 400, 300)
+    await screen.findByText('No profile sets claude yet', undefined, { timeout: 3000 })
+    await user.click(screen.getByRole('button', { name: 'New Profile…' }))
+    expect(inspector().getByLabelText(/Claude Code/)).toHaveProperty('value', '~/.claude')
+    expect(inspector().getByLabelText(/Copilot CLI/)).toHaveProperty('value', '')
+  })
+
+  it('takes the accent for Edit on a tool no profile sets, and opens the profile that owns the folder', async () => {
+    const user = await open('?scenario=unrouted')
+    await screen.findByText(/Routing is on in zsh/)
+    await window.__mockDrop('/Users/sam/dev/api', 400, 300)
+    const edit = await screen.findByRole('button', { name: 'Edit Personal…' }, { timeout: 3000 })
+    await screen.findByText('No profile sets claude yet')
+    expect(reachableAccents()).toEqual([edit])
+
+    await user.click(edit)
+    expect(inspector().getByLabelText('Name')).toHaveProperty('value', 'Personal')
+  })
+})
+
 describe('a folder dropped on the window', () => {
   it('becomes a trigger folder of the profile open in the inspector', async () => {
     const user = await open('?scenario=populated')
@@ -164,5 +281,49 @@ describe('focus', () => {
     expect(toggle.getAttribute('aria-disabled')).toBe('true')
     expect(toggle.hasAttribute('disabled')).toBe(false)
     await waitFor(() => expect(toggle.hasAttribute('aria-disabled')).toBe(false))
+  })
+})
+
+describe('the secret store', () => {
+  it("keeps a value plain, with its lock off and the store's reason shown, when there is no store", async () => {
+    const user = await open('?scenario=mcp&store=off&platform=linux')
+    await user.click(await screen.findByRole('button', { name: 'MCP Servers' }))
+    await user.click(screen.getByRole('button', { name: 'Add by Hand' }))
+    const editor = within(screen.getByRole('form', { name: 'New MCP server' }))
+    await user.click(editor.getByRole('button', { name: 'Add Variable' }))
+    await user.type(editor.getByLabelText('Environment name 1'), 'API_KEY')
+
+    const value = editor.getByLabelText('API_KEY value')
+    expect(value.getAttribute('type')).toBe('text')
+    const lock = editor.getByRole('button', { name: 'Store API_KEY value in the keyring on save' })
+    expect(lock.hasAttribute('disabled')).toBe(true)
+    expect(editor.getByText(/The lock is off\..*there's no Secret Service to keep secrets in/)).toBeTruthy()
+
+    await user.type(value, 'abc')
+    expect(editor.getByText(/API_KEY looks like a credential.*the keyring can't keep it, so it goes in config\.json/)).toBeTruthy()
+  })
+
+  it('saves a server that drops a stored secret when there is no store, and says what is left, instead of failing', async () => {
+    const user = await open('?scenario=mcp&store=off&platform=linux')
+    await user.click(await screen.findByRole('button', { name: 'MCP Servers' }))
+    await user.click(screen.getByRole('button', { name: /^github/ }))
+    const editor = within(screen.getByRole('form', { name: 'Edit github' }))
+    await user.click(editor.getByRole('button', { name: 'Replace GITHUB_PERSONAL_ACCESS_TOKEN value' }))
+    await user.type(editor.getByLabelText('GITHUB_PERSONAL_ACCESS_TOKEN value'), 'ghp_new')
+    await user.click(editor.getByRole('button', { name: 'Save' }))
+
+    await screen.findByText('Saved, with a loose end')
+    expect(screen.getByText(/Couldn't remove a secret no server uses any more/)).toBeTruthy()
+    expect(screen.queryByText('Something went wrong')).toBeNull()
+    await waitFor(() => expect(hasUnsaved()).toBe(false))
+  })
+
+  it('replaces a locked value with a plain one when there is no store', async () => {
+    const user = await open('?scenario=mcp&store=off&platform=linux')
+    await user.click(await screen.findByRole('button', { name: 'MCP Servers' }))
+    await user.click(screen.getByRole('button', { name: /^github/ }))
+    const editor = within(screen.getByRole('form', { name: 'Edit github' }))
+    await user.click(editor.getByRole('button', { name: 'Replace GITHUB_PERSONAL_ACCESS_TOKEN value' }))
+    expect(editor.getByLabelText('GITHUB_PERSONAL_ACCESS_TOKEN value').getAttribute('type')).toBe('text')
   })
 })

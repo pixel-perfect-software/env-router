@@ -21,6 +21,10 @@
 //   since the shim routes by folder.
 // - copilot: verified on 1.0.98: `@` takes a file and the flag adds to the user's own servers; a
 //   tool is turned off with `--deny-tool=server(tool)`, one per argument.
+// - `install` is each vendor's own one-line installer (claude: claude.ai/install.sh, the native
+//   installer in the Claude Code docs; copilot: gh.io/copilot-install, the install script in the
+//   Copilot CLI docs; both checked 2026-10-24). It's shown as text to copy, never run by the
+//   window, and `withAgents` doesn't copy it, since Rust never needs it.
 
 import registry from './agents.json'
 import type { AgentDef, ConfigState, IdeHook, McpFiles, McpInjection } from './types'
@@ -32,6 +36,8 @@ export interface KnownTool {
   envVar: string
   /** Where the agent keeps its config when the variable isn't set, as shown to the user. */
   defaultPath: string
+  /** The vendor's one-line install command, shown when the agent isn't on PATH. */
+  install?: string
   /** One short line when the variable behaves unlike a plain config folder. */
   note?: string
   /** How the shim hands the agent a profile's MCP servers. Without one, the agent gets none. */

@@ -18,6 +18,7 @@ import {
   type Transport,
   withInit,
 } from '../lib/mcp'
+import { usePlatform } from '../lib/platform'
 import type { McpServer, ToolInfo } from '../lib/types'
 import { setUnsaved } from '../lib/unsaved'
 import { TransportIcon } from './icons'
@@ -101,7 +102,8 @@ export function ServerEditor({
   }, [name])
 
   const set = <K extends keyof ServerDraft>(key: K, value: ServerDraft[K]) => setDraft((d) => ({ ...d, [key]: value }))
-  const preview = serverOf(draft)
+  const platform = usePlatform()
+  const preview = serverOf(draft, platform.canLock)
 
   const save = async () => {
     const trimmed = draft.name.trim()
@@ -117,7 +119,7 @@ export function ServerEditor({
       nameField.current?.focus()
       return
     }
-    const built = serverOf(draft)
+    const built = serverOf(draft, platform.canLock)
     if ('error' in built) {
       setError(built.error)
       return
@@ -156,7 +158,7 @@ export function ServerEditor({
 
   const stdio = draft.transport === 'stdio'
   const initAt = stdio ? initSlot(draft.command, draft.args) : null
-  const plain = plainCredentials(draft)
+  const plain = plainCredentials(draft, platform.canLock)
   return (
     <form
       aria-label={name ? `Edit ${name}` : 'New MCP server'}
@@ -293,7 +295,7 @@ export function ServerEditor({
                 Without <span className="font-mono">--init</span>, the container keeps running after the agent stops it.
               </Caution>
             )}
-            {plain.length > 0 && <Caution>{plainNote(plain)}</Caution>}
+            {plain.length > 0 && <Caution>{plainNote(plain, platform)}</Caution>}
             <PairList
               label="Environment"
               add="Add Variable"
@@ -319,7 +321,7 @@ export function ServerEditor({
                 className="w-full"
               />
             </div>
-            {plain.length > 0 && <Caution>{plainNote(plain)}</Caution>}
+            {plain.length > 0 && <Caution>{plainNote(plain, platform)}</Caution>}
             <PairList
               label="Headers"
               add="Add Header"

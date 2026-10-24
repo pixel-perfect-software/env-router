@@ -92,6 +92,11 @@ fn delete_part(target: &[u16]) -> Result<bool> {
     }
 }
 
+/// The Credential Manager is part of Windows and takes no unlocking, so there is nothing to ask.
+pub fn usable(_account: &str) -> Result<()> {
+    Ok(())
+}
+
 pub fn get(service: &str, account: &str) -> Result<Option<Vec<u8>>> {
     let mut value = Vec::new();
     for part in 0.. {

@@ -20,6 +20,18 @@ export function Caution({ children, action, tucked = true }: { children: ReactNo
 /** What the lock beside a value does, under the first list that has values: its tooltip takes too long to come up. */
 export function LockLegend() {
   const platform = usePlatform()
+  if (!platform.canLock)
+    return (
+      <p className="mb-2 flex items-start gap-1 text-caption text-ink-2">
+        <span className="mt-px">
+          <LockIcon />
+        </span>
+        <span>
+          The lock is off. The {platform.secretStore} can't keep a value: {platform.storeProblem?.replace(/\.$/, '')}. Values are saved in
+          config.json.
+        </span>
+      </p>
+    )
   return (
     <p className="mb-2 flex items-center gap-1 text-caption text-ink-2">
       Click <LockIcon /> to keep a value in the {platform.secretStore} instead of config.json.
@@ -66,15 +78,17 @@ function ValueField({
       </span>
     )
   }
-  const pending = isPending(value)
+  // A value marked for the store stays plain while there is no store: `serverOf` saves it that way.
+  const marked = isPending(value)
+  const pending = marked && platform.canLock
   return (
     <span className="relative flex min-w-0 flex-1">
       <TextField
         mono
         type={pending ? 'password' : 'text'}
         aria-label={label}
-        value={pending ? value.value : value}
-        onChange={(e) => onChange(pending ? { ...value, value: e.target.value } : e.target.value)}
+        value={marked ? value.value : value}
+        onChange={(e) => onChange(marked ? { ...value, value: e.target.value } : e.target.value)}
         placeholder={hint ?? (pending ? `Saved to the ${platform.secretStore}` : placeholder)}
         className="w-full pr-8"
       />
@@ -82,7 +96,8 @@ function ValueField({
         // One name; aria-pressed says whether it's on. A name that flips with the state reads as its opposite.
         label={`Store ${label} in the ${platform.secretStore} on save`}
         aria-pressed={pending}
-        onClick={() => onChange(pending ? value.value : { secret: newSecretId(), value })}
+        disabled={!platform.canLock}
+        onClick={() => onChange(marked ? value.value : { secret: newSecretId(), value })}
         className="absolute top-px right-px !size-[26px]"
       >
         <LockIcon />

@@ -117,7 +117,9 @@ shell startup files. Two ways to avoid that:
   | `populated` | Several profiles, routing on in zsh |
   | `mcp` | `populated`, plus a library of MCP servers |
   | `shadowed` | A folder check where a shell function gets in the way |
-  | `broken` | A `config.json` that can't be read |
+  | `unrouted` | `populated`, but no profile sets an agent: a check finds the agent untouched on PATH |
+  | `broken` | A `config.json` that can't be read, until Open config.json (which stands in for fixing it) or a confirmed Back Up and Start Over… (which answers `config.json.bak` and empties the config) |
+  | `newer` | A `config.json` from a newer EnvRouter: the same banner, with no Back Up and Start Over… |
 
   Add any of these to reach the states a real machine can be in:
 
@@ -125,9 +127,10 @@ shell startup files. Two ways to avoid that:
   |---|---|
   | `&platform=linux` | A Linux desktop: `/home/sam`, bash reading `.bashrc`, `~/.config` editor settings, the keyring |
   | `&platform=wsl` | A WSL distro: bash reading `.profile` and `.bashrc`, no zsh, the Credential Manager, VS Code Server and Cursor Server |
-  | `&check=<result>` | Forces a folder check's answer (use it with `populated` or `mcp`): `routed` (the default, worked out from the config), `managed` (an admin's `managed-mcp.json` turns the profile's MCP servers off), `alias` (the run goes through an alias that runs the tool), `shadowedOnPath`, `byPromptHook`, `shadowedByShell`, `notFound`, `notInstalled`, `shimFailed`, or the failures `timeout` and `noPath` |
+  | `&check=<result>` | Forces a folder check's answer (use it with `populated` or `mcp`): `routed` (the default, worked out from the config), `managed` (an admin's `managed-mcp.json` turns the profile's MCP servers off), `alias` (the run goes through an alias that runs the tool), `owned` (a profile owns the folder but leaves the agent alone), `unowned` (no profile owns it), `shadowedOnPath`, `byPromptHook`, `shadowedByShell`, `notFound`, `notInstalled`, `shimFailed`, or the failures `timeout` and `noPath` |
   | `&shim=stale` | The shim missing or out of date; any save or switch reinstalls it |
-  | `&store=off` | No secret store: a save that adds or drops a secret fails as it would there |
+  | `&store=off` | No secret store: a save that adds a secret fails as it would there, one that drops a secret goes through with a warning banner, and off macOS (`&platform=linux`) the setup status says so up front, locking the lock off |
+  | `&fail=<what>` | `home` (no home folder, so nothing to open the config from), `status` (the setup status can't be read), `shell` (turning a shell on is refused), `editor` (no editor opens a file: with `?scenario=broken`, Open config.json fails and Reveal takes the accent) or `reveal` (Reveal fails, and the accent stays on Open): the failure stays until `window.__mockFix()` in the console, then Try Again works |
 
   The `mcp` library also holds a server named `slow`, whose check times out, and Import there
   reads realistic agent files, so a server already in the library shows as such.
