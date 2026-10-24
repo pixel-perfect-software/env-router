@@ -8,16 +8,17 @@ file and line it was read from; the ones marked **verified** were reproduced wit
 read in the vendor's own documentation.
 
 The eight milestones are on GitHub as
-[milestones](https://github.com/pixel-perfect-software/env-router/milestones). M0, M1 and M2 have
-their issues there (17 to 54, in the order listed here, then later findings at the end of their
-milestone); M3 to M7 keep theirs in this file until each is next, except later findings filed
-straight onto them (#107 on M3). A new finding goes into its milestone here first, then into an
-issue. PRs are assigned to the milestone they advance.
+[milestones](https://github.com/pixel-perfect-software/env-router/milestones). M0 to M3 have
+their issues there (17 to 54 for M0 to M2, and 111 to 125 for M3, in the order listed here, then
+later findings at the end of their milestone, such as #107); M4 to M7 keep theirs in this file
+until each is next. A new finding goes into its milestone here first, then into an issue. PRs
+are assigned to the milestone they advance.
 
 **Status (2026-10-24):** M0, M1 and M2 are done. M0's 12 issues were merged in PRs #55 to #66 and
 M1's 13 in PRs #72 to #90; both shipped in 0.7.1 except M1's last four PRs (#87 to #90), which
 change only CI, the Homebrew templates and docs. M2's 15 issues were fixed in PRs #92 to #108,
-except #49, closed as accepted; none of M2 is released yet. M3 is next.
+except #49, closed as accepted, and shipped in 0.7.2. M3 is next: its 16 issues were checked
+against `main` at 0.7.2 and filed on 2026-10-24.
 
 Order: M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7. The first three are small and make the next
 release trustworthy. M4 (agents) is what brings users and can start as soon as M0 lands, since
@@ -347,7 +348,7 @@ reports no WCAG 2.2 AA failures.
 
 ### Issues
 
-1. **Extract the health state machine and split `App.tsx`.** `App.tsx` (680 lines) holds the
+1. **Extract the health state machine and split `App.tsx`.** `App.tsx` (700 lines) holds the
    9-state `healthOf` and accent arbitration, unexported and untested. Fix: `lib/health.ts` with
    tests; `useConfigStore` (load, commit, merge loop), `useFolderCheck`, `useShortcuts`;
    `Chrome.tsx` into Titlebar, Health and Popovers; `ServerEditor.tsx` into fields and
@@ -355,11 +356,11 @@ reports no WCAG 2.2 AA failures.
 2. **Component tests.** There are none (vitest runs in node). Fix: happy-dom + Testing Library;
    cover focus management, the one-accent rule, dirty tracking; unit tests for `paths.ts`,
    `platform.ts`, `tools.ts`, `profileColors`, the missing `verdict.ts` cases.
-3. **Two accent buttons when the inspector opens over a banner, and a dead ⌘2 hint.**
-   `App.tsx:562` and `Chrome.tsx:235` leave the banner's action accent-filled beside Save;
-   `ProfileInspector.tsx:295, 400` says "Add them in MCP Servers (⌘2)" while `App.tsx:304-306`
-   disables ⌘2. Fix: `quiet` the banner while inspecting; make the hint a button that closes
-   the inspector and switches view. (Falls out of issue 1.)
+3. **A dead ⌘2 hint.** The inspector says "Add them in MCP Servers (⌘2)" while ⌘2 is disabled
+   with it open. Fix: make the hint a button that closes the inspector and switches view. The
+   audit also found the banner's action left accent-filled under the inspector; checked on
+   2026-10-24, the inspector covers it and the page behind is `inert`, so no one sees or
+   reaches two accents.
 4. **Focus falls to the body.** After deleting a profile or server, and after the first save
    from Welcome (`App.tsx:188-198`, `Servers.tsx:223-229`); shell and editor switches disable
    natively during the call (`ui.tsx:105`, `Chrome.tsx:559, 604`). Fix: fallback focus targets;
@@ -381,8 +382,8 @@ reports no WCAG 2.2 AA failures.
    shells and editors, remove shims and `bin`, delete the secret item, then the folder.
 8. **Dropping a folder onto the open inspector does nothing.** The window lights up during the
    drag, then `App.tsx:337` drops it. Fix: add it as a trigger.
-9. **Long lists have no filter.** The catalog has 87 entries and Import can bring dozens;
-   the server list has no search. Fix: a filter field; a context menu on server rows (Duplicate,
+9. **The server list has no filter.** The catalog has search and filters already, but the
+   list of added servers doesn't, and Import can add dozens at once. Fix: a filter field; a context menu on server rows (Duplicate,
    Delete, Check) for parity with profile cards.
 10. **Keyboard and screen-reader parity.** No arrow keys in lists, no ⌘S, ⌘N always means New
     Profile; errors can't be selected (`Chrome.tsx:200`, `ui.tsx:60`); the tools `aria-live`
