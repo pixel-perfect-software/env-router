@@ -54,7 +54,11 @@ CI (`.github/workflows/ci.yml`) runs these for every pull request and every push
 except changes that only touch docs, design notes or `dev/containers`. Most of it
 runs on Linux: the frontend, formatting, licences, the backend, shim, secrets and CLI tests, the
 secrets round trip through a GNOME Keyring, the Windows secrets helper (linted and linked with
-mingw), and the desktop app crate on Ubuntu 22.04, where the release builds it. The macOS
+mingw), the desktop app crate on Ubuntu 22.04, where the release builds it, and the shim's
+launch overhead (`.github/scripts/shim-overhead.sh`: run it with a built shim to measure a
+change; CI fails when, with 60 triggers, a launch through it takes over 1.8x a bare exec's on
+`ubuntu-24.04`, where that limit was measured. A Mac starts processes more slowly, so the
+multiple there is lower: compare against `main`'s shim instead). The macOS
 job runs only what needs a Mac: clippy and the tests for the whole workspace, including the app
 and the Keychain. Run them before you push.
 

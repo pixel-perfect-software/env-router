@@ -1,13 +1,18 @@
 #!/bin/sh
 # Measures what the shim adds to an agent launch: the median time of a tool run through the shim
-# in a scratch home with TRIGGERS trigger folders, minus the median of the same tool run through
-# a program that only execs it. Prints the overhead in milliseconds; with a limit, fails over it.
-# Usage: shim-overhead.sh <envrouter-shim> [limit-ms]   (needs cc, node and hyperfine 2; TRIGGERS=60)
+# in a scratch home with TRIGGERS trigger folders, against the median of the same tool run through
+# a program that only execs it. Prints the overhead in milliseconds and the shim's time as a
+# multiple of the bare exec's; with a limit, fails when that multiple is over it. The multiple is
+# what to gate on: CI machines differ in speed by 40%, which moves milliseconds but not the ratio.
+# Usage: shim-overhead.sh <envrouter-shim> [max-ratio]   (needs cc, node and hyperfine 2)
+# TRIGGERS (60) trigger folders; PATH_ENTRIES (8) folders on PATH between the shims and the tool,
+# as Homebrew, asdf and the system put there.
 set -eu
 
 shim=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
-limit=${2:-}
+max_ratio=${2:-}
 triggers=${TRIGGERS:-60}
+entries=${PATH_ENTRIES:-8}
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 home="$work/home"
@@ -45,29 +50,39 @@ profiles=$(((triggers + 4) / 5))
 folder="$home/dev/p$((profiles - 1))/t$(((triggers - 1) % 5))/src/app"
 mkdir -p "$folder"
 
+path="$home/.envrouter/shims"
+i=0
+while [ "$i" -lt "$entries" ]; do
+  mkdir -p "$work/path$i"
+  path="$path:$work/path$i"
+  i=$((i + 1))
+done
+path="$path:$work/bin:/usr/bin:/bin"
+
 cd "$folder"
-HOME=$home PATH="$home/.envrouter/shims:$work/bin:/usr/bin:/bin" ENVROUTER_EXPLAIN=1 "$home/.envrouter/shims/claude" > "$work/route.json"
+HOME=$home PATH="$path" ENVROUTER_EXPLAIN=1 "$home/.envrouter/shims/claude" > "$work/route.json"
 grep -q "\"profile\":\"P$((profiles - 1))\"" "$work/route.json" || {
   echo "shim-overhead: the shim didn't route the folder to P$((profiles - 1)): $(cat "$work/route.json")" >&2
   exit 1
 }
 hyperfine=$(command -v hyperfine)
-HOME=$home PATH="$home/.envrouter/shims:$work/bin:/usr/bin:/bin" "$hyperfine" -N --warmup 50 --runs 1000 \
+HOME=$home PATH="$path" "$hyperfine" -N --warmup 50 --runs 1000 \
   --export-json "$work/times.json" \
   "$home/.envrouter/shims/claude" "$work/exec-only $work/bin/claude" > /dev/null
 
 # hyperfine 2's layout: results[].summary.<metric>.median. Instructions, where the CPU's counters
 # can be read, are far steadier than wall time, so they're shown beside it.
-read -r overhead instructions <<EOF
+read -r overhead bare ratio instructions <<EOF
 $(node -e '
   const [shim, bare] = require(process.argv[1]).results.map((r) => r.summary)
   const ms = ((shim.time_wall_clock.median - bare.time_wall_clock.median) * 1000).toFixed(3)
+  const ratio = (shim.time_wall_clock.median / bare.time_wall_clock.median).toFixed(3)
   const ins = shim.instructions && bare.instructions ? Math.round(shim.instructions.median - bare.instructions.median) : "n/a"
-  console.log(ms, ins)
+  console.log(ms, (bare.time_wall_clock.median * 1000).toFixed(3), ratio, ins)
 ' "$work/times.json")
 EOF
-echo "shim-overhead: ${overhead} ms median over a bare exec, ${triggers} triggers (${instructions} instructions)"
-if [ -n "$limit" ] && node -e 'process.exit(+process.argv[1] > +process.argv[2] ? 0 : 1)' "$overhead" "$limit"; then
-  echo "shim-overhead: over the ${limit} ms limit" >&2
+echo "shim-overhead: ${overhead} ms median over a bare exec (${bare} ms; ${ratio}x), ${triggers} triggers, ${entries} PATH entries ahead of the tool (${instructions} instructions)"
+if [ -n "$max_ratio" ] && node -e 'process.exit(+process.argv[1] > +process.argv[2] ? 0 : 1)' "$ratio" "$max_ratio"; then
+  echo "shim-overhead: ${ratio}x a bare exec, over the ${max_ratio}x limit" >&2
   exit 1
 fi
