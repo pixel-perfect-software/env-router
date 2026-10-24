@@ -37,7 +37,7 @@
     "shortDescription": "Routes each coding agent to the right account and MCP servers by folder",
     "longDescription": "EnvRouter is for people who use more than one account with their coding agents. Run claude in ~/dev/work and it uses your work config with your work MCP servers; run it in ~/dev/personal and it uses your personal ones. Each profile has trigger folders, a config folder per agent, and a selection of MCP servers from a library you keep in the app.",
     "homepage": "https://github.com/pixel-perfect-software/env-router",
-    "copyright": "Copyright © 2026 Tyler Robertson. Licensed under GPL-3.0-or-later.",
+    "copyright": "Copyright © 2026 Tyler Robertson and Pixel Perfect Software Inc. Licensed under GPL-3.0-or-later.",
     "externalBin": ["binaries/envrouter-shim", "binaries/envrouter-keychain"],
     "macOS": {
       "minimumSystemVersion": "11.0",
