@@ -2,7 +2,7 @@
 //! the end of each startup file, and checks the result in a real shell.
 
 use std::fs::{self, File};
-use std::io::{Read, Seek, Write};
+use std::io::{ErrorKind, Read, Seek, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -14,6 +14,8 @@ use envrouter_core::config::{self, ConfigState};
 use envrouter_core::platform::{self, Platform};
 use envrouter_core::{mcp, paths, resolve, Error, Result, EXIT_TOOL_NOT_FOUND};
 use serde::{Deserialize, Serialize};
+
+use crate::uninstall;
 
 const BEGIN: &str = "# >>> envrouter >>>";
 const END: &str = "# <<< envrouter <<<";
@@ -101,6 +103,29 @@ impl Shell {
             Shell::Bash => bash_startup_files(Platform::current(), home),
             Shell::Fish => vec![platform::xdg_config_home(home).join("fish/config.fish")],
         }
+    }
+
+    /// Every file any shell's block could be in, whether or not `startup_files` picks it now:
+    /// which of bash's login files it picks depends on which exist, and zsh's folder on
+    /// `ZDOTDIR`, and either may have changed since the block went in. Independent of which
+    /// shells are installed.
+    pub fn every_startup_file(home: &Path) -> Vec<PathBuf> {
+        let mut files: Vec<PathBuf> = Vec::new();
+        for file in [
+            zsh_dotdir(home).join(".zshrc"),
+            home.join(".zshrc"),
+            home.join(".bashrc"),
+            home.join(".bash_profile"),
+            home.join(".bash_login"),
+            home.join(".profile"),
+            platform::xdg_config_home(home).join("fish/config.fish"),
+            home.join(".config/fish/config.fish"),
+        ] {
+            if !files.contains(&file) {
+                files.push(file);
+            }
+        }
+        files
     }
 
     fn block(self) -> String {
@@ -328,6 +353,45 @@ pub fn set_integration(shell: Shell, home: &Path, enabled: bool) -> Result<Shell
         }
     }
     Ok(status(shell, home))
+}
+
+/// Takes EnvRouter's block out of every startup file that has one: the files, and what stopped
+/// it for the others. A file is written only when it held a block, through a link the way a
+/// turn-off does; a missing file, a link to nothing and a file that isn't text are skipped, and
+/// nothing is created. `dry_run` writes nothing and lists the files it would change.
+pub fn remove_every_block(home: &Path, dry_run: bool) -> (Vec<PathBuf>, Vec<String>) {
+    let mut cleared = Vec::new();
+    let mut problems = Vec::new();
+    for file in Shell::every_startup_file(home) {
+        let Some(target) = config::write_target(&file) else {
+            continue;
+        };
+        let text = match fs::read_to_string(&target) {
+            Ok(text) => text,
+            Err(err) if matches!(err.kind(), ErrorKind::NotFound | ErrorKind::InvalidData) => {
+                continue
+            }
+            Err(err) => {
+                problems.push(uninstall::cant_remove_lines(&file, &err.to_string()));
+                continue;
+            }
+        };
+        let updated = remove_block(&text);
+        if updated == text {
+            continue;
+        }
+        if !dry_run {
+            if let Err(err) = config::write_atomic(&target, updated) {
+                problems.push(uninstall::cant_remove_lines(
+                    &file,
+                    &uninstall::reason(&err),
+                ));
+                continue;
+            }
+        }
+        cleared.push(file);
+    }
+    (cleared, problems)
 }
 
 /// Replaces the block where it is (the user may have moved it on purpose), or appends it.
@@ -959,6 +1023,42 @@ mod tests {
         let block = Shell::Bash.block();
         let twice = format!("export A=1\n\n{block}export B=2\n\n{block}");
         assert_eq!(remove_block(&twice), "export A=1\nexport B=2\n");
+    }
+
+    /// An uninstall must find a block in a file `startup_files` no longer picks (bash reads the
+    /// first of its login files that exists, so `.bash_login` lost to `.bash_profile`), and a
+    /// pasted second copy, without touching a line of the user's or creating a file.
+    #[test]
+    fn uninstall_sweeps_files_the_shell_no_longer_reads() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let block = Shell::Bash.block();
+        fs::write(home.join(".bash_profile"), "").unwrap();
+        fs::write(home.join(".bash_login"), format!("export A=1\n\n{block}")).unwrap();
+        fs::write(
+            home.join(".bashrc"),
+            format!("export B=2\n\n{block}export C=3\n\n{block}"),
+        )
+        .unwrap();
+        assert!(!Shell::Bash
+            .startup_files(home)
+            .contains(&home.join(".bash_login")));
+
+        let (cleared, problems) = remove_every_block(home, false);
+
+        assert!(problems.is_empty(), "{problems:?}");
+        assert_eq!(cleared, [home.join(".bashrc"), home.join(".bash_login")]);
+        assert_eq!(
+            fs::read_to_string(home.join(".bash_login")).unwrap(),
+            "export A=1\n"
+        );
+        assert_eq!(
+            fs::read_to_string(home.join(".bashrc")).unwrap(),
+            "export B=2\nexport C=3\n"
+        );
+        for name in [".zshrc", ".profile", ".config"] {
+            assert!(!home.join(name).exists(), "{name} was created");
+        }
     }
 
     #[test]

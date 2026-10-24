@@ -8,17 +8,24 @@ use std::path::{Path, PathBuf};
 use envrouter_core::config::{self, ConfigState};
 use envrouter_core::{paths, Error, Result};
 
+/// The running executable, or the error every caller words the same way.
+pub fn current_exe() -> Result<PathBuf> {
+    std::env::current_exe().map_err(exe_error)
+}
+
+fn exe_error(source: std::io::Error) -> Error {
+    Error::Io {
+        path: PathBuf::from("current executable"),
+        source,
+    }
+}
+
 /// The shim shipped with the app or the CLI, next to the running executable. That's where Tauri
 /// puts `bundle.externalBin` (`Contents/MacOS` in the bundle, `/usr/bin` from a `.deb`,
 /// `target/<profile>` in development) and where a release archive puts it beside `envrouter`.
 /// Links are followed, so a CLI linked into Homebrew's `bin` finds the files in its keg.
 pub fn bundled() -> Result<PathBuf> {
-    let exe = std::env::current_exe()
-        .and_then(fs::canonicalize)
-        .map_err(|source| Error::Io {
-            path: PathBuf::from("current executable"),
-            source,
-        })?;
+    let exe = fs::canonicalize(current_exe()?).map_err(exe_error)?;
     Ok(exe.with_file_name(paths::SHIM_NAME))
 }
 
@@ -27,12 +34,17 @@ pub fn bundled_keychain() -> Result<PathBuf> {
     Ok(bundled()?.with_file_name(paths::KEYCHAIN_NAME))
 }
 
+/// The Windows build of the Keychain helper, beside the shim. Linux builds ship it, for WSL;
+/// elsewhere the file isn't there.
+pub fn bundled_windows_keychain() -> Result<PathBuf> {
+    Ok(bundled()?.with_file_name(format!("{}.exe", paths::KEYCHAIN_NAME)))
+}
+
 /// Installs the shim and the Keychain helper the app ships with, if either is missing or
 /// different, e.g. after an app update. Says whether either changed.
 pub fn install_bundled(home: &Path) -> Result<bool> {
     let changed = install_binaries(home, &bundled()?, &bundled_keychain()?)?;
-    // Linux builds ship the Windows helper too, for WSL. Elsewhere it isn't there.
-    let windows = bundled()?.with_file_name(format!("{}.exe", paths::KEYCHAIN_NAME));
+    let windows = bundled_windows_keychain()?;
     let windows_changed =
         windows.is_file() && install_file(&paths::windows_keychain_helper(home), &windows)?;
     Ok(changed || windows_changed)

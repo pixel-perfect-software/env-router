@@ -9,25 +9,38 @@ import type { Shell } from '../lib/types'
 import { Button, CloseIcon, IconButton, StatusTile, type Tone } from './ui'
 
 /**
- * A backend message with its values set in mono: paths under home, tildified, and `quoted` tokens (serde_json quotes
- * them so), which keep quotes because a lone `,` in mono is easy to misread.
+ * A backend message with its values set in mono: paths under home, tildified, and `backticked` tokens (serde_json quotes
+ * its values so). A token that is a path is set as one, since a sentence backticks a path with a space in it, which an unquoted
+ * path would end at; any other token keeps quotes, because a lone `,` in mono is easy to misread.
  */
 function ValueText({ text, home }: { text: string; home: string }) {
   const homePath = home ? `|${home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:/[^\\s:]*)?` : ''
   return text.split(new RegExp(`(\`[^\`]+\`${homePath})`)).map((part, i) => {
     if (i % 2 === 0) return part
-    return part.startsWith('`') ? (
-      // biome-ignore lint/suspicious/noArrayIndexKey: the parts of one fixed string
-      <span key={i}>
-        “<code className="font-mono">{part.slice(1, -1)}</code>”
-      </span>
-    ) : (
+    const token = part.startsWith('`') ? part.slice(1, -1) : part
+    const path = !part.startsWith('`') || token.startsWith('/') || token.startsWith('~')
+    return path ? (
       // biome-ignore lint/suspicious/noArrayIndexKey: the parts of one fixed string
       <code key={i} className="font-mono">
-        {tildify(part, home)}
+        {tildify(token, home)}
       </code>
+    ) : (
+      // biome-ignore lint/suspicious/noArrayIndexKey: the parts of one fixed string
+      <span key={i}>
+        “<code className="font-mono">{token}</code>”
+      </span>
     )
   })
+}
+
+/** A message of several sentences, one per line (`\n` between them), each with its values in mono. */
+function ValueLines({ text, home }: { text: string; home: string }) {
+  return text.split('\n').map((line, i) => (
+    // biome-ignore lint/suspicious/noArrayIndexKey: the lines of one fixed string
+    <span key={i} className="block not-first:mt-1">
+      <ValueText text={line} home={home} />
+    </span>
+  ))
 }
 
 function Banner({ tone, title, detail, action }: { tone: Tone; title: string; detail?: ReactNode; action?: ReactNode }) {
@@ -123,13 +136,16 @@ export function HealthLine({
       return (
         <Banner
           tone="problem"
-          title="Something went wrong"
-          detail={<ValueText text={health.message} home={home} />}
+          title={health.title ?? 'Something went wrong'}
+          detail={<ValueLines text={health.message} home={home} />}
           action={
             <>
-              <Button onClick={onRetry}>Try Again</Button>
+              {/* `busy` keeps focus on the button the user pressed while its retry runs; the banner stays as it was until the answer. */}
+              <Button id="try-again" busy={health.busy} onClick={onRetry}>
+                Try Again
+              </Button>
               {health.dismissible && (
-                <IconButton label="Dismiss" onClick={onDismissError}>
+                <IconButton label="Dismiss" disabled={health.busy} onClick={onDismissError}>
                   <CloseIcon />
                 </IconButton>
               )}
@@ -240,6 +256,14 @@ export function HealthLine({
           detail={`${health.headline}.`}
           action={<Button onClick={() => onRecheck(health.folder, health.shell, health.tool)}>Check Again</Button>}
         />
+      )
+    case 'uninstalling':
+      // The ok line's size, so a window that was working doesn't shift; no action, so nothing invites a shell back on while it runs.
+      return (
+        <div className="mx-4 flex h-5 shrink-0 items-center gap-2 px-0.5 text-small">
+          <StatusTile tone="pending" size={16} badge />
+          <p className="min-w-0 truncate font-medium">Uninstalling EnvRouter…</p>
+        </div>
       )
     case 'ok':
       // Working routing doesn't ask for attention: a quiet line on the ground, not a card.

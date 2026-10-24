@@ -226,7 +226,9 @@ describe('the accent', () => {
     error: [
       { kind: 'error', message: 'm', dismissible: true },
       { kind: 'error', message: 'm', dismissible: false },
+      { kind: 'error', message: 'm', dismissible: true, busy: true },
     ],
+    uninstalling: [{ kind: 'uninstalling' }],
     warning: [{ kind: 'warning', message: 'm' }],
     unloaded: [
       { kind: 'unloaded', message: 'm', canOpen: true, canStartOver: true },
@@ -275,9 +277,16 @@ describe('the accent', () => {
     })
   })
 
+  it('fills none of them while an uninstall runs, however the check result and the inspector stand', () => {
+    everyCase((h, view, inspecting, docketAction) => {
+      if (h.kind === 'uninstalling' || (h.kind === 'error' && h.busy))
+        expect(Object.values(filled(h, view, inspecting, docketAction)).filter(Boolean)).toEqual([])
+    })
+  })
+
   it('fills exactly one of them on Profiles when nothing else is open', () => {
     everyCase((h, view, inspecting, docketAction) => {
-      if (view !== 'profiles' || inspecting) return
+      if (view !== 'profiles' || inspecting || h.kind === 'uninstalling' || (h.kind === 'error' && h.busy)) return
       expect(Object.values(filled(h, view, inspecting, docketAction)).filter(Boolean), JSON.stringify({ h, docketAction })).toHaveLength(1)
     })
   })

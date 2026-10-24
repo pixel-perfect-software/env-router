@@ -6,7 +6,7 @@ import { tildify } from '../lib/paths'
 import { toolLabel } from '../lib/tools'
 import type { Editor, EditorStatus, SetupStatus, Shell } from '../lib/types'
 import { AgentMark } from './icons'
-import { Switch } from './ui'
+import { Button, Switch } from './ui'
 
 const EDITOR_LABEL: Record<Editor, string> = {
   code: 'VS Code',
@@ -23,7 +23,11 @@ const EDITOR_LABEL: Record<Editor, string> = {
 /** The editors the Editors popover lists: ones run on this Mac with the extension, or still routed after it was removed. */
 export const editorsToShow = (editors: EditorStatus[] | null) => editors?.filter((e) => e.available && (e.extensionInstalled || e.installed)) ?? []
 
-/** A titlebar popover, anchored under its button at the right. Escape or a click outside closes it, except on its own button, which toggles it. */
+/**
+ * A titlebar popover, anchored under its button at the right. Escape or a click outside closes it, except on its own button, which
+ * toggles it. It never outgrows the window (16px above the bottom edge): a small window or a text-spacing override scrolls it, so its
+ * last row stays reachable.
+ */
 function TitlePopover({ id, label, onClose, children }: { id: string; label: string; onClose: () => void; children: ReactNode }) {
   const panel = useRef<HTMLElement>(null)
   // Hangs from its own button, right edges aligned, as a native popover does; the window's edge still holds it in.
@@ -84,7 +88,7 @@ function TitlePopover({ id, label, onClose, children }: { id: string; label: str
       role="dialog"
       aria-label={label}
       style={{ right }}
-      className="absolute top-[46px] z-30 w-[min(440px,calc(100vw-32px))] origin-top-right animate-[er-open_140ms_var(--ease-settle)] rounded-card bg-raised p-1.5 shadow-raised"
+      className="absolute top-[46px] z-30 max-h-[calc(100vh-62px)] w-[min(440px,calc(100vw-32px))] origin-top-right overflow-y-auto overscroll-contain animate-[er-open_140ms_var(--ease-settle)] rounded-card bg-raised p-1.5 shadow-raised"
     >
       {children}
     </section>
@@ -113,11 +117,13 @@ export function ShellsPopover({
   setup,
   home,
   onSet,
+  onUninstall,
   onClose,
 }: {
   setup: SetupStatus
   home: string
   onSet: (shell: Shell, enabled: boolean) => Promise<void>
+  onUninstall: () => void
   onClose: () => void
 }) {
   const { busy, error, run } = useSwitches<Shell>()
@@ -152,6 +158,13 @@ export function ShellsPopover({
         ))}
       </ul>
       <Note error={error}>Adds a marked block to the end of each file; turning a shell off removes it.</Note>
+      {/* Setting EnvRouter up lives here, so taking it all away does too. A push button: the window's one accent is elsewhere. */}
+      {/* The note's 6px and this 8px collapse to 8 between them; 12 below with the panel's own padding. */}
+      <div className="mt-2 flex justify-end px-2.5 pb-1.5">
+        <Button busy={busy !== null} onClick={onUninstall}>
+          Uninstall EnvRouter…
+        </Button>
+      </div>
     </TitlePopover>
   )
 }

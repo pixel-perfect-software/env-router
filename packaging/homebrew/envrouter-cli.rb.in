@@ -44,6 +44,8 @@ class EnvrouterCli < Formula
         envrouter shell on zsh    # or bash, fish
       After upgrading, run `envrouter install` again. On a Mac with the EnvRouter app,
       skip `envrouter install`: the app keeps ~/.envrouter/bin current itself.
+      To remove everything, quit the EnvRouter app if it's open and run `envrouter uninstall` (it
+      turns routing off, deletes the MCP secrets and ~/.envrouter), then `brew uninstall envrouter-cli`.
     EOS
   end
 

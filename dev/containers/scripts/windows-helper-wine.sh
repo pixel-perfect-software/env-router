@@ -22,4 +22,26 @@ printf '{"B2":"two"}' | wine "$exe" store-set "$service" "$account"
 echo "== delete"
 wine "$exe" store-delete "$service" "$account"
 wine "$exe" store-get "$service" "$account" && exit 1 || [ $? -eq 3 ]
+echo "== delete takes every part of a value larger than one credential, and none is fine"
+printf '{"A1":"%s"}' "$big" | wine "$exe" store-set "$service" "$account"
+wine "$exe" store-delete "$service" "$account"
+wine "$exe" store-get "$service" "$account" && exit 1 || [ $? -eq 3 ]
+wine "$exe" store-delete "$service" "$account"
+echo "== delete also finds the parts past a missing #0 (an old failed cleanup), and leaves a longer account name alone"
+# Wine keeps each credential as a registry key named for its target, and the bridge can't remove
+# one part, so #0 goes the way a failed cleanup would have taken it.
+key() { printf 'HKCU\\Software\\Wine\\Credential Manager\\Generic: %s:%s#%s' "$service" "$account" "$1"; }
+other="$account#1"
+printf '{"A1":"%s"}' "$big" | wine "$exe" store-set "$service" "$account"
+printf '{"K":"keep"}' | wine "$exe" store-set "$service" "$other"
+wine reg delete "$(key 0)" /f >/dev/null
+wine reg query "$(key 1)" >/dev/null
+wine reg query "$(key 2)" >/dev/null
+wine "$exe" store-delete "$service" "$account"
+if wine reg query "$(key 1)" >/dev/null 2>&1 || wine reg query "$(key 2)" >/dev/null 2>&1; then
+  echo "a part past the gap survived the delete"
+  exit 1
+fi
+[ "$(wine "$exe" store-get "$service" "$other")" = '{"K":"keep"}' ]
+wine "$exe" store-delete "$service" "$other"
 echo "Windows helper OK"

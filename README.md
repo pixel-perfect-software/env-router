@@ -294,6 +294,7 @@ bar icon. On Linux, closing the window quits; routing keeps working without it.
 | `envrouter apply` | Validates `~/.envrouter/config.json` after you edit it by hand, and renders its MCP files and shims |
 | `envrouter secret set <ID>` | Stores the value of a server's secret in the system's store: piped in, or typed without echo; never on the command line |
 | `envrouter secret list` | Each secret the config refers to, the servers that use it, and whether it's stored (`unknown` when the store can't be read) |
+| `envrouter uninstall [--yes] [--dry-run]` | Turns routing off everywhere, deletes the stored MCP secrets and `~/.envrouter`, and names the commands that remove the app and the CLI (see Uninstall below) |
 | `envrouter rpc` | Answers the window's commands as JSON lines, one per line each way, so another program (later, a window managing a WSL distro) can drive this machine |
 
 `--tool` defaults to `claude`; pass `--tool copilot` for Copilot CLI. `--shell` defaults to your
@@ -443,23 +444,68 @@ starts, it updates the shim and helpers in `~/.envrouter/bin` itself.
 
 ## 🗑️ Uninstall
 
+One action leaves the machine as if EnvRouter had never been installed, except for the app and the
+CLI, which can't remove themselves. Do it before you remove them: **Uninstall EnvRouter…** (at the
+bottom of the toolbar's **Shells** panel, and in the menu bar icon's menu on macOS), which asks first, or
+
+```sh
+envrouter uninstall            # shows what it will do, then asks
+envrouter uninstall --dry-run  # shows it and changes nothing
+envrouter uninstall --yes      # doesn't ask; required without a terminal
+```
+
+It does four things, in this order:
+
+1. Turns routing off in every shell: it removes the marked block from every startup file that has
+   one, whether or not that shell is on now.
+2. Clears `claudeCode.claudeProcessWrapper` in every VS Code-family editor's settings and in the
+   remote servers' machine settings, when it names EnvRouter's shim. A wrapper someone else set is
+   left alone.
+3. Deletes any MCP secrets EnvRouter kept in the system's store (the "EnvRouter MCP secrets" item).
+4. Deletes `~/.envrouter`, with your profiles and MCP servers. If it is a link, only the link goes
+   and the folder it points at is named and left.
+
+If anything in steps 1 and 2 can't be done (a settings file you can't write, or one it can't read
+that names the shim), it does the rest of those two steps and stops before step 3, so no editor is
+ever left pointing at a shim that's gone. `envrouter uninstall` won't start while the EnvRouter window
+is open (the window would put `~/.envrouter` back the next time you switch to it): it says to quit
+EnvRouter first and changes nothing. The window's own uninstall waits a few seconds for anything it
+is still doing, such as checking an MCP server, and says so if that doesn't finish. While it runs the window says "Uninstalling EnvRouter…";
+if it stops, "Uninstall stopped" shows the reason with Try Again; the command prints it and exits 1. Fix it, then run it again: every step skips what is
+already done. If the store can't be reached at all (no Secret Service, WSL without interop), it
+goes on and says any secrets are still there; if it can be reached but refuses the delete, it
+stops before step 4.
+
+When it finishes, the window shows what to run next and quits (if it can't, it says EnvRouter is
+uninstalled and asks you to quit it yourself), and the command prints it. Opening
+the app again sets EnvRouter up again, so remove the app next:
+
+| Installed with | Remove it with |
+|---|---|
+| The macOS cask | `brew uninstall --zap --cask envrouter` (the `--zap` also clears its caches and preferences), or quit the app and delete `/Applications/EnvRouter.app` |
+| The Linux `.deb` | `sudo apt remove env-router` |
+| The AppImage | Delete the file |
+| The CLI from Homebrew | `brew uninstall envrouter-cli` |
+| The CLI from a release archive | Delete `envrouter` and the helpers beside it |
+
+Your agents' config folders are left alone.
+
+**By hand**, if neither is available:
+
 1. Turn every shell off, from the toolbar's shell status or with `envrouter shell off <shell>`.
    This removes the marked block from each startup file. You can also delete the lines between
    `# >>> envrouter >>>` and `# <<< envrouter <<<` by hand.
 2. If you turned on an editor, turn it off (**Editors…**, or `envrouter editor off <editor>`).
    This removes `claudeCode.claudeProcessWrapper` from that editor's settings.
-3. Remove the app: on macOS quit it and run `brew uninstall --cask envrouter` (or delete
-   `/Applications/EnvRouter.app`); on Linux `sudo apt remove env-router`, or delete the AppImage.
-   Remove the CLI with `brew uninstall envrouter-cli`.
-4. Delete `~/.envrouter` (on macOS, `brew uninstall --zap --cask envrouter` does steps 3 and 4).
-5. If you stored MCP secrets, delete them from the store:
+3. If you stored MCP secrets, delete them from the store:
    - macOS: the "EnvRouter MCP secrets" item in Keychain Access, or
      `security delete-generic-password -s "EnvRouter MCP secrets"`
    - Linux: `secret-tool clear service "EnvRouter MCP secrets"`
    - WSL: in Windows, the "EnvRouter MCP secrets:wsl:…" entries under Windows Credentials in
      Credential Manager (`cmdkey /list` shows them; `cmdkey /delete:<name>` removes one)
-
-Your agents' config folders are left alone.
+4. Delete `~/.envrouter`.
+5. Remove the app and the CLI as in the table above (on macOS, `brew uninstall --zap --cask
+   envrouter` also does step 4).
 
 ## 🤝 Contributing
 

@@ -43,6 +43,12 @@ pub fn windows_keychain_helper(home: &Path) -> PathBuf {
     root(home).join("bin").join(format!("{KEYCHAIN_NAME}.exe"))
 }
 
+/// The file the desktop app holds a lock on for as long as it runs, so `envrouter uninstall`
+/// can tell the window is open: a window refocusing after the folder is gone would make it again.
+pub fn app_lock(home: &Path) -> PathBuf {
+    root(home).join("app.lock")
+}
+
 /// Rendered MCP files: `<profile id>/<command>/`, holding one config file per server and the
 /// launch manifest the shim reads. The app rewrites the whole folder on every save.
 pub fn mcp(home: &Path) -> PathBuf {

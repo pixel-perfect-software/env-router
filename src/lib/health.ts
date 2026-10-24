@@ -10,8 +10,14 @@ export type FileError = { action: 'open' | 'reveal' | 'startOver'; message: stri
 
 export type Health =
   | { kind: 'loading' }
-  /** `dismissible`: a one-off action failed. A failing status refresh isn't: it clears itself once one works. */
-  | { kind: 'error'; message: string; dismissible: boolean }
+  /**
+   * `dismissible`: a one-off action failed. A failing status refresh isn't: it clears itself once one works. `title` names what
+   * stopped when "Something went wrong" is too little; `busy`: Try Again is running, and the banner stays as it was until it answers.
+   * `message` holds one sentence per line.
+   */
+  | { kind: 'error'; message: string; dismissible: boolean; title?: string; busy?: boolean }
+  /** An uninstall is running: no accent action, no way to turn a shell on, until it stops or the app quits. */
+  | { kind: 'uninstalling' }
   /** A save went through but couldn't finish something after it (see `SaveOutcome`). Dismissed by the user, or replaced by the next save's. */
   | { kind: 'warning'; message: string }
   /**
@@ -98,8 +104,12 @@ export interface Accents {
  * With the inspector open, Save is the accent and the docket and Check Folder… stand down. The banner's `quiet` follows
  * the view alone, so it keeps its own accent behind the inspector.
  */
-export const accentsOf = (health: Health, view: 'profiles' | 'servers', inspecting: boolean, docketFix: boolean): Accents => ({
-  quiet: view === 'servers',
-  docket: !inspecting && !bannerHasPrimary(health),
-  titlebar: view === 'profiles' && !inspecting && !bannerHasPrimary(health) && !docketFix,
-})
+export const accentsOf = (health: Health, view: 'profiles' | 'servers', inspecting: boolean, docketFix: boolean): Accents => {
+  // While an uninstall runs nothing offers a start: Check Folder… and the docket are disabled, so neither holds the accent.
+  const running = health.kind === 'uninstalling' || (health.kind === 'error' && health.busy === true)
+  return {
+    quiet: view === 'servers',
+    docket: !running && !inspecting && !bannerHasPrimary(health),
+    titlebar: !running && view === 'profiles' && !inspecting && !bannerHasPrimary(health) && !docketFix,
+  }
+}

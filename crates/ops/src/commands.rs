@@ -12,6 +12,7 @@ use serde::Serialize;
 
 use crate::editors::{self, Editor, EditorStatus};
 use crate::shell::{self, FolderCheck, Preview, Shell, ShellStatus};
+use crate::uninstall::{self, Caller, UninstallReport};
 use crate::{mcp_import, mcp_probe, npm, shims};
 
 pub fn get_config(home: &Path) -> Result<ConfigState> {
@@ -427,6 +428,29 @@ pub fn set_editor_integration(
         shims::install_bundled(home)?;
     }
     editors::set_integration(editor, home, command, hook, enabled)
+}
+
+/// Turns routing off everywhere, deletes the stored MCP secrets and then `~/.envrouter`, and
+/// names the commands that remove the app and the CLI (see [`uninstall`]). With `dry_run` it
+/// only reports what it would do. A stop comes back as a report with `problems`, not an error;
+/// a real run for the CLI while the window is open is refused before it changes anything.
+pub fn uninstall(home: &Path, dry_run: bool, caller: &Caller) -> Result<UninstallReport> {
+    uninstall_with(home, dry_run, caller, &uninstall::Keychain)
+}
+
+/// [`uninstall`] against any secret store, so a test never reaches the machine's real one.
+pub(crate) fn uninstall_with(
+    home: &Path,
+    dry_run: bool,
+    caller: &Caller,
+    store: &dyn uninstall::Store,
+) -> Result<UninstallReport> {
+    if !dry_run {
+        uninstall::refuse_while_app_runs(home, caller)?;
+    }
+    let mut report = uninstall::run(home, dry_run, store)?;
+    report.remove_next = uninstall::remove_next(Platform::current(), home, caller);
+    Ok(report)
 }
 
 /// Opens `shell` the way a new terminal window would, in `folder`, and reports what running

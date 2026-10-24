@@ -50,6 +50,12 @@ impl Platform {
         }
     }
 
+    /// Whether this system's secret store is reached through the Windows helper installed in
+    /// `~/.envrouter/bin`, which an uninstall must not delete before it has used it.
+    pub fn secret_store_runs_installed_helper(self) -> bool {
+        self == Platform::Wsl
+    }
+
     /// The shell to assume when the login shell can't be found: each system's default.
     pub fn default_shell_name(self) -> &'static str {
         match self {
@@ -58,6 +64,59 @@ impl Platform {
             Platform::Windows => "pwsh",
         }
     }
+}
+
+/// The folders Homebrew installs under: Apple Silicon, Intel, and Linux.
+pub fn homebrew_prefixes() -> &'static [&'static str] {
+    &["/opt/homebrew", "/usr/local", "/home/linuxbrew/.linuxbrew"]
+}
+
+/// The `.deb`'s package name (tauri-bundler's kebab-case of the product name), which
+/// `apt remove` takes, and the binary it installs.
+pub const DEB_PACKAGE: &str = "env-router";
+pub const DEB_BINARY: &str = "/usr/bin/envrouter-app";
+
+/// What is known about how the desktop app was installed.
+#[derive(Debug, Default, PartialEq)]
+pub struct AppFound<'a> {
+    /// The app's bundle on macOS: the `.app` folder.
+    pub bundle: Option<&'a Path>,
+    /// Installed by Homebrew's cask (its Caskroom folder exists).
+    pub cask: bool,
+    /// The AppImage file the app runs from.
+    pub appimage: Option<&'a Path>,
+    /// Installed from the `.deb`.
+    pub deb: bool,
+}
+
+/// The command that removes the desktop app, which EnvRouter can't remove itself. `None` when
+/// it wasn't found installed (a development build, a system with no app).
+pub fn app_removal(platform: Platform, found: &AppFound) -> Option<String> {
+    match platform {
+        Platform::MacOs if found.cask => Some("brew uninstall --zap --cask envrouter".into()),
+        Platform::MacOs => found
+            .bundle
+            .map(|bundle| format!("mv {} ~/.Trash/", shell_quote(&bundle.to_string_lossy()))),
+        Platform::Linux | Platform::Wsl => match found.appimage {
+            Some(file) => Some(format!("rm {}", shell_quote(&file.to_string_lossy()))),
+            None if found.deb => Some(format!("sudo apt remove {DEB_PACKAGE}")),
+            None => None,
+        },
+        Platform::Windows => None,
+    }
+}
+
+/// `text` in double quotes for a POSIX shell, to paste into a terminal.
+pub fn shell_quote(text: &str) -> String {
+    let mut quoted = String::from("\"");
+    for c in text.chars() {
+        if matches!(c, '"' | '\\' | '$' | '`') {
+            quoted.push('\\');
+        }
+        quoted.push(c);
+    }
+    quoted.push('"');
+    quoted
 }
 
 /// WSL sets `WSL_DISTRO_NAME` for processes it starts, and registers Windows interop with the

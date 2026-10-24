@@ -20,6 +20,8 @@ use serde_json::Value;
 use crate::commands;
 use crate::editors::Editor;
 use crate::shell::{self, Shell};
+use crate::shims;
+use crate::uninstall::{Caller, Keychain, Store};
 
 /// Every command this serves: the window's, but `open_in_editor`. The app's tests hold it to
 /// the Tauri handler's list.
@@ -38,6 +40,7 @@ pub const COMMANDS: &[&str] = &[
     "get_mcp_tools",
     "import_candidates",
     "parse_mcp_json",
+    "uninstall",
 ];
 
 #[derive(Debug, Deserialize)]
@@ -62,34 +65,76 @@ pub struct Response {
     pub error_kind: Option<ErrorKind>,
 }
 
-/// Answers one line. A line that isn't a request gets an error with a null id.
-pub async fn handle_line(home: &Path, line: &str) -> Response {
-    match serde_json::from_str::<Request>(line) {
-        Ok(request) => handle(home, request).await,
-        Err(err) => Response {
-            id: Value::Null,
-            ok: None,
-            error: Some(format!("not a request: {err}")),
-            error_kind: None,
-        },
-    }
+/// What a session answers once an uninstall through it has finished. The window on the other end
+/// would otherwise read the config at its next focus, which creates `~/.envrouter` again.
+const UNINSTALLED: &str = "EnvRouter is uninstalled here. This session answers nothing more.";
+
+/// One connection's worth of requests against one home folder.
+pub struct Session<'a> {
+    home: &'a Path,
+    /// Where an uninstall deletes the secrets: the platform's, except in tests.
+    store: &'a dyn Store,
+    uninstalled: bool,
 }
 
-pub async fn handle(home: &Path, request: Request) -> Response {
-    let result = dispatch(home, &request.command, request.args).await;
-    match result {
-        Ok(value) => Response {
-            id: request.id,
-            ok: Some(value),
-            error: None,
-            error_kind: None,
-        },
-        Err(err) => Response {
-            id: request.id,
-            ok: None,
-            error: Some(err.to_string()),
-            error_kind: Some(err.kind()),
-        },
+impl<'a> Session<'a> {
+    pub fn new(home: &'a Path) -> Self {
+        Self::with_store(home, &Keychain)
+    }
+
+    pub(crate) fn with_store(home: &'a Path, store: &'a dyn Store) -> Self {
+        Self {
+            home,
+            store,
+            uninstalled: false,
+        }
+    }
+
+    /// Answers one line. A line that isn't a request gets an error with a null id.
+    pub async fn handle_line(&mut self, line: &str) -> Response {
+        match serde_json::from_str::<Request>(line) {
+            Ok(request) => self.handle(request).await,
+            Err(err) => Response {
+                id: Value::Null,
+                ok: None,
+                error: Some(format!("not a request: {err}")),
+                error_kind: None,
+            },
+        }
+    }
+
+    pub async fn handle(&mut self, request: Request) -> Response {
+        let result = if self.uninstalled {
+            Err(Error::Invalid(UNINSTALLED.into()))
+        } else if request.command == "uninstall" {
+            self.uninstall(request.args)
+        } else {
+            dispatch(self.home, &request.command, request.args).await
+        };
+        match result {
+            Ok(value) => Response {
+                id: request.id,
+                ok: Some(value),
+                error: None,
+                error_kind: None,
+            },
+            Err(err) => Response {
+                id: request.id,
+                ok: None,
+                error: Some(err.to_string()),
+                error_kind: Some(err.kind()),
+            },
+        }
+    }
+
+    /// A finished real run ends the session's service, like the app's guard in `home()`.
+    fn uninstall(&mut self, args: Value) -> Result<Value> {
+        let UninstallArgs { dry_run } = parse(args)?;
+        let exe = shims::current_exe()?;
+        let report =
+            commands::uninstall_with(self.home, dry_run, &Caller::Cli { exe }, self.store)?;
+        self.uninstalled = report.finished();
+        to_value(report)
     }
 }
 
@@ -248,9 +293,17 @@ struct Text {
     text: String,
 }
 
+/// `dry_run` has no default: a call that forgets it must fail, not delete.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UninstallArgs {
+    dry_run: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::uninstall::fake::FakeStore;
     use serde_json::json;
 
     fn answer(home: &Path, line: &str) -> Value {
@@ -258,7 +311,10 @@ mod tests {
             .enable_all()
             .build()
             .unwrap();
-        serde_json::to_value(runtime.block_on(handle_line(home, line))).unwrap()
+        serde_json::to_value(
+            runtime.block_on(Session::with_store(home, &FakeStore::default()).handle_line(line)),
+        )
+        .unwrap()
     }
 
     /// Pins the envelope a remote window relies on. The payloads inside are the window's own
@@ -344,6 +400,67 @@ mod tests {
         std::fs::write(home.join(".envrouter/config.json"), "{ half-typed").unwrap();
         let broken = answer(home, r#"{"id": 10, "command": "get_config"}"#);
         assert_eq!(broken["errorKind"], "parse", "{broken}");
+    }
+
+    /// A remote window can ask what an uninstall would do, but a call that leaves out `dryRun`
+    /// is refused rather than read as a real one.
+    #[test]
+    fn uninstall_needs_dry_run_and_a_plan_changes_nothing() {
+        let home = tempfile::tempdir().unwrap();
+        let config = home.path().join(".envrouter/config.json");
+        std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+        std::fs::write(&config, "{}").unwrap();
+
+        let refused = answer(
+            home.path(),
+            r#"{"id": 1, "command": "uninstall", "args": {}}"#,
+        );
+        assert!(
+            refused["error"]
+                .as_str()
+                .unwrap()
+                .starts_with("bad arguments"),
+            "{refused}"
+        );
+
+        let plan = answer(
+            home.path(),
+            r#"{"id": 2, "command": "uninstall", "args": {"dryRun": true}}"#,
+        );
+        assert_eq!(plan["ok"]["dryRun"], true, "{plan}");
+        assert_eq!(plan["ok"]["folder"], "wouldDelete", "{plan}");
+        assert!(config.is_file());
+    }
+
+    /// After a finished uninstall the session answers nothing, so the window on the other end
+    /// can't read the config and create `~/.envrouter` again; a plan doesn't end it.
+    #[test]
+    fn a_finished_uninstall_ends_the_sessions_service() {
+        let home = tempfile::tempdir().unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let store = FakeStore::default();
+        let mut session = Session::with_store(home.path(), &store);
+        let mut ask =
+            |line: &str| serde_json::to_value(runtime.block_on(session.handle_line(line))).unwrap();
+
+        let plan = ask(r#"{"id": 1, "command": "uninstall", "args": {"dryRun": true}}"#);
+        assert_eq!(plan["ok"]["dryRun"], true, "{plan}");
+        assert_eq!(
+            ask(r#"{"id": 2, "command": "get_config"}"#)["ok"]["profiles"],
+            json!([])
+        );
+        // The read above made the scratch home's folder; a real run with nothing else set up has
+        // nothing to stop on.
+        let done = ask(r#"{"id": 3, "command": "uninstall", "args": {"dryRun": false}}"#);
+        assert_eq!(done["ok"]["folder"], "deleted", "{done}");
+        assert_eq!(store.deletes.get(), 1);
+
+        let after = ask(r#"{"id": 4, "command": "get_config"}"#);
+        assert_eq!(after["error"], UNINSTALLED, "{after}");
+        assert_eq!(after["id"], 4);
     }
 
     /// `COMMANDS` is what the app's test compares with the window's; this keeps it honest about
