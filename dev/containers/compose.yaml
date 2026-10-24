@@ -13,6 +13,12 @@
 name: envrouter-dev
 
 x-common: &common
+  # Podman's machine runs SELinux and gives each container its own label categories. The AppImage
+  # tooling copies /usr/share/glib-2.0/schemas from the container with that label, so the next
+  # container couldn't open the AppDir the last one left in the target volume, and bundling failed
+  # with "Permission denied (os error 13)" (#101). These are local build containers, so they share.
+  security_opt:
+    - label=disable
   volumes:
     - ../..:/src:ro
     - ./scripts:/scripts:ro

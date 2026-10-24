@@ -86,6 +86,10 @@ as an advisory lands.
 `dev/containers/compose.yaml` runs the Linux and Windows checks in containers, with Podman or
 Docker. Everything is grouped under the project `envrouter-dev`; the checkout is mounted
 read-only, and builds persist in named volumes. A change to `dev/containers/` builds both images in CI (`.github/workflows/dev-containers.yml`).
+`run` doesn't rebuild an image whose Containerfile changed: run
+`podman compose -f dev/containers/compose.yaml build` after pulling one. The containers run with
+SELinux labels off (`label=disable`), so files one run leaves in the build volume stay readable to
+the next.
 
 ```sh
 podman compose -f dev/containers/compose.yaml run --rm linux-test            # backend tests, keyring round trip

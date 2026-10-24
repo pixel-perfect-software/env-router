@@ -14,6 +14,9 @@ export APPIMAGE_EXTRACT_AND_RUN=1
 pnpm notices
 pnpm tauri build --no-bundle
 files="{\"files\":{\"/usr/bin/envrouter-keychain.exe\":\"$exe\"}}"
+# The target volume outlives each run, and Tauri leaves every earlier version's bundles beside the
+# new ones, so it starts empty: the checks below then see this build's .deb and AppImage only.
+rm -rf /target/release/bundle
 pnpm tauri bundle --config src-tauri/tauri.licences.conf.json --config "{\"bundle\":{\"linux\":{\"deb\":$files,\"appimage\":$files}}}"
 # The output volume outlives each run; only this build's bundles go in it, so the checks below see one of each.
 rm -f /out/*.deb /out/*.AppImage
