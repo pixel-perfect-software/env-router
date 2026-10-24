@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react'
 import type { Health } from '../lib/health'
 import { tildify } from '../lib/paths'
+import { usePlatform } from '../lib/platform'
 import { listOf, plural } from '../lib/text'
 import type { Shell } from '../lib/types'
 import { Button, CloseIcon, IconButton, StatusTile, type Tone } from './ui'
@@ -31,13 +32,14 @@ function ValueText({ text, home }: { text: string; home: string }) {
 
 function Banner({ tone, title, detail, action }: { tone: Tone; title: string; detail?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="mx-4 flex shrink-0 items-center gap-3 rounded-card bg-card p-3 shadow-card">
+    // The actions wrap under the text when the window is too narrow for both.
+    <div className="mx-4 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-card bg-card p-3 shadow-card">
       <StatusTile tone={tone} />
-      <div className="min-w-0 flex-1">
+      <div className="min-w-56 flex-1">
         <p className="font-medium">{title}</p>
         {detail && <p className="text-small text-ink-2">{detail}</p>}
       </div>
-      {action}
+      {action && <div className="flex flex-wrap items-center gap-2">{action}</div>}
     </div>
   )
 }
@@ -53,7 +55,11 @@ export function HealthLine({
   onReinstall,
   onRecheck,
   onOpenConfig,
+  onRevealConfig,
+  onStartOver,
+  onRetry,
   onDismissError,
+  onDismissWarning,
 }: {
   health: Health
   /** Tildifies paths in the backend's messages. */
@@ -68,9 +74,17 @@ export function HealthLine({
   onReinstall: () => void
   onRecheck: (folder: string, shell: Shell, tool: string) => void
   onOpenConfig: () => void
+  /** Shows config.json in the file manager, for a machine with no editor that opens it. */
+  onRevealConfig: () => void
+  /** Copies the unreadable config.json aside and starts with an empty one; asks first. */
+  onStartOver: () => void
+  /** Asks again for what failed: the status refresh, the one-off action, or (with no home folder) the config. */
+  onRetry: () => void
   onDismissError: () => void
+  onDismissWarning: () => void
 }) {
   const accent = quiet ? 'push' : 'primary'
+  const { revealLabel } = usePlatform()
   if (health.kind === 'loading') {
     // Holds the place of the line working routing gets, the likeliest answer.
     return (
@@ -112,15 +126,32 @@ export function HealthLine({
           title="Something went wrong"
           detail={<ValueText text={health.message} home={home} />}
           action={
-            health.dismissible ? (
-              <IconButton label="Dismiss" onClick={onDismissError}>
-                <CloseIcon />
-              </IconButton>
-            ) : undefined
+            <>
+              <Button onClick={onRetry}>Try Again</Button>
+              {health.dismissible && (
+                <IconButton label="Dismiss" onClick={onDismissError}>
+                  <CloseIcon />
+                </IconButton>
+              )}
+            </>
           }
         />
       )
-    case 'unloaded':
+    case 'warning':
+      return (
+        <Banner
+          tone="warn"
+          title="Saved, with a loose end"
+          detail={<ValueText text={health.message} home={home} />}
+          action={
+            <IconButton label="Dismiss" onClick={onDismissWarning}>
+              <CloseIcon />
+            </IconButton>
+          }
+        />
+      )
+    case 'unloaded': {
+      const openFailed = health.openError?.action === 'open'
       return (
         <Banner
           tone="problem"
@@ -129,7 +160,7 @@ export function HealthLine({
             health.openError ? (
               <>
                 <ValueText text={health.message} home={home} />
-                <span className="block text-problem">{health.openError}</span>
+                <span className="block text-problem">{health.openError.message}</span>
               </>
             ) : (
               <ValueText text={health.message} home={home} />
@@ -137,13 +168,31 @@ export function HealthLine({
           }
           action={
             health.canOpen ? (
-              <Button kind={accent} onClick={onOpenConfig}>
-                Open config.json
+              <>
+                {/* Open is the way out until it fails; then Reveal, which needs no editor, takes the accent. A failed Reveal or a refused Start Over moves nothing. */}
+                <Button kind={openFailed ? 'push' : accent} onClick={onOpenConfig}>
+                  Open config.json
+                </Button>
+                <Button kind={openFailed ? accent : 'push'} onClick={onRevealConfig}>
+                  {revealLabel}
+                </Button>
+                {/* Replacing the file only helps one that won't parse; a newer version's or an unreadable one's is left alone. */}
+                {health.canStartOver && (
+                  <Button kind="push" onClick={onStartOver}>
+                    Back Up and Start Over…
+                  </Button>
+                )}
+              </>
+            ) : (
+              // No home folder to open the file from; asking for it again is the only way out.
+              <Button kind={accent} onClick={onRetry}>
+                Try Again
               </Button>
-            ) : undefined
+            )
           }
         />
       )
+    }
     case 'shim':
       return (
         <Banner

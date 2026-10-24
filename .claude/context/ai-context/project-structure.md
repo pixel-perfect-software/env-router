@@ -25,6 +25,7 @@ env-router/
 │   ├── cli/                   # `envrouter`: status, install, shell, editor, check, explain, apply, secret, rpc
 │   ├── keychain/              # MCP secrets in one item of the platform's store; envrouter-keychain helper bin (the shim runs it, never links it)
 │   │   ├── src/store/         # macos.rs (Keychain), linux.rs → secret_service.rs or wsl.rs, windows.rs (Credential Manager), unavailable.rs
+│   │   ├── src/checker.rs     # one-thread, timed "is the store usable" check behind setup_status (Linux and WSL)
 │   │   └── tests/store.rs     # round trip through the real store; ignored by default, run by CI on Linux
 │   ├── shim/
 │   │   ├── src/main.rs        # the shim: route, find the real binary, exec; wrapper mode for editors; ENVROUTER_EXPLAIN mode

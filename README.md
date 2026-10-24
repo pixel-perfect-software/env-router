@@ -248,6 +248,7 @@ value shows as **In Keychain** (**In the keyring**, **In the Credential Manager*
 shown again; **Replace**
 sets a new one. EnvRouter also warns when a value that looks like a credential would be saved as
 plain text, such as an `--api-key=` argument or a password in a connection string.
+With no store to keep values in (no Secret Service running on Linux, say), the lock is off and the editor says why; values are saved in `config.json` and flagged as such.
 
 Give a server its secret through an environment variable or a header. An argument can hold one
 too, but the value then sits on the server's command line once it starts (and while you check
@@ -428,6 +429,7 @@ appears on that server's command line while it runs.
 | An MCP server doesn't show in `claude mcp list` or `copilot mcp list` | Expected: those commands don't list servers passed on the command line. Use `/mcp` inside the agent. |
 | Saving a secret fails on Linux with "there's no Secret Service" | Install and start GNOME Keyring or KWallet, then save again. Servers that need a secret are left out until then; the rest still load. |
 | Saving a secret fails in WSL with "couldn't reach the Windows Credential Manager" | Run `envrouter install` so `~/.envrouter/bin/envrouter-keychain.exe` is there, and check that WSL interop is on (`[interop] enabled` isn't `false` in `/etc/wsl.conf`). |
+| The window says it can't read `config.json` | It isn't valid JSON, usually a hand edit that stopped halfway. **Open config.json** (or **Reveal**) lets you fix it, and the window reads it again. **Back Up and Start Over…** copies the file to `~/.envrouter/config.json.bak` (`config.json.bak-2`, … if one is already there; earlier backups are never replaced) and starts with no profiles or servers. It offers nothing for a file from a newer EnvRouter or one it can't read at all. Your MCP secrets, shims and agents' config folders stay as they were, and the secrets the backup names stay in the store for as long as the backup is there, so putting it back (`mv config.json.bak config.json`) brings its servers' secrets with it. Agents keep running without a profile meanwhile. |
 | macOS says EnvRouter can't be opened | The app is signed ad hoc, not notarized. Homebrew's cask clears the quarantine flag that triggers this; for a copy you downloaded or built elsewhere, run `xattr -dr com.apple.quarantine /Applications/EnvRouter.app`. |
 
 ## 🔄 Updating

@@ -220,13 +220,12 @@ interface Row {
   /** Same name and definition as a library server: nothing to import. */
   present: boolean
   draft: ServerDraft
-  /** Values that go to the Keychain. */
-  locked: string[]
   /** A container that gets `--init`, so it stops when the agent does. */
   init: boolean
-  /** Where it holds a credential that would stay plain text, as `plainCredentials` names them. */
-  plain: string[]
 }
+
+/** The env and header values a draft marks for the Keychain. */
+const lockedKeys = (draft: ServerDraft) => [...draft.env, ...draft.headers].filter((row) => isPending(row.value)).map((row) => row.key)
 
 /** A row's identity across reloads: its name and the files it came from. */
 const keyOf = (row: Row) => [row.candidate.name, ...row.candidate.sources].join('\0')
@@ -241,9 +240,7 @@ function rowsOf(candidates: ImportCandidate[], config: ConfigState): Row[] {
     // A name agents can't take (`my server`) becomes one they can.
     const as = present ? candidate.name : freeName(asServerName(candidate.name), taken)
     if (!present) taken.add(as)
-    const draft = withSecretsLocked(draftOf(as, server))
-    const locked = [...draft.env, ...draft.headers].filter((row) => isPending(row.value)).map((row) => row.key)
-    return { candidate, as, present, draft, locked, init: server !== candidate.server, plain: plainCredentials(draft) }
+    return { candidate, as, present, draft: withSecretsLocked(draftOf(as, server)), init: server !== candidate.server }
   })
 }
 
@@ -303,7 +300,7 @@ export function ImportView({
     const servers: [string, McpServer][] = []
     const secrets: Record<string, string> = {}
     for (const row of rows.filter((r) => picked.has(keyOf(r)))) {
-      const built = serverOf(row.draft)
+      const built = serverOf(row.draft, platform.canLock)
       if ('error' in built) {
         setError(`${row.as}: ${built.error}`)
         return
@@ -364,74 +361,77 @@ export function ImportView({
           </div>
         ) : (
           <ul className="rounded-[8px] bg-well">
-            {rows.map((row) => (
-              <li key={keyOf(row)} className="[&+&]:hair-t">
-                <label
-                  className={`relative flex w-full items-start gap-2.5 rounded-control px-3 py-2 focus-within-ring ${
-                    row.present ? '' : 'hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)]'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={picked.has(keyOf(row))}
-                    disabled={row.present}
-                    onChange={() => toggle(keyOf(row))}
-                  />
-                  {/* A server already in the library fades its control and tile, never its text. */}
-                  <span className={`mt-[7px] ${row.present ? 'opacity-40' : ''}`}>
-                    <CheckBox checked={picked.has(keyOf(row))} />
-                  </span>
-                  <span className={row.present ? 'opacity-50' : ''}>
-                    <ServerMark name={row.candidate.name} server={row.candidate.server} size={28} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-baseline gap-2">
-                      <span className="min-w-0 truncate font-mono text-small text-ink" title={row.as}>
-                        {row.as}
+            {rows.map((row) => {
+              const locked = platform.canLock ? lockedKeys(row.draft) : []
+              const plain = plainCredentials(row.draft, platform.canLock)
+              return (
+                <li key={keyOf(row)} className="[&+&]:hair-t">
+                  <label
+                    className={`relative flex w-full items-start gap-2.5 rounded-control px-3 py-2 focus-within-ring ${
+                      row.present ? '' : 'hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)]'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={picked.has(keyOf(row))}
+                      disabled={row.present}
+                      onChange={() => toggle(keyOf(row))}
+                    />
+                    {/* A server already in the library fades its control and tile, never its text. */}
+                    <span className={`mt-[7px] ${row.present ? 'opacity-40' : ''}`}>
+                      <CheckBox checked={picked.has(keyOf(row))} />
+                    </span>
+                    <span className={row.present ? 'opacity-50' : ''}>
+                      <ServerMark name={row.candidate.name} server={row.candidate.server} size={28} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-baseline gap-2">
+                        <span className="min-w-0 truncate font-mono text-small text-ink" title={row.as}>
+                          {row.as}
+                        </span>
+                        {row.present ? (
+                          <span className="text-caption text-ink-2">In the library</span>
+                        ) : (
+                          row.as !== row.candidate.name && (
+                            <span className="text-caption text-ink-2">
+                              <span className="font-mono">{row.candidate.name}</span>{' '}
+                              {SERVER_NAME.test(row.candidate.name) ? 'is taken' : "isn't a name agents accept"}
+                            </span>
+                          )
+                        )}
                       </span>
-                      {row.present ? (
-                        <span className="text-caption text-ink-2">In the library</span>
-                      ) : (
-                        row.as !== row.candidate.name && (
-                          <span className="text-caption text-ink-2">
-                            <span className="font-mono">{row.candidate.name}</span>{' '}
-                            {SERVER_NAME.test(row.candidate.name) ? 'is taken' : "isn't a name agents accept"}
-                          </span>
-                        )
+                      <span className="block truncate font-mono text-caption text-ink-2" title={serverSummary(row.candidate.server)}>
+                        {serverSummary(row.candidate.server)}
+                      </span>
+                      {row.candidate.sources.length > 0 && (
+                        <span className="block truncate text-caption text-ink-2" title={row.candidate.sources.join('\n')}>
+                          from <span className="font-mono">{tildify(row.candidate.sources[0], home)}</span>
+                          {row.candidate.sources.length > 1 && ` and ${row.candidate.sources.length - 1} more`}
+                        </span>
+                      )}
+                      {locked.length > 0 && !row.present && (
+                        <span className="mt-0.5 flex items-center gap-1 text-caption text-ink-2">
+                          <LockIcon />
+                          <span className="font-mono">{locked.join(', ')}</span> {locked.length === 1 ? 'goes' : 'go'} to the {platform.secretStore}
+                        </span>
+                      )}
+                      {plain.length > 0 && !row.present && (
+                        <span className="mt-0.5 flex items-center gap-1.5 text-caption text-ink-2">
+                          <StatusTile tone="warn" size={14} />
+                          {plainNote(plain, platform)}
+                        </span>
+                      )}
+                      {row.init && !row.present && (
+                        <span className="mt-0.5 block text-caption text-ink-2">
+                          Adds <span className="font-mono">--init</span>, so the container stops when the agent does
+                        </span>
                       )}
                     </span>
-                    <span className="block truncate font-mono text-caption text-ink-2" title={serverSummary(row.candidate.server)}>
-                      {serverSummary(row.candidate.server)}
-                    </span>
-                    {row.candidate.sources.length > 0 && (
-                      <span className="block truncate text-caption text-ink-2" title={row.candidate.sources.join('\n')}>
-                        from <span className="font-mono">{tildify(row.candidate.sources[0], home)}</span>
-                        {row.candidate.sources.length > 1 && ` and ${row.candidate.sources.length - 1} more`}
-                      </span>
-                    )}
-                    {row.locked.length > 0 && !row.present && (
-                      <span className="mt-0.5 flex items-center gap-1 text-caption text-ink-2">
-                        <LockIcon />
-                        <span className="font-mono">{row.locked.join(', ')}</span> {row.locked.length === 1 ? 'goes' : 'go'} to the{' '}
-                        {platform.secretStore}
-                      </span>
-                    )}
-                    {row.plain.length > 0 && !row.present && (
-                      <span className="mt-0.5 flex items-center gap-1.5 text-caption text-ink-2">
-                        <StatusTile tone="warn" size={14} />
-                        {plainNote(row.plain)}
-                      </span>
-                    )}
-                    {row.init && !row.present && (
-                      <span className="mt-0.5 block text-caption text-ink-2">
-                        Adds <span className="font-mono">--init</span>, so the container stops when the agent does
-                      </span>
-                    )}
-                  </span>
-                </label>
-              </li>
-            ))}
+                  </label>
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>

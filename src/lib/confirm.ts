@@ -1,4 +1,4 @@
-import { ask } from '@tauri-apps/plugin-dialog'
+import { ask, message } from '@tauri-apps/plugin-dialog'
 import { listOf } from './text'
 import type { Profile } from './types'
 
@@ -56,3 +56,16 @@ export const confirmRestore = () =>
     'Save',
     'Cancel',
   )
+
+/** The native confirmation before an unreadable config.json is copied aside and replaced by an empty one. */
+export const confirmStartOver = () =>
+  warn(
+    'EnvRouter copies it to a new backup beside it, then starts with no profiles and no MCP servers. Earlier backups are kept, and nothing else is touched.',
+    'Back up config.json and start over?',
+    'Back Up and Start Over',
+    'Cancel',
+  )
+
+/** The native note after Start Over, naming the backup it made (`config.json.bak`, or `.bak-2` and on when that's taken). */
+export const tellBackedUp = (backup: string) =>
+  message(`Your old config.json is at ${backup}. Copy it back over config.json to return to it.`, { title: 'Started over', kind: 'info' })

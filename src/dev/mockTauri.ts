@@ -3,8 +3,11 @@
 // messages, fresh objects each call). main.tsx loads it only when `import.meta.env.DEV` and no
 // Tauri runtime is present, so it never ships. URL parameters pick the state:
 // - `?scenario=` first-run (default), populated, mcp (populated, with an MCP server library),
-//   shadowed (a function in the checked shell's startup file shadows the tool), or broken
-//   (config.json can't be read until "Open config.json" is clicked, which stands in for fixing it).
+//   shadowed (a function in the checked shell's startup file shadows the tool), newer (config.json
+//   is from a newer EnvRouter: it can't be read, and Start Over isn't offered for it), or broken
+//   (config.json can't be parsed until "Open config.json" is clicked, which stands in for fixing it, or
+//   "Back Up and Start Over…" is confirmed, which backs it up and empties the config), or
+//   unrouted (populated, but no profile sets any agent, so a check finds the agent on PATH untouched).
 // - `&platform=linux` answers as a Linux desktop would (home in /home, bash as the login shell,
 //   ~/.config editor settings, a keyring); `&platform=wsl` as a WSL distro (bash reading
 //   .profile and .bashrc, VS Code Server's machine settings, Windows editors connected remotely).
@@ -12,11 +15,17 @@
 //   managed (an admin's managed-mcp.json turns the profile's MCP servers off), alias (the run
 //   goes through `alias claude='claude --model opus'`), shadowedOnPath,
 //   byPromptHook, shadowedByShell (an alias, so no origin), notFound,
-//   notInstalled, shimFailed (empty message, as when macOS kills a shim), timeout or noPath (the
+//   notInstalled, owned (the owner sets no config for the agent), unowned (no profile owns the folder), shimFailed (empty message, as when macOS kills a shim), timeout or noPath (the
 //   two ways the shell itself fails). Use it with a populated scenario, where the shell is on.
 // - `&shim=stale`: the installed shim doesn't match the app's, until a save reinstalls it.
 // - `&store=off`: there's no secret store, so saving a secret (or checking a server that needs
-//   a saved one) fails as it does there.
+//   a saved one) fails as it does there, and a save that drops a secret goes through with a warning. Off macOS the setup status says so up front
+//   (`secretStoreProblem`); on macOS nothing can tell until a save, so it stays null.
+// - `&fail=home|status|shell|editor|reveal`: the home folder can't be found (the unloaded banner, with no file to open),
+//   the setup status can't be read (the error banner), turning a shell on fails (an error
+//   banner with Dismiss), or no editor opens a file (use it with `?scenario=broken`: the unloaded
+//   banner's Open config.json fails and Reveal takes the accent; `reveal` makes Reveal fail). It keeps failing until `window.__mockFix()` is called, the way a
+//   permission or a missing file keeps failing until the user fixes it.
 // The mcp library has a server named `slow` whose check times out. `window.__mockDrop(path, x, y)`
 // simulates a Finder drop. `window.__mockEditConfig(edit)` changes config.json as the CLI or a
 // hand edit would, behind the window's back, so a save from an open editor meets it, and
@@ -33,6 +42,7 @@ import { platformInfo } from '../lib/platform'
 import { withAgents } from '../lib/tools'
 import type {
   AgentDef,
+  ConfigFault,
   ConfigState,
   Editor,
   EditorStatus,
@@ -61,6 +71,8 @@ const HOME = macos ? '/Users/sam' : '/home/sam'
 const scenario = params.get('scenario') ?? 'first-run'
 const forcedCheck = params.get('check')
 const storeOff = params.get('store') === 'off'
+/** What `&fail=` breaks, until `window.__mockFix()`. */
+let failing: string | null = ['home', 'status', 'shell', 'editor', 'reveal'].includes(params.get('fail') ?? '') ? params.get('fail') : null
 
 /** `config::CONFIG_VERSION`: every save writes it. */
 const CONFIG_VERSION = 5
@@ -152,7 +164,13 @@ const profile = (id: string, name: string, triggerPaths: string[], configDir?: s
 })
 
 const populated = scenario !== 'first-run'
-let configBroken = scenario === 'broken'
+/** `?scenario=unrouted`: the profiles own folders but set no agent. */
+const unrouted = scenario === 'unrouted'
+let configBroken = scenario === 'broken' || scenario === 'newer'
+/** Secret ids a Start Over backup names, which the store keeps. */
+const backedUp = new Set<string>()
+/** How many times the broken config.json was backed up and replaced: `config.json.bak`, then `.bak-2`, … */
+let backups = 0
 /** config.json was deleted behind the window's back; the next read creates an empty one. */
 let configMissing = false
 /** `quit::UNSAVED` and `quit::ASKED`. */
@@ -216,17 +234,17 @@ let config: ConfigState = withAgents({
   agents: {},
   profiles: populated
     ? [
-        { ...profile('p1', 'Personal', ['~/dev', '~/notes'], '~/.claude-personal'), mcpServers: using('playwright') },
+        { ...profile('p1', 'Personal', ['~/dev', '~/notes'], unrouted ? undefined : '~/.claude-personal'), mcpServers: using('playwright') },
         {
-          ...profile('p2', 'Work', ['~/dev/work/*', '~/Documents/Acme'], '~/.claude-work', {
-            copilot: { envVar: 'COPILOT_HOME', path: '~/.copilot-work' },
+          ...profile('p2', 'Work', ['~/dev/work/*', '~/Documents/Acme'], unrouted ? undefined : '~/.claude-work', {
+            ...(unrouted ? {} : { copilot: { envVar: 'COPILOT_HOME', path: '~/.copilot-work' } }),
           }),
           mcpServers: withLibrary
             ? { ...using('linear', 'sentry', 'postgres'), github: { disabledTools: ['delete_repository', 'fork_repository'] } }
             : {},
         },
-        profile('p3', 'Northwind', ['~/clients/northwind'], '~/.claude-northwind', {
-          copilot: { envVar: 'COPILOT_HOME', path: '~/.copilot-northwind' },
+        profile('p3', 'Northwind', ['~/clients/northwind'], unrouted ? undefined : '~/.claude-northwind', {
+          ...(unrouted ? {} : { copilot: { envVar: 'COPILOT_HOME', path: '~/.copilot-northwind' } }),
         }),
         { ...profile('p4', 'Scratch', ['~/dev/scratch']), mcpServers: using('playwright') },
       ]
@@ -249,6 +267,8 @@ const storeName = platformInfo(platform).secretStore
 const setup: Omit<SetupStatus, 'shimInstalled'> = {
   platform,
   secretStore: storeName,
+  // `store::usable`: the Keychain is never asked (it would prompt), so only the others report a missing store.
+  secretStoreProblem: storeOff && !macos ? storeError : null,
   shimsDir: `${HOME}/.envrouter/shims`,
   // `shell::status`, with bash's files as `bash_startup_files` picks them for each platform.
   shells: macos
@@ -764,6 +784,8 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
   const a = (args ?? {}) as Record<string, unknown>
   switch (cmd) {
     case 'plugin:path|resolve_directory':
+      // tauri's `Error::UnknownPath`
+      if (failing === 'home') throw 'unknown path'
       return HOME
     case 'plugin:dialog|open': {
       const opts = (a.options ?? {}) as { multiple?: boolean; title?: string }
@@ -790,10 +812,22 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       menus.delete(a.rid as number)
       return null
     case 'plugin:opener|reveal_item_in_dir':
+      // WSL with no file manager, say.
+      if (failing === 'reveal') throw 'No file manager could show the file.'
       // Finder or the file manager would open beside the window; nothing to show in a browser.
       return null
     case 'get_config':
-      if (configBroken) throw `${HOME}/.envrouter/config.json is not valid JSON: expected \`,\` or \`}\` at line 7 column 5`
+      // `ConfigFault`: the one command that rejects with its kind too.
+      if (configBroken && scenario === 'newer')
+        throw {
+          kind: 'other',
+          message: `${HOME}/.envrouter/config.json is from a newer version of EnvRouter. Update EnvRouter to use it.`,
+        } satisfies ConfigFault
+      if (configBroken)
+        throw {
+          kind: 'parse',
+          message: `${HOME}/.envrouter/config.json is not valid JSON: expected \`,\` or \`}\` at line 7 column 5`,
+        } satisfies ConfigFault
       // `config::load_or_init`
       if (configMissing) {
         config = { version: CONFIG_VERSION, profiles: [], mcpServers: {}, agents: {} }
@@ -818,18 +852,34 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       // The store is read only when this save adds a secret or stops using one. New values go in
       // before config.json is written, and secrets nothing names any more come out after.
       const before = configMissing ? new Set<string>() : secretIds(config)
+      // A secret a Start Over backup names stays, so putting the backup back brings its secrets too.
+      const kept = new Set([...referenced, ...backedUp])
       if (Object.keys(secrets).length > 0) {
         if (storeOff) throw `Couldn't save the secret: ${storeError.replace(/\.$/, '')}. Nothing was saved.`
-        stored = new Set([...[...stored].filter((id) => referenced.has(id) || before.has(id)), ...Object.keys(secrets)])
+        stored = new Set([...[...stored].filter((id) => kept.has(id) || before.has(id)), ...Object.keys(secrets)])
       }
       config = { ...next, version: CONFIG_VERSION }
       configBroken = false
       configMissing = false
-      if ([...before].some((id) => !referenced.has(id))) {
-        if (storeOff) throw `Saved, but couldn't remove a secret no server uses any more: ${storeError.replace(/\.$/, '')}.`
-        stored = new Set([...stored].filter((id) => referenced.has(id)))
+      let warning: string | null = null
+      if ([...before].some((id) => !kept.has(id))) {
+        // The config is written by now, so a store that won't let go is a warning, not a failed save.
+        if (storeOff) warning = `Couldn't remove a secret no server uses any more: ${storeError.replace(/\.$/, '')}.`
+        else stored = new Set([...stored].filter((id) => kept.has(id)))
       }
-      return { status: 'saved', config } satisfies SaveOutcome
+      return { status: 'saved', config, warning } satisfies SaveOutcome
+    }
+    case 'reset_unreadable_config': {
+      await delay(250)
+      // `commands::reset_unreadable_config`: only a file that isn't valid JSON is backed up and replaced.
+      if (configMissing) throw 'config.json is gone, so nothing was changed.'
+      if (!configBroken) throw 'config.json can be read now, so nothing was changed.'
+      if (scenario === 'newer') throw `${HOME}/.envrouter/config.json is from a newer version of EnvRouter. Update EnvRouter to use it.`
+      backups++
+      for (const id of secretIds(config)) backedUp.add(id)
+      config = { version: CONFIG_VERSION, profiles: [], mcpServers: {}, agents: {} }
+      configBroken = false
+      return `${HOME}/.envrouter/config.json.bak${backups === 1 ? '' : `-${backups}`}`
     }
     case 'set_unsaved_edits':
       // `quit::set_unsaved_edits`
@@ -893,15 +943,20 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
     case 'open_in_editor': {
       const path = String(a.path)
       if (!path.startsWith(`${HOME}/`)) throw `${path} isn't a file in your home folder.`
+      if (failing === 'editor') throw `couldn't open ${path}`
       configBroken = false
       return null
     }
     case 'get_setup_status':
+      // `shims::bundled`, when the app's own executable can't be found
+      if (failing === 'status') throw 'current executable: No such file or directory (os error 2)'
       return { ...setup, shimInstalled } satisfies SetupStatus
     case 'set_shell_integration': {
       await delay(300)
       const s = setup.shells.find((x) => x.shell === a.shell)
       if (!s) throw `unknown variant \`${a.shell}\`, expected one of \`zsh\`, \`bash\`, \`fish\``
+      // `Error::Io`: the path, then the OS's reason
+      if (failing === 'shell') throw `${s.startupFiles[0]}: Permission denied (os error 13)`
       if (a.enabled) shimInstalled = true
       s.installed = Boolean(a.enabled)
       return s
@@ -956,6 +1011,21 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       if (forcedCheck === 'noPath') throw `${s.shell} exited without reporting its PATH. open terminal failed: not a terminal`
       const forced = forcedResult(forcedCheck, command)
       if (forced) return forced
+      if (forcedCheck === 'owned' || forcedCheck === 'unowned') {
+        // A profile that owns the folder but leaves the agent alone; the stand-in name when the config knows no owner.
+        const p = owner(config, folder)
+        return {
+          status: 'routed',
+          profile: forcedCheck === 'owned' ? (p?.name ?? 'Personal') : null,
+          profileId: forcedCheck === 'owned' ? (p?.id ?? 'p1') : null,
+          envVar: null,
+          value: null,
+          mcp: [],
+          mcpManagedBy: null,
+          viaAlias: null,
+          real: `${HOME}/.local/bin/${command}`,
+        } satisfies FolderCheck
+      }
       if (scenario === 'shadowed') return { status: 'shadowedByShell', kind: 'function', origin: s.startupFiles[0] ?? null } satisfies FolderCheck
       // With the shell off, or no profile setting the tool (so no shim for it), the real backend
       // finds the tool itself on PATH, not nothing.
@@ -967,6 +1037,7 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       return {
         status: 'routed',
         profile: p?.name ?? null,
+        profileId: p?.id ?? null,
         envVar: settings ? settings.envVar : null,
         value: settings ? expandHome(settings.path.trim()) : null,
         mcp: forcedCheck === 'managed' ? [] : mcpFor(config, p, command),
@@ -996,11 +1067,16 @@ declare global {
     __mockEditConfig: (edit: (config: ConfigState) => ConfigState) => void
     __mockDeleteConfig: () => void
     __mockQuit: () => Promise<void>
+    __mockFix: () => void
   }
 }
 
 window.__mockEditConfig = (edit) => {
   config = edit(structuredClone(config))
+}
+
+window.__mockFix = () => {
+  failing = null
 }
 
 window.__mockDeleteConfig = () => {

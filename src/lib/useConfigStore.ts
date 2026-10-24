@@ -1,10 +1,11 @@
 import { homeDir } from '@tauri-apps/api/path'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { errorMessage, getConfig, getSetupStatus, saveConfig } from './api'
+import { errorMessage, faultOf, getConfig, getSetupStatus, saveConfig } from './api'
 import { confirmReplace, confirmRestore } from './confirm'
+import type { FileError } from './health'
 import { mergeConfig } from './merge'
 import { withAgents } from './tools'
-import type { ConfigState, SetupStatus } from './types'
+import type { ConfigFault, ConfigState, SetupStatus } from './types'
 
 /**
  * What the window knows of config.json and the shells' setup: reading both, the errors from reading them, and saving with the merge loop.
@@ -15,9 +16,11 @@ export function useConfigStore(refreshEditors: () => Promise<void>) {
   const [config, setConfig] = useState<ConfigState | null>(null)
   const [setup, setSetup] = useState<SetupStatus | null>(null)
   // config.json (or the home folder) couldn't be read, so there's nothing to show yet.
-  const [loadError, setLoadError] = useState<string | null>(null)
-  // Opening an unreadable config.json failed too; shown under the parse error, not instead of it.
-  const [openError, setOpenError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<ConfigFault | null>(null)
+  // Opening, revealing or starting over an unreadable config.json failed too; shown under the parse error, not instead of it.
+  const [openError, setOpenError] = useState<FileError | null>(null)
+  // The last save went through but left something undone (a secret the store wouldn't drop). Cleared by the next save.
+  const [saveWarning, setSaveWarning] = useState<string | null>(null)
   // A failed status refresh. Cleared by the next one that works.
   const [setupError, setSetupError] = useState<string | null>(null)
   // A failed one-off action (turning on a shell, reinstalling). Cleared by the next success.
@@ -40,7 +43,11 @@ export function useConfigStore(refreshEditors: () => Promise<void>) {
     const seq = configSeq.current
     try {
       // Home first: if the config can't be read, the banner still needs it to open the file.
-      setHome(await homeDir())
+      setHome(
+        await homeDir().catch((err) => {
+          throw new Error(`Couldn't find your home folder: ${errorMessage(err)}`)
+        }),
+      )
       const loaded = await getConfig()
       if (seq !== configSeq.current) return
       setConfig(loaded)
@@ -50,7 +57,7 @@ export function useConfigStore(refreshEditors: () => Promise<void>) {
       if (seq !== configSeq.current) return
       // Nothing is editable until the file is fixed: a save would replace whatever is in it.
       setConfig(null)
-      setLoadError(errorMessage(err))
+      setLoadError(faultOf(err))
     }
   }, [refreshSetup, refreshEditors])
 
@@ -71,11 +78,13 @@ export function useConfigStore(refreshEditors: () => Promise<void>) {
     let next = mine
     let base: ConfigState | null = config
     let replace = false
+    let warning: string | null = null
     // A file that keeps changing under the save gets a few tries, not a loop.
     for (let tries = 0; ; tries++) {
       const outcome = await saveConfig(next, secrets, base)
       if (outcome.status === 'saved') {
         next = outcome.config
+        warning = outcome.warning
         break
       }
       if (outcome.status === 'missing') {
@@ -98,10 +107,27 @@ export function useConfigStore(refreshEditors: () => Promise<void>) {
     }
     configSeq.current++
     setActionError(null)
+    setSaveWarning(warning)
     setConfig(next)
     refreshSetup()
     onSaved()
   }
 
-  return { home, config, setup, setSetup, loadError, openError, setOpenError, setupError, actionError, setActionError, refreshSetup, load, commit }
+  return {
+    home,
+    config,
+    setup,
+    setSetup,
+    loadError,
+    openError,
+    setOpenError,
+    setupError,
+    actionError,
+    setActionError,
+    saveWarning,
+    setSaveWarning,
+    refreshSetup,
+    load,
+    commit,
+  }
 }

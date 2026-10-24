@@ -396,6 +396,8 @@ pub enum FolderCheck {
     /// The shim runs. It reported the profile and variable it would apply.
     Routed {
         profile: Option<String>,
+        /// The profile's id: names aren't unique, ids are.
+        profile_id: Option<String>,
         env_var: Option<String>,
         value: Option<String>,
         /// The MCP servers the run gets, if every secret they need is readable.
@@ -612,6 +614,7 @@ pub fn check_folder(shell: Shell, home: &Path, folder: &Path, tool: &str) -> Res
         .map_err(|err| Error::Command(format!("The shim's report wasn't readable: {err}")))?;
     Ok(FolderCheck::Routed {
         profile: explanation.profile,
+        profile_id: explanation.profile_id,
         env_var: explanation.env_var,
         value: explanation.value,
         mcp: explanation.mcp,
@@ -685,6 +688,9 @@ pub struct Preview {
 #[serde(rename_all = "camelCase")]
 struct Explanation {
     profile: Option<String>,
+    /// Absent from a shim that predates it.
+    #[serde(default)]
+    profile_id: Option<String>,
     env_var: Option<String>,
     value: Option<String>,
     mcp: Vec<String>,
@@ -836,6 +842,7 @@ mod tests {
         assert_eq!(
             json(&FolderCheck::Routed {
                 profile: None,
+                profile_id: None,
                 env_var: Some("V".into()),
                 value: Some("/x".into()),
                 mcp: vec!["github".into()],
@@ -843,7 +850,7 @@ mod tests {
                 via_alias: Some("t -v".into()),
                 real: "/bin/t".into(),
             }),
-            r#"{"status":"routed","profile":null,"envVar":"V","value":"/x","mcp":["github"],"mcpManagedBy":null,"viaAlias":"t -v","real":"/bin/t"}"#
+            r#"{"status":"routed","profile":null,"profileId":null,"envVar":"V","value":"/x","mcp":["github"],"mcpManagedBy":null,"viaAlias":"t -v","real":"/bin/t"}"#
         );
         assert_eq!(
             json(&Preview {
@@ -1133,6 +1140,7 @@ mod tests {
             check(&home),
             FolderCheck::Routed {
                 profile: Some("Work".into()),
+                profile_id: Some("1".into()),
                 env_var: Some("CLAUDE_CONFIG_DIR".into()),
                 value: Some(home.join(".claude-work").display().to_string()),
                 mcp: Vec::new(),

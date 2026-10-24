@@ -18,7 +18,7 @@ describe('the catalog', () => {
       } else {
         for (const key of Object.keys(entry.secrets ?? {})) expect(server.headers).toHaveProperty(key)
       }
-      expect(plainCredentials(draftOf(entry.name, server)), entry.name).toEqual([])
+      expect(plainCredentials(draftOf(entry.name, server), true), entry.name).toEqual([])
       // A secret entry has its own label; a sign-in entry doesn't also take one.
       expect(Boolean(entry.secrets && entry.signIn)).toBe(false)
       // A pasted or imported copy of the same server must lock the same value, so its name has to read as a credential.

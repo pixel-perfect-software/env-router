@@ -123,6 +123,8 @@ export interface SetupStatus {
   platform: Platform
   /** What the store MCP secrets go to is called here: "Keychain", "keyring". */
   secretStore: string
+  /** Why that store can't keep secrets right now, in its own words, or null when it can (Keychain and Credential Manager: always null). */
+  secretStoreProblem: string | null
   /** The installed shim matches the one bundled with this version of the app. */
   shimInstalled: boolean
   shimsDir: string
@@ -173,6 +175,8 @@ export type FolderCheck =
   | {
       status: 'routed'
       profile: string | null
+      /** The profile's id: names aren't unique. Null when no profile owns the folder, or from a shim that predates it. */
+      profileId: string | null
       envVar: string | null
       value: string | null
       mcp: string[]
@@ -213,12 +217,25 @@ export interface ToolInfo {
 }
 
 /**
- * `commands::SaveOutcome`. `changed`: nothing was saved, because config.json no longer holds the
- * `base` the save named (the CLI or a hand edit changed it). Either way, `config` is what the
- * file holds now. `missing`: nothing was saved, because config.json is gone since the edit
- * started; saving again without a base writes the window's version.
+ * `commands::SaveOutcome`. `saved`: `config` is what the file holds now, and `warning` is something the save couldn't finish after
+ * writing it (the secret store wouldn't drop a secret no server uses any more), worded to show as it is. `changed`: nothing was
+ * saved, because config.json no longer holds the `base` the save named (the CLI or a hand edit changed it); `config` is what the
+ * file holds now. `missing`: nothing was saved, because config.json is gone since the edit started; saving again without a base
+ * writes the window's version.
  */
-export type SaveOutcome = { status: 'saved' | 'changed'; config: ConfigState } | { status: 'missing' }
+export type SaveOutcome =
+  | { status: 'saved'; config: ConfigState; warning: string | null }
+  | { status: 'changed'; config: ConfigState }
+  | { status: 'missing' }
+
+/** `error::ErrorKind`. `parse`: a file that isn't valid JSON for its type. */
+export type ErrorKind = 'parse' | 'other'
+
+/** `commands::ConfigFault`: why config.json couldn't be read. The only command that rejects with more than a message. */
+export interface ConfigFault {
+  kind: ErrorKind
+  message: string
+}
 
 /** `mcp_probe::ServerCheck`: what starting a server and asking for its tools found. */
 export interface ServerCheck {

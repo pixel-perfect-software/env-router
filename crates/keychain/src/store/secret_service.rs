@@ -8,8 +8,8 @@ use envrouter_core::{Error, Result};
 use secret_service::blocking::{Collection, Item, SecretService};
 use secret_service::{EncryptionType, Error as StoreError};
 
-fn connect() -> Result<SecretService<'static>> {
-    SecretService::connect(EncryptionType::Dh).map_err(store_error)
+fn connect(encryption: EncryptionType) -> Result<SecretService<'static>> {
+    SecretService::connect(encryption).map_err(store_error)
 }
 
 fn attributes<'a>(service: &'a str, account: &'a str) -> HashMap<&'a str, &'a str> {
@@ -29,8 +29,18 @@ fn find<'a>(store: &'a SecretService<'a>, service: &str, account: &str) -> Resul
     Ok(found.unlocked.into_iter().chain(found.locked).collect())
 }
 
+/// Whether there is a Secret Service with a collection to keep the item in, for the window to
+/// ask whenever it gains focus. It opens a plain session and reads the `default` alias (the
+/// collection `set` writes to), and goes no further: nothing is unlocked, searched, read or
+/// written, so it never prompts.
+pub fn usable() -> Result<()> {
+    let store = connect(EncryptionType::Plain)?;
+    default_collection(&store)?;
+    Ok(())
+}
+
 pub fn get(service: &str, account: &str) -> Result<Option<Vec<u8>>> {
-    let store = connect()?;
+    let store = connect(EncryptionType::Dh)?;
     let items = find(&store, service, account)?;
     match items.first() {
         Some(item) => item.get_secret().map(Some).map_err(store_error),
@@ -39,7 +49,7 @@ pub fn get(service: &str, account: &str) -> Result<Option<Vec<u8>>> {
 }
 
 pub fn set(service: &str, account: &str, value: &[u8]) -> Result<()> {
-    let store = connect()?;
+    let store = connect(EncryptionType::Dh)?;
     let collection = default_collection(&store)?;
     collection.ensure_unlocked().map_err(store_error)?;
     // `replace` swaps out an item with the same attributes rather than adding a second one.
@@ -57,7 +67,7 @@ pub fn set(service: &str, account: &str, value: &[u8]) -> Result<()> {
 
 /// Deleting an item that isn't there is fine.
 pub fn delete(service: &str, account: &str) -> Result<()> {
-    let store = connect()?;
+    let store = connect(EncryptionType::Dh)?;
     for item in find(&store, service, account)? {
         item.delete().map_err(store_error)?;
     }

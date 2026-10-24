@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CheckState } from '../components/Docket'
-import { accentsOf, type Blocked, bannerHasPrimary, docketHasAction, type Health, healthOf } from './health'
-import type { ConfigState, FolderCheck, Profile, SetupStatus, Shell, ShellStatus } from './types'
+import { accentsOf, type Blocked, bannerHasPrimary, docketHasFix, type FileError, type Health, healthOf } from './health'
+import type { ConfigFault, ConfigState, FolderCheck, Profile, SetupStatus, Shell, ShellStatus } from './types'
 
 const HOME = '/Users/sam'
 const profile: Profile = { id: 'p1', name: 'Work', triggerPaths: ['~/work'], tools: {}, mcpServers: {} }
@@ -19,6 +19,7 @@ const shell = (name: Shell, installed: boolean, extra: Partial<ShellStatus> = {}
 const setupOf = (shells: ShellStatus[], shimInstalled = true): SetupStatus => ({
   platform: 'macos',
   secretStore: 'Keychain',
+  secretStoreProblem: null,
   shimInstalled,
   shimsDir: `${HOME}/.envrouter/shims`,
   shells,
@@ -32,13 +33,14 @@ const bashOff = shell('bash', false)
 interface Inputs {
   config: ConfigState | null
   setup: SetupStatus | null
-  loadError: string | null
+  loadError: ConfigFault | null
   setupError: string | null
   actionError: string | null
   home: string
   checkedOnce: boolean
   blocked: Blocked | null
-  openError: string | null
+  openError: FileError | null
+  saveWarning: string | null
 }
 // A window that has loaded everything and has nothing to report, then one change per test.
 const health = (changes: Partial<Inputs> = {}): Health => {
@@ -52,11 +54,13 @@ const health = (changes: Partial<Inputs> = {}): Health => {
     checkedOnce: true,
     blocked: null,
     openError: null,
+    saveWarning: null,
     ...changes,
   }
-  return healthOf(i.config, i.setup, i.loadError, i.setupError, i.actionError, i.home, i.checkedOnce, i.blocked, i.openError)
+  return healthOf(i.config, i.setup, i.loadError, i.setupError, i.actionError, i.home, i.checkedOnce, i.blocked, i.openError, i.saveWarning)
 }
 
+const parseFault: ConfigFault = { kind: 'parse', message: 'bad json' }
 const blocked: Blocked = { shell: 'zsh', tool: 'claude', headline: 'A zsh alias named claude runs first', folder: `${HOME}/work` }
 
 describe('healthOf', () => {
@@ -71,12 +75,29 @@ describe('healthOf', () => {
 
   it('reports an unreadable config.json, which outranks everything else', () => {
     const everything = { setupError: 's', actionError: 'a', blocked, checkedOnce: false, config: null, setup: null }
-    expect(health({ loadError: 'bad json', ...everything })).toEqual({ kind: 'unloaded', message: 'bad json', canOpen: true, openError: undefined })
+    expect(health({ loadError: parseFault, ...everything })).toEqual({
+      kind: 'unloaded',
+      message: 'bad json',
+      canOpen: true,
+      canStartOver: true,
+      openError: undefined,
+    })
   })
 
   it('offers to open an unreadable config.json only when the home folder is known, and carries a failure to open it', () => {
-    expect(health({ loadError: 'bad json', home: '' })).toMatchObject({ canOpen: false })
-    expect(health({ loadError: 'bad json', openError: 'no editor' })).toMatchObject({ canOpen: true, openError: 'no editor' })
+    expect(health({ loadError: parseFault, home: '' })).toMatchObject({ canOpen: false })
+    const failed: FileError = { action: 'open', message: 'no editor' }
+    expect(health({ loadError: parseFault, openError: failed })).toMatchObject({ canOpen: true, openError: failed })
+  })
+
+  it('offers to start over only from a config.json that will not parse', () => {
+    expect(health({ loadError: parseFault })).toMatchObject({ canStartOver: true })
+    expect(health({ loadError: { kind: 'other', message: 'from a newer version' } })).toMatchObject({ canStartOver: false })
+  })
+
+  it('shows what a save left undone below a failure, and above routing that works', () => {
+    expect(health({ saveWarning: 'could not remove a secret' })).toEqual({ kind: 'warning', message: 'could not remove a secret' })
+    expect(health({ saveWarning: 'w', actionError: 'a' })).toMatchObject({ kind: 'error' })
   })
 
   it('reports a failed status refresh as an error that can not be dismissed, over a failed action', () => {
@@ -155,27 +176,45 @@ const check = (result: FolderCheck | null, extra: Partial<CheckState> = {}): Che
   ...extra,
 })
 const shimFailed: FolderCheck = { status: 'shimFailed', message: 'x' }
+const routed: FolderCheck = {
+  status: 'routed',
+  profile: null,
+  profileId: null,
+  envVar: null,
+  value: null,
+  mcp: [],
+  mcpManagedBy: null,
+  viaAlias: null,
+  real: '/bin/claude',
+}
 
 // Which result offers which action is verdict.ts's, tested there; this only reads it.
-describe('docketHasAction', () => {
+describe('docketHasFix', () => {
   const setup = setupOf([zshOn])
 
   it('is false without a result, a setup status, or the checked shell in it', () => {
-    expect(docketHasAction(null, setup, ['claude'], HOME)).toBe(false)
-    expect(docketHasAction(check(null, { error: 'boom' }), setup, ['claude'], HOME)).toBe(false)
-    expect(docketHasAction(check(shimFailed), null, ['claude'], HOME)).toBe(false)
-    expect(docketHasAction(check(shimFailed, { shell: 'fish' }), setup, ['claude'], HOME)).toBe(false)
+    expect(docketHasFix(null, setup, ['claude'], HOME)).toBe(false)
+    expect(docketHasFix(check(null, { error: 'boom' }), setup, ['claude'], HOME)).toBe(false)
+    expect(docketHasFix(check(shimFailed), null, ['claude'], HOME)).toBe(false)
+    expect(docketHasFix(check(shimFailed, { shell: 'fish' }), setup, ['claude'], HOME)).toBe(false)
   })
 
   it("follows whether the result's verdict offers an action", () => {
-    expect(docketHasAction(check(shimFailed), setup, ['claude'], HOME)).toBe(true)
-    expect(docketHasAction(check({ status: 'notInstalled' }), setup, ['claude'], HOME)).toBe(false)
+    expect(docketHasFix(check(shimFailed), setup, ['claude'], HOME)).toBe(true)
+    expect(docketHasFix(check({ status: 'notInstalled' }), setup, ['claude'], HOME)).toBe(false)
   })
 
   it('tells the verdict whether a profile sets the checked tool', () => {
+    const missing = check({ status: 'notFound' })
+    expect(docketHasFix(missing, setup, ['claude'], HOME)).toBe(true)
+    expect(docketHasFix(missing, setup, ['copilot'], HOME)).toBe(false)
+  })
+
+  it('counts a profile action for a tool no profile sets as a fix, but not one on a verdict that only describes the folder', () => {
     const shadowed = check({ status: 'shadowedOnPath', path: '/usr/bin/claude', byPromptHook: false })
-    expect(docketHasAction(shadowed, setup, ['claude'], HOME)).toBe(true)
-    expect(docketHasAction(shadowed, setup, ['copilot'], HOME)).toBe(false)
+    expect(docketHasFix(shadowed, setup, ['copilot'], HOME)).toBe(true)
+    const owned = check({ ...routed, profile: 'Work' })
+    expect(docketHasFix(owned, setup, ['claude'], HOME)).toBe(false)
   })
 })
 
@@ -188,9 +227,10 @@ describe('the accent', () => {
       { kind: 'error', message: 'm', dismissible: true },
       { kind: 'error', message: 'm', dismissible: false },
     ],
+    warning: [{ kind: 'warning', message: 'm' }],
     unloaded: [
-      { kind: 'unloaded', message: 'm', canOpen: true },
-      { kind: 'unloaded', message: 'm', canOpen: false },
+      { kind: 'unloaded', message: 'm', canOpen: true, canStartOver: true },
+      { kind: 'unloaded', message: 'm', canOpen: false, canStartOver: false },
     ],
     setup: [
       { kind: 'setup', step: 1, shell: zsh },
@@ -208,8 +248,8 @@ describe('the accent', () => {
   type View = 'profiles' | 'servers'
 
   it('gives the banner the accent only where its action is the fix', () => {
-    // Not an unreadable config.json with no home to open it from, Turn On beside a working shell, or Check Again.
-    expect(all.filter(bannerHasPrimary).map((h) => h.kind)).toEqual(['unloaded', 'setup', 'setup', 'setup', 'setup', 'off', 'shim'])
+    // Not an error's Try Again, Turn On beside a working shell, or Check Again.
+    expect(all.filter(bannerHasPrimary).map((h) => h.kind)).toEqual(['unloaded', 'unloaded', 'setup', 'setup', 'setup', 'setup', 'off', 'shim'])
   })
 
   // The accent-filled buttons the three show, as App passes the arbitration to them. Welcome's own button (shown in place of

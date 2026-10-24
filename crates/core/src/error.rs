@@ -26,6 +26,25 @@ pub enum Error {
     SecretStore(String),
 }
 
+/// What a caller may need to tell apart in a failure without reading its message, which is
+/// for people. Sent with the window's config read, so it knows whether Start Over can help.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ErrorKind {
+    /// A file that isn't valid JSON for its type (`config.json` that won't parse).
+    Parse,
+    Other,
+}
+
+impl Error {
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            Self::Json { .. } => ErrorKind::Parse,
+            _ => ErrorKind::Other,
+        }
+    }
+}
+
 // Tauri commands reject with this, so the frontend receives the message string.
 impl serde::Serialize for Error {
     fn serialize<S: serde::Serializer>(

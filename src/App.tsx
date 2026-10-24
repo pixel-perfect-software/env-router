@@ -19,13 +19,15 @@ import {
   openInEditor,
   previewFolder,
   quitApp,
+  resetUnreadableConfig,
   setEditorIntegration,
   setShellIntegration,
   setUnsavedEdits,
 } from './lib/api'
-import { confirmDelete, confirmDiscardServer, confirmQuit } from './lib/confirm'
-import { accentsOf, docketHasAction, healthOf } from './lib/health'
+import { confirmDelete, confirmDiscardServer, confirmQuit, confirmStartOver, tellBackedUp } from './lib/confirm'
+import { accentsOf, docketHasFix, healthOf } from './lib/health'
 import { withoutServer, withServer, withUsedBy } from './lib/mcp'
+import { tildify } from './lib/paths'
 import { guessPlatform, PlatformContext, platformInfo } from './lib/platform'
 import { ideHooks, KNOWN_TOOLS, toolByCommand } from './lib/tools'
 import type { ConfigState, Editor, EditorStatus, Profile, Shell, ToolInfo } from './lib/types'
@@ -35,6 +37,12 @@ import { useFolderCheck } from './lib/useFolderCheck'
 import { useFolderDrop } from './lib/useFolderDrop'
 import { useShortcuts } from './lib/useShortcuts'
 import type { VerdictAction } from './lib/verdict'
+
+/** What a failed one-off action was doing, as data, so Try Again asks for the same thing against the window as it is by then. */
+type Retry =
+  | { kind: 'verdict'; action: VerdictAction; shell: Shell }
+  | { kind: 'reveal'; path: string }
+  | { kind: 'deleteProfile'; profileId: string }
 
 export default function App() {
   const [editing, setEditing] = useState<string | 'new' | null>(null)
@@ -76,10 +84,18 @@ export default function App() {
     setupError,
     actionError,
     setActionError,
+    saveWarning,
+    setSaveWarning,
     refreshSetup,
     load,
     commit: save,
   } = useConfigStore(refreshEditors)
+  // What the failed action in `actionError` was, for the banner's Try Again.
+  const [retry, setRetry] = useState<Retry | null>(null)
+  const fail = (err: unknown, again: Retry) => {
+    setActionError(errorMessage(err))
+    setRetry(again)
+  }
   // A check compares against the config; with config.json unreadable (or not read yet) there's none.
   const canCheck = config !== null
   const { check, slip, blocked, checkedOnce, routedTools, defaultShell, runCheck, isLatest, dismiss, reset, unblock } = useFolderCheck(
@@ -188,7 +204,7 @@ export default function App() {
       if (!inspecting) setView(next)
     },
   }
-  const platform = platformInfo(setup?.platform ?? guessPlatform(), setup?.secretStore)
+  const platform = platformInfo(setup?.platform ?? guessPlatform(), setup?.secretStore, setup?.secretStoreProblem)
 
   // The app asks before quitting only while an editor holds unsaved edits (`src-tauri/src/quit.rs`).
   useEffect(() => {
@@ -265,7 +281,7 @@ export default function App() {
   const enableShell = (shell: Shell) =>
     setShell(shell, true).catch((err) => {
       setShellsOpen(true)
-      setActionError(errorMessage(err))
+      fail(err, { kind: 'verdict', action: { kind: 'enableShell' }, shell })
     })
 
   const runAction = async (action: VerdictAction, shell: Shell) => {
@@ -275,11 +291,70 @@ export default function App() {
       } else if (action.kind === 'reinstall') {
         if (config) await commit(config)
         if (check) runCheck(check.folder, shell, null, check.tool)
+      } else if (action.kind === 'editProfile') {
+        // A hand edit may have removed it since the check: ask again rather than open an editor for nothing.
+        if (config?.profiles.some((p) => p.id === action.profileId)) setEditing(action.profileId)
+        else if (check) runCheck(check.folder, shell, null, check.tool)
+      } else if (action.kind === 'newProfile') {
+        // The folder starts as the new profile's, written as the config writes one under home. When no profile sets the checked
+        // agent, the profile sets it too (its variable at its default folder): that is what gives the agent a shim.
+        if (check) {
+          const agent = routedTools.includes(check.tool) ? undefined : toolByCommand(check.tool)
+          const tools = agent ? { [agent.command]: { envVar: agent.envVar, path: agent.defaultPath } } : {}
+          setTemplate({ id: newId, name: '', triggerPaths: [tildify(check.folder, home)], tools, mcpServers: {} })
+        }
+        setEditing('new')
+      } else if (action.kind === 'recheck') {
+        if (check) runCheck(check.folder, shell, null, check.tool)
       } else {
         await openInEditor(action.path)
       }
     } catch (err) {
-      setActionError(errorMessage(err))
+      fail(err, { kind: 'verdict', action, shell })
+    }
+  }
+
+  const reveal = (path: string) => revealItemInDir(path).catch((err) => fail(err, { kind: 'reveal', path }))
+
+  // Asking again re-confirms: the window may have changed since the first answer.
+  const confirmAndDelete = (profile: Profile) =>
+    confirmDelete(profile)
+      .then((ok) => {
+        if (ok) return deleteProfile(profile)
+      })
+      .catch((err) => fail(err, { kind: 'deleteProfile', profileId: profile.id }))
+
+  /** The unreadable banner's Back Up and Start Over…: after the user agrees, the file is copied aside and replaced, then read again. */
+  const startOver = () =>
+    confirmStartOver()
+      .then(async (ok) => {
+        if (!ok) return
+        setOpenError(null)
+        const backup = await resetUnreadableConfig()
+        await load()
+        // The reset is done; a note that can't show changes nothing, so it stays out of the catch below.
+        tellBackedUp(tildify(backup, home)).catch(() => {})
+      })
+      .catch((err) => {
+        // Refused or failed: say why, and read the file again in case it was fixed meanwhile (that clears the message).
+        setOpenError({ action: 'startOver', message: errorMessage(err) })
+        load()
+      })
+
+  /** The banner's Try Again: whatever failed is asked for again, the error gone while it runs. */
+  const tryAgain = () => {
+    if (health.kind === 'unloaded') {
+      load()
+    } else if (health.kind === 'error' && !health.dismissible) {
+      refreshSetup()
+    } else if (retry) {
+      setActionError(null)
+      if (retry.kind === 'verdict') runAction(retry.action, retry.shell)
+      else if (retry.kind === 'reveal') reveal(retry.path)
+      else {
+        const profile = config?.profiles.find((p) => p.id === retry.profileId)
+        if (profile) confirmAndDelete(profile)
+      }
     }
   }
 
@@ -304,8 +379,8 @@ export default function App() {
                 { id: 'check', text: 'Check This Folder', action: () => runCheck(folder, defaultShell(), null) },
                 {
                   id: 'reveal',
-                  text: platform.isMac ? 'Reveal in Finder' : 'Show in Files',
-                  action: () => revealItemInDir(folder).catch((err) => setActionError(errorMessage(err))),
+                  text: platform.revealLabel,
+                  action: () => reveal(folder),
                 },
               ]
             : []),
@@ -313,13 +388,7 @@ export default function App() {
           {
             id: 'delete',
             text: 'Delete Profile…',
-            action: () => {
-              confirmDelete(profile)
-                .then((ok) => {
-                  if (ok) return deleteProfile(profile)
-                })
-                .catch((err) => setActionError(errorMessage(err)))
-            },
+            action: () => confirmAndDelete(profile),
           },
         ],
       })
@@ -331,8 +400,8 @@ export default function App() {
 
   const closeShells = useCallback(() => setShellsOpen(false), [])
   const closeEditors = useCallback(() => setEditorsOpen(false), [])
-  const health = healthOf(config, setup, loadError, setupError, actionError, home, checkedOnce, blocked, openError)
-  const accents = accentsOf(health, view, inspecting, docketHasAction(check, setup, routedTools, home))
+  const health = healthOf(config, setup, loadError, setupError, actionError, home, checkedOnce, blocked, openError, saveWarning)
+  const accents = accentsOf(health, view, inspecting, docketHasFix(check, setup, routedTools, home))
   // Before the first profile there's no map to show: the window greets instead.
   const welcome = view === 'profiles' && health.kind === 'setup' && health.step === 1
   const summary = config
@@ -382,13 +451,23 @@ export default function App() {
                 onNewProfile={() => setEditing('new')}
                 onEnableShell={enableShell}
                 onCheckFolder={pickAndCheck}
-                onReinstall={() => config && commit(config).catch((err) => setActionError(errorMessage(err)))}
+                onReinstall={() =>
+                  config &&
+                  commit(config).catch((err) => fail(err, { kind: 'verdict', action: { kind: 'reinstall' }, shell: check?.shell ?? defaultShell() }))
+                }
                 onRecheck={(folder, shell, tool) => runCheck(folder, shell, null, tool)}
                 onOpenConfig={() => {
                   setOpenError(null)
-                  openInEditor(`${home}/.envrouter/config.json`).catch((err) => setOpenError(errorMessage(err)))
+                  openInEditor(`${home}/.envrouter/config.json`).catch((err) => setOpenError({ action: 'open', message: errorMessage(err) }))
                 }}
+                onRevealConfig={() => {
+                  setOpenError(null)
+                  revealItemInDir(`${home}/.envrouter/config.json`).catch((err) => setOpenError({ action: 'reveal', message: errorMessage(err) }))
+                }}
+                onStartOver={startOver}
+                onRetry={tryAgain}
                 onDismissError={() => setActionError(null)}
+                onDismissWarning={() => setSaveWarning(null)}
               />
             </div>
           )}

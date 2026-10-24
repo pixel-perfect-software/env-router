@@ -8,6 +8,7 @@ import {
   isPending,
   newSecretId,
   plainCredentials,
+  plainNote,
   sameDefinition,
   sameEndpoint,
   serverOf,
@@ -35,12 +36,12 @@ const config = (): ConfigState => ({
 
 describe('serverOf', () => {
   it('round-trips a stored server without touching its secrets', () => {
-    expect(serverOf(draftOf('github', github))).toEqual({ server: github, secrets: {} })
+    expect(serverOf(draftOf('github', github), true)).toEqual({ server: github, secrets: {} })
   })
 
   it('sets typed secrets aside for the Keychain and keeps only their ids', () => {
     const draft = { ...draftOf('github', github), env: [{ key: 'GITHUB_TOKEN', value: { secret: 'BB22', value: 'ghp_x' } }] }
-    expect(serverOf(draft)).toEqual({
+    expect(serverOf(draft, true)).toEqual({
       server: { ...github, env: { GITHUB_TOKEN: { secret: 'BB22' } } },
       secrets: { BB22: 'ghp_x' },
     })
@@ -48,27 +49,27 @@ describe('serverOf', () => {
 
   it('asks for a value before saving an empty secret, and skips blank rows', () => {
     const empty = { ...draftOf('github', github), env: [{ key: 'GITHUB_TOKEN', value: { secret: 'BB22', value: '' } }] }
-    expect(serverOf(empty)).toEqual({ error: 'Enter a value for GITHUB_TOKEN, or remove it.' })
+    expect(serverOf(empty, true)).toEqual({ error: 'Enter a value for GITHUB_TOKEN, or remove it.' })
     const blank = { ...draftOf('github', github), args: ['-y', ''], env: [{ key: '', value: '' }] }
-    expect(serverOf(blank)).toEqual({ server: { ...github, args: ['-y'], env: {} }, secrets: {} })
+    expect(serverOf(blank, true)).toEqual({ server: { ...github, args: ['-y'], env: {} }, secrets: {} })
   })
 
   it('refuses an empty value under a credential-looking name, even unlocked', () => {
     const unlocked = { ...draftOf('github', github), env: [{ key: 'GITHUB_PERSONAL_ACCESS_TOKEN', value: '' }] }
-    expect(serverOf(unlocked)).toEqual({ error: 'Enter a value for GITHUB_PERSONAL_ACCESS_TOKEN, or remove it.' })
+    expect(serverOf(unlocked, true)).toEqual({ error: 'Enter a value for GITHUB_PERSONAL_ACCESS_TOKEN, or remove it.' })
     const header = {
       ...draftOf('relic', { transport: 'http', url: 'https://mcp.example.com/mcp', headers: {} }),
       headers: [{ key: 'Api-Key', value: ' ' }],
     }
-    expect(serverOf(header)).toEqual({ error: 'Enter a value for Api-Key, or remove it.' })
+    expect(serverOf(header, true)).toEqual({ error: 'Enter a value for Api-Key, or remove it.' })
     // Other names may be empty on purpose.
     const plain = { ...draftOf('github', github), env: [{ key: 'GITHUB_HOST', value: '' }] }
-    expect(serverOf(plain)).toEqual({ server: { ...github, env: { GITHUB_HOST: '' } }, secrets: {} })
+    expect(serverOf(plain, true)).toEqual({ server: { ...github, env: { GITHUB_HOST: '' } }, secrets: {} })
   })
 
   it('names what to fix', () => {
-    expect(serverOf({ ...draftOf('x', undefined), command: ' ' })).toEqual({ error: 'Enter the command that starts the server.' })
-    expect(serverOf({ ...draftOf('x', undefined), transport: 'http', url: 'mcp.example.com' })).toEqual({
+    expect(serverOf({ ...draftOf('x', undefined), command: ' ' }, true)).toEqual({ error: 'Enter the command that starts the server.' })
+    expect(serverOf({ ...draftOf('x', undefined), transport: 'http', url: 'mcp.example.com' }, true)).toEqual({
       error: 'Enter a URL starting with https:// or http://.',
     })
     const twice = {
@@ -79,7 +80,7 @@ describe('serverOf', () => {
         { key: 'A', value: '2' },
       ],
     }
-    expect(serverOf(twice)).toEqual({ error: 'A is set twice.' })
+    expect(serverOf(twice, true)).toEqual({ error: 'A is set twice.' })
   })
 })
 
@@ -119,7 +120,7 @@ describe('imports and the catalog', () => {
       ['API_KEY', false],
       ['LOG_LEVEL', false],
     ])
-    const built = serverOf(locked)
+    const built = serverOf(locked, true)
     expect('secrets' in built && Object.values(built.secrets)).toEqual(['ghp_x'])
   })
 
@@ -146,7 +147,7 @@ describe('imports and the catalog', () => {
       { Authorization: 'Bearer …' },
     )
     expect(draft.headers[0]).toMatchObject({ key: 'Authorization', hint: 'Bearer …' })
-    expect(serverOf(draft)).toEqual({ error: 'Enter a value for Authorization, or remove it.' })
+    expect(serverOf(draft, true)).toEqual({ error: 'Enter a value for Authorization, or remove it.' })
   })
 
   it('locks a token by its shape under a harmless name, and flags plain credentials it leaves alone', () => {
@@ -155,14 +156,14 @@ describe('imports and the catalog', () => {
     )
     expect(draft.env.filter((row) => isPending(row.value)).map((row) => row.key)).toEqual(['OPENAPI_MCP_HEADERS'])
     const stdio = (args: string[]) => draftOf('s', { transport: 'stdio', command: 'npx', args, env: {} })
-    expect(plainCredentials(stdio(['-y', '@stripe/mcp', '--api-key=sk_live_123']))).toEqual(['argument 3'])
-    expect(plainCredentials(stdio(['srv', '--token', 'abc123']))).toEqual(['argument 3'])
-    expect(plainCredentials(stdio(['srv', 'postgresql://u:pw@host/db']))).toEqual(['argument 2'])
+    expect(plainCredentials(stdio(['-y', '@stripe/mcp', '--api-key=sk_live_123']), true)).toEqual(['argument 3'])
+    expect(plainCredentials(stdio(['srv', '--token', 'abc123']), true)).toEqual(['argument 3'])
+    expect(plainCredentials(stdio(['srv', 'postgresql://u:pw@host/db']), true)).toEqual(['argument 2'])
     // biome-ignore lint/suspicious/noTemplateCurlyInString: a literal reference, as users type it
-    expect(plainCredentials(stdio(['srv', '--api-key=${API_KEY}', '-e', 'GITHUB_TOKEN', '--transport', 'stdio']))).toEqual([])
+    expect(plainCredentials(stdio(['srv', '--api-key=${API_KEY}', '-e', 'GITHUB_TOKEN', '--transport', 'stdio']), true)).toEqual([])
     const http = (url: string) => draftOf('h', { transport: 'http', url, headers: {} })
-    expect(plainCredentials(http('https://mcp.x.com/mcp?api_key=abc'))).toEqual(['the URL'])
-    expect(plainCredentials(http('https://huggingface.co/mcp?login'))).toEqual([])
+    expect(plainCredentials(http('https://mcp.x.com/mcp?api_key=abc'), true)).toEqual(['the URL'])
+    expect(plainCredentials(http('https://huggingface.co/mcp?login'), true)).toEqual([])
   })
 
   it('locks a connection string with a password, whatever its name', () => {
@@ -197,7 +198,30 @@ describe('imports and the catalog', () => {
       expect(isPending(value) && ['A1', 'B2'].includes(value.secret)).toBe(false)
     }
     expect(copy.env[0].key).toBe('DATABASE_URI')
-    expect(serverOf(copy)).toEqual({ error: 'Enter a value for DATABASE_URI, or remove it.' })
+    expect(serverOf(copy, true)).toEqual({ error: 'Enter a value for DATABASE_URI, or remove it.' })
+  })
+
+  it('saves a value marked for the store as plain text, and flags it, when there is no store', () => {
+    const server: McpServer = { transport: 'stdio', command: 'npx', args: [], env: { API_KEY: 'abc', MODE: 'ro' } }
+    const marked = withSecretsLocked(draftOf('n', server))
+    const built = serverOf(marked, true)
+    expect(built).toMatchObject({
+      server: { env: { API_KEY: { secret: expect.any(String) }, MODE: 'ro' } },
+      secrets: { [Object.keys('secrets' in built ? built.secrets : {})[0]]: 'abc' },
+    })
+    expect(serverOf(marked, false)).toEqual({ server, secrets: {} })
+    // Still empty, a marked value is asked for either way.
+    expect(
+      serverOf(draftFromCatalog('n', { transport: 'http', url: 'https://x/mcp', headers: { Authorization: '' } }, { Authorization: '…' }), false),
+    ).toEqual({
+      error: 'Enter a value for Authorization, or remove it.',
+    })
+
+    expect(plainCredentials(marked, true)).toEqual([])
+    expect(plainCredentials(marked, false)).toEqual(['API_KEY'])
+    expect(plainNote(['API_KEY'], { canLock: false, secretStore: 'keyring' })).toBe(
+      "API_KEY looks like a credential and would be saved as plain text: the keyring can't keep it, so it goes in config.json.",
+    )
   })
 
   it('suggests a name for a pasted server from its host, package or image', () => {

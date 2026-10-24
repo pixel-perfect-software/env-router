@@ -5,7 +5,7 @@ import { tildify } from '../lib/paths'
 import { shortcutLabel, usePlatform } from '../lib/platform'
 import { toolLabel } from '../lib/tools'
 import type { FolderCheck, Preview, Shell, ShellStatus } from '../lib/types'
-import { type VerdictAction, verdictOf } from '../lib/verdict'
+import { offersFix, ownerOf, type VerdictAction, verdictOf } from '../lib/verdict'
 import { AgentMark } from './icons'
 import { Button, CloseIcon, DropIcon, IconButton, Segmented, StatusTile } from './ui'
 
@@ -79,7 +79,9 @@ export function Docket({
 
   const shell = shells.find((s) => s.shell === check.shell)
   const verdict =
-    check.result && shell ? verdictOf(check.result, shell, check.tool, routedTools.includes(check.tool), shimsDir, home, check.trigger) : null
+    check.result && shell
+      ? verdictOf(check.result, shell, check.tool, routedTools.includes(check.tool), shimsDir, home, check.trigger, ownerOf(check.preview))
+      : null
   const available = shells.filter((s) => s.available)
 
   return (
@@ -141,10 +143,16 @@ export function Docket({
       {/* Wraps under the verdict in a narrow window rather than squeezing it. */}
       <div className="ml-auto flex shrink-0 items-center gap-3">
         {verdict?.action && (
-          <Button kind={primary ? 'primary' : 'push'} onClick={() => verdict.action && onAction(verdict.action, check.shell)}>
-            {actionLabel(verdict.action, check.shell, home)}
+          <Button
+            kind={primary && offersFix(verdict) ? 'primary' : 'push'}
+            className="max-w-64"
+            title={actionLabel(verdict.action, check.shell, home)}
+            onClick={() => verdict.action && onAction(verdict.action, check.shell)}
+          >
+            <span className="truncate">{actionLabel(verdict.action, check.shell, home)}</span>
           </Button>
         )}
+        {check.error && <Button onClick={() => onRecheck(check.shell, check.tool)}>Check Again</Button>}
         {routedTools.length > 1 && (
           <Segmented
             label="Agent"
@@ -177,5 +185,11 @@ function actionLabel(action: VerdictAction, shell: Shell, home: string) {
       return `Open ${tildify(action.path, home)}`
     case 'reinstall':
       return 'Reinstall Shim'
+    case 'editProfile':
+      return `Edit ${action.name}…`
+    case 'newProfile':
+      return 'New Profile…'
+    case 'recheck':
+      return 'Check Again'
   }
 }

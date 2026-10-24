@@ -8,7 +8,7 @@ pub mod paths;
 pub mod platform;
 pub mod resolve;
 
-pub use error::{Error, Result};
+pub use error::{Error, ErrorKind, Result};
 
 /// The shim's exit status when the real tool isn't anywhere on PATH, the same status a
 /// shell gives a missing command. The app's folder check reads it.

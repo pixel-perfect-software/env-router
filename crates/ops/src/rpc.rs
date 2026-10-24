@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use envrouter_core::config::{ConfigState, IdeHook, McpServer};
-use envrouter_core::{Error, Result};
+use envrouter_core::{Error, ErrorKind, Result};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -26,6 +26,7 @@ use crate::shell::{self, Shell};
 pub const COMMANDS: &[&str] = &[
     "get_config",
     "save_config",
+    "reset_unreadable_config",
     "get_setup_status",
     "set_shell_integration",
     "get_editor_status",
@@ -56,6 +57,9 @@ pub struct Response {
     pub ok: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// With `error`: what kind of failure, as the window's config read reports it.
+    #[serde(rename = "errorKind", skip_serializing_if = "Option::is_none")]
+    pub error_kind: Option<ErrorKind>,
 }
 
 /// Answers one line. A line that isn't a request gets an error with a null id.
@@ -66,6 +70,7 @@ pub async fn handle_line(home: &Path, line: &str) -> Response {
             id: Value::Null,
             ok: None,
             error: Some(format!("not a request: {err}")),
+            error_kind: None,
         },
     }
 }
@@ -77,11 +82,13 @@ pub async fn handle(home: &Path, request: Request) -> Response {
             id: request.id,
             ok: Some(value),
             error: None,
+            error_kind: None,
         },
         Err(err) => Response {
             id: request.id,
             ok: None,
             error: Some(err.to_string()),
+            error_kind: Some(err.kind()),
         },
     }
 }
@@ -102,6 +109,7 @@ async fn dispatch(home: &Path, command: &str, args: Value) -> Result<Value> {
                 base.as_ref(),
             )?)
         }
+        "reset_unreadable_config" => to_value(commands::reset_unreadable_config(home)?),
         "get_setup_status" => to_value(commands::setup_status(home)?),
         "set_shell_integration" => {
             let ShellSwitch { shell, enabled } = parse(args)?;
@@ -283,6 +291,12 @@ mod tests {
             "{setup}"
         );
         assert!(setup["ok"]["secretStore"].is_string(), "{setup}");
+        // Null or the store's reason, depending on the machine the test runs on.
+        let problem = setup["ok"].get("secretStoreProblem");
+        assert!(
+            problem.is_some_and(|p| p.is_null() || p.is_string()),
+            "{setup}"
+        );
 
         // The shape `Pasted` has in src/lib/types.ts.
         let pasted = answer(
@@ -310,7 +324,7 @@ mod tests {
         let unknown = answer(home, r#"{"id": 8, "command": "open_in_editor"}"#);
         assert_eq!(
             unknown,
-            json!({ "id": 8, "error": "unknown command \"open_in_editor\"" })
+            json!({ "id": 8, "error": "unknown command \"open_in_editor\"", "errorKind": "other" })
         );
 
         let bad = answer(
@@ -325,6 +339,11 @@ mod tests {
         let junk = answer(home, "not json");
         assert_eq!(junk["id"], Value::Null);
         assert!(junk["error"].as_str().unwrap().starts_with("not a request"));
+
+        // A config.json that won't parse says so by kind, since only that one can be started over.
+        std::fs::write(home.join(".envrouter/config.json"), "{ half-typed").unwrap();
+        let broken = answer(home, r#"{"id": 10, "command": "get_config"}"#);
+        assert_eq!(broken["errorKind"], "parse", "{broken}");
     }
 
     /// `COMMANDS` is what the app's test compares with the window's; this keeps it honest about

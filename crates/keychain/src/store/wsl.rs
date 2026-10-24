@@ -53,6 +53,13 @@ fn failed(output: &std::process::Output) -> Error {
     Error::SecretStore(String::from_utf8_lossy(&output.stderr).trim().to_string())
 }
 
+/// Whether the Windows helper can be run from here, for the window to ask whenever it gains
+/// focus. It runs the helper with no arguments, which prints its usage and exits without
+/// touching the store, so only a missing helper or a WSL without interop fails.
+pub fn usable(account: &str) -> Result<()> {
+    run(account, &[], None).map(drop)
+}
+
 pub fn get(service: &str, account: &str) -> Result<Option<Vec<u8>>> {
     let output = run(account, &["store-get", service, &key(account)], None)?;
     match output.status.code() {
