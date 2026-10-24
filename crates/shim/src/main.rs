@@ -354,14 +354,36 @@ fn extension_agent(config: &ConfigState, script: &Path) -> Option<String> {
 /// that resolves to this binary or another copy of it, so a duplicated PATH entry, a stray
 /// link or a second install can't make shims exec themselves or each other in a loop.
 fn find_real(tool: &str, home: Option<&Path>) -> Option<PathBuf> {
-    let me = env::current_exe().and_then(fs::canonicalize).ok();
-    let shims = home.and_then(|home| fs::canonicalize(paths::shims(home)).ok());
+    let shims = home.map(paths::shims);
+    let shims_id = std::cell::OnceCell::new();
+    let me = std::cell::OnceCell::new();
     env::split_paths(&env::var_os("PATH")?)
         // An empty entry means the current directory. Never run a tool from there.
         .filter(|dir| !dir.as_os_str().is_empty())
-        .filter(|dir| shims.is_none() || fs::canonicalize(dir).ok() != shims)
-        .map(|dir| dir.join(tool))
-        .find(|candidate| is_executable(candidate) && !is_shim(candidate, me.as_deref()))
+        .map(|dir| (dir.join(tool), dir))
+        // Most entries don't have the tool, and one stat says so. Only a hit is then checked for
+        // being the shims folder, by text or else by identity (a symlinked or differently cased
+        // spelling of it), and for being a copy of this shim.
+        .find(|(candidate, dir)| {
+            is_executable(candidate)
+                && shims.as_deref().is_none_or(|shims| {
+                    dir != shims
+                        && shims_id
+                            .get_or_init(|| dir_id(shims))
+                            .is_none_or(|id| dir_id(dir) != Some(id))
+                })
+                && !is_shim(
+                    candidate,
+                    me.get_or_init(|| env::current_exe().and_then(fs::canonicalize).ok())
+                        .as_deref(),
+                )
+        })
+        .map(|(candidate, _)| candidate)
+}
+
+fn dir_id(dir: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    fs::metadata(dir).ok().map(|meta| (meta.dev(), meta.ino()))
 }
 
 /// Whether `candidate` runs this binary or another installed copy of it, say one under a
