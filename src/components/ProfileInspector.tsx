@@ -13,9 +13,10 @@ import { plural } from '../lib/text'
 import { KNOWN_TOOLS } from '../lib/tools'
 import type { McpServer, Profile, ToolInfo } from '../lib/types'
 import { setUnsaved } from '../lib/unsaved'
+import { useFolderDrop } from '../lib/useFolderDrop'
 import { AgentMark } from './icons'
 import { ServerMark } from './ServerMark'
-import { Button, CheckBox, ChevronIcon, CloseIcon, FolderIcon, Footer, IconButton, PlusIcon, ProfileDot, TextField } from './ui'
+import { Button, CheckBox, ChevronIcon, CloseIcon, DropIcon, FolderIcon, Footer, IconButton, PlusIcon, ProfileDot, TextField } from './ui'
 
 interface FolderRow {
   path: string
@@ -106,16 +107,20 @@ export function ProfileInspector({
     onCancel()
   }
 
-  const addFolders = async () => {
-    const picked = await open({ directory: true, multiple: true, defaultPath: home, title: 'Add Trigger Folders' })
-    if (!picked) return
-    const paths = (Array.isArray(picked) ? picked : [picked]).map((p) => tildify(p, home))
+  const addPaths = (picked: string[]) => {
+    const paths = picked.map((p) => tildify(p, home))
     // Picking a folder that's struck through brings it back rather than adding it twice.
     setFolders((rows) => [
       ...rows.map((r) => (r.removed && paths.includes(r.path) ? { ...r, removed: false } : r)),
       ...paths.filter((p) => !rows.some((r) => r.path === p)).map((path) => ({ path, removed: false })),
     ])
   }
+  const addFolders = async () => {
+    const picked = await open({ directory: true, multiple: true, defaultPath: home, title: 'Add Trigger Folders' })
+    if (picked) addPaths(Array.isArray(picked) ? picked : [picked])
+  }
+  // While the inspector is open, a folder dropped on the window is one more trigger, not a check.
+  const dropping = useFolderDrop(({ path }) => addPaths([path]))
 
   const chooseToolPath = async (command: string) => {
     const picked = await open({ directory: true, defaultPath: home, title: 'Choose Config Folder' })
@@ -255,6 +260,14 @@ export function ProfileInspector({
                   )
                 })}
               </ul>
+              {dropping && (
+                <p className="m-1.5 flex items-center gap-2 rounded-[8px] bg-tint px-2.5 py-1.5 text-small text-accent-ink shadow-[0_0_0_1.5px_var(--er-accent-ink)]">
+                  <DropIcon />
+                  <span className="min-w-0 truncate">
+                    Release to add <span className="font-mono">{tildify(dropping, home)}</span>
+                  </span>
+                </p>
+              )}
             </div>
             <Button className="mt-2" onClick={addFolders}>
               <PlusIcon />

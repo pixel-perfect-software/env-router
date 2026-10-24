@@ -52,6 +52,15 @@ describe('the one accent button', () => {
   })
 })
 
+describe('a folder dropped on the window', () => {
+  it('becomes a trigger folder of the profile open in the inspector', async () => {
+    const user = await open('?scenario=populated')
+    await user.click(await screen.findByRole('button', { name: 'Edit Work' }))
+    await window.__mockDrop('/Users/sam/dev/work/api', 400, 300)
+    expect(await inspector().findByTitle('~/dev/work/api')).toBeTruthy()
+  })
+})
+
 describe('unsaved edits', () => {
   /** Opens a profile's inspector from its card and adds to its name. */
   const renameProfile = async (user: User, name: string) => {
