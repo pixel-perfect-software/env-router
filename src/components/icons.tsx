@@ -11,6 +11,7 @@ import {
   ClipboardPaste,
   CodeXml,
   CornerDownRight,
+  Ellipsis,
   Folder,
   FolderDown,
   FolderSearch,
@@ -51,6 +52,8 @@ export const DropIcon = sized(FolderDown, 16)
 /** The inset carve-out marker: a nested trigger handed to another profile. */
 export const BranchIcon = sized(CornerDownRight, 12)
 export const FolderIcon = sized(Folder, 14)
+/** A row's actions, in a menu. */
+export const MoreIcon = sized(Ellipsis, 14)
 export const FolderCheckIcon = sized(FolderSearch, 16)
 export const EditorIcon = sized(CodeXml, 16)
 /** MCP as a whole: the library, a card's server line, a profile's server list. */

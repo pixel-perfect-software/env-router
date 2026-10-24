@@ -12,6 +12,7 @@ import type {
   ImportCandidate,
   McpServer,
   Pasted,
+  Place,
   Preview,
   SaveOutcome,
   ServerCheck,
@@ -99,6 +100,12 @@ export const uninstall = (dryRun: boolean) => invoke<UninstallReport>('uninstall
 
 /** Opens a file inside the home folder in the default text editor. */
 export const openInEditor = (path: string) => invoke<void>('open_in_editor', { path })
+
+/**
+ * Shows one of EnvRouter's own places in the file manager: config.json is revealed (selected in its folder), the others are opened.
+ * Rejects with a sentence when the place isn't there yet, or the file manager can't show it.
+ */
+export const revealPlace = (place: Place) => invoke<void>('reveal_place', { place })
 
 /** Normalizes a rejection, which is a string from our commands but may be an Error from Tauri itself. */
 export const errorMessage = (err: unknown) => (typeof err === 'string' ? err : err instanceof Error ? err.message : String(err))

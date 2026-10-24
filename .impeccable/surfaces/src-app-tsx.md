@@ -8,7 +8,7 @@ related_targets: ["src-tauri/src/tray.rs"]
 # Main window and menu bar
 
 ## Scope and mode
-Operate. EnvRouter's only window, plus its menu bar menu. Opened occasionally to set up, to edit profiles, and to diagnose a folder.
+Operate. EnvRouter's only window, plus its menu bar menu (Check Folder…, Open EnvRouter, Reveal config.json in Finder, Open ~/.envrouter, Uninstall EnvRouter…, Quit; the two reveals leave the window where it is and bring it forward only to say why one failed). Opened occasionally to set up, to edit profiles, and to diagnose a folder.
 
 ## Audience, job, constraints
 Mac developers with separate coding-agent accounts and per-project MCP servers. Two jobs share one rule (the folder decides): which account an agent uses, and which MCP servers it loads. Jobs, by frequency: first-run setup (profile, then shell, then check); "why didn't this folder route?"; adding a folder or profile. Health first. Avoid: a web-app look, help paragraphs, toy personality, hidden mechanics (always show which files are edited, which path wins, the real binary). Light and dark follow the system. Menu bar icon plus a window; closing the window keeps the app in the menu bar.

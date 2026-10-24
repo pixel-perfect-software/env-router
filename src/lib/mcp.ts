@@ -28,6 +28,9 @@ export const serverSummary = (server: McpServer) =>
 /** The agents that load a profile's servers, by label, for the line under the checklist. */
 export const mcpAgentLabels = () => KNOWN_TOOLS.filter((t) => t.mcp).map((t) => toolLabel(t.command))
 
+/** Whether the saved profile hands out servers, so a folder of rendered MCP files exists to show. */
+export const hasMcpFiles = (profile: Profile) => Object.keys(profile.mcpServers).length > 0
+
 export const profilesUsing = (config: ConfigState, name: string): Profile[] => config.profiles.filter((p) => p.mcpServers[name])
 
 /**

@@ -56,6 +56,16 @@ impl Platform {
         self == Platform::Wsl
     }
 
+    /// What the menu bar calls showing `what` in the file manager: "Reveal config.json in Finder"
+    /// on macOS, "Show config.json in Files" elsewhere. The window words the same thing in
+    /// `src/lib/platform.ts` (`revealLabelOf`); #122 sends this one to it.
+    pub fn reveal_label(self, what: &str) -> String {
+        match self {
+            Platform::MacOs => format!("Reveal {what} in Finder"),
+            Platform::Linux | Platform::Wsl | Platform::Windows => format!("Show {what} in Files"),
+        }
+    }
+
     /// The shell to assume when the login shell can't be found: each system's default.
     pub fn default_shell_name(self) -> &'static str {
         match self {

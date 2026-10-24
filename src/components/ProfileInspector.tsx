@@ -6,8 +6,9 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { useEffect, useRef, useState } from 'react'
 import { errorMessage } from '../lib/api'
 import { confirmDelete, confirmDiscard } from '../lib/confirm'
-import { mcpAgentLabels, serverSummary } from '../lib/mcp'
+import { hasMcpFiles, mcpAgentLabels, serverSummary } from '../lib/mcp'
 import { splitLeaf, tildify } from '../lib/paths'
+import { usePlatform } from '../lib/platform'
 import { listOf, plural } from '../lib/text'
 import { KNOWN_TOOLS } from '../lib/tools'
 import type { McpServer, Profile, ToolInfo } from '../lib/types'
@@ -15,7 +16,7 @@ import { setUnsaved } from '../lib/unsaved'
 import { useFolderDrop } from '../lib/useFolderDrop'
 import { AgentMark } from './icons'
 import { ServerMark } from './ServerMark'
-import { Button, CheckBox, ChevronIcon, CloseIcon, DropIcon, FolderIcon, Footer, IconButton, PlusIcon, ProfileDot, TextField } from './ui'
+import { Button, CheckBox, ChevronIcon, CloseIcon, DropIcon, FolderIcon, Footer, IconButton, PlusIcon, ProfileDot, TextField, ValueText } from './ui'
 
 interface FolderRow {
   path: string
@@ -33,6 +34,7 @@ export function ProfileInspector({
   onSave,
   onDelete,
   onDuplicate,
+  onRevealMcp,
   onShowServers,
   template,
 }: {
@@ -53,6 +55,8 @@ export function ProfileInspector({
   onDelete?: () => Promise<void>
   /** Opens a new profile copied from this one. */
   onDuplicate?: () => void
+  /** Shows the folder this profile's MCP files are rendered into; a saved profile's. A rejection shows under its button. */
+  onRevealMcp?: () => Promise<void>
   /** A new profile's starting point, when it's a copy of another. */
   template?: Profile
 }) {
@@ -69,10 +73,18 @@ export function ProfileInspector({
   )
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // Why the MCP folder couldn't be shown. Under its button, not in the footer: a footer that grows would push the button, which still
+  // has focus, under the error.
+  const [revealError, setRevealError] = useState<string | null>(null)
+  const revealErrorLine = useRef<HTMLParagraphElement>(null)
+  useEffect(() => {
+    if (revealError) revealErrorLine.current?.scrollIntoView({ block: 'nearest' })
+  }, [revealError])
   const nameField = useRef<HTMLInputElement>(null)
   const asking = useRef(false)
   const libraryNames = Object.keys(library).sort((a, b) => a.localeCompare(b))
   const mcpAgents = mcpAgentLabels()
+  const { revealLabelOf } = usePlatform()
 
   useEffect(() => {
     nameField.current?.focus()
@@ -170,6 +182,16 @@ export function ProfileInspector({
       if (!discard) return
     }
     onDuplicate()
+  }
+
+  const revealMcp = async () => {
+    if (!onRevealMcp) return
+    setRevealError(null)
+    try {
+      await onRevealMcp()
+    } catch (err) {
+      setRevealError(errorMessage(err))
+    }
   }
 
   const remove = async () => {
@@ -374,6 +396,17 @@ export function ProfileInspector({
               <p className="mt-2 text-caption text-ink-2">
                 {listOf(mcpAgents)} {mcpAgents.length > 1 ? 'load' : 'loads'} these in this profile's folders.
               </p>
+            )}
+            {/* What the saved profile hands out, so it follows the saved servers, not the checkboxes above. */}
+            {onRevealMcp && profile && hasMcpFiles(profile) && (
+              <>
+                <Button className="mt-2" onClick={revealMcp}>
+                  {revealLabelOf('MCP Folder')}
+                </Button>
+                <p ref={revealErrorLine} role="alert" className="mt-1.5 text-small text-problem empty:hidden">
+                  {revealError && <ValueText text={revealError} home={home} />}
+                </p>
+              </>
             )}
           </fieldset>
         </div>

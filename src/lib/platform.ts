@@ -17,10 +17,18 @@ export interface PlatformInfo {
   canLock: boolean
   /** What revealing a file in the file manager is called: "Reveal in Finder" on macOS, "Show in Files" elsewhere. */
   revealLabel: string
+  /** The same for something named: "Reveal config.json in Finder", "Show config.json in Files". The menu bar's words come from `Platform::reveal_label`. */
+  revealLabelOf: (what: string) => string
 }
 
 /** A guess from the user agent, for before the backend has answered. */
 export const guessPlatform = (): Platform => (/Mac/.test(navigator.userAgent) ? 'macos' : /Windows/.test(navigator.userAgent) ? 'windows' : 'linux')
+
+/** "Reveal in Finder" and "Reveal config.json in Finder", or "Show … in Files" off macOS: the file manager is named once. */
+const revealing = (platform: Platform, what?: string) => {
+  const [verb, manager] = platform === 'macos' ? ['Reveal', 'Finder'] : ['Show', 'Files']
+  return what ? `${verb} ${what} in ${manager}` : `${verb} in ${manager}`
+}
 
 export const platformInfo = (platform: Platform, secretStore?: string, storeProblem: string | null = null): PlatformInfo => ({
   platform,
@@ -28,7 +36,8 @@ export const platformInfo = (platform: Platform, secretStore?: string, storeProb
   secretStore: secretStore ?? (platform === 'macos' ? 'Keychain' : platform === 'linux' ? 'keyring' : 'Credential Manager'),
   storeProblem,
   canLock: storeProblem === null,
-  revealLabel: platform === 'macos' ? 'Reveal in Finder' : 'Show in Files',
+  revealLabel: revealing(platform),
+  revealLabelOf: (what) => revealing(platform, what),
 })
 
 export const PlatformContext = createContext<PlatformInfo>(platformInfo(guessPlatform()))

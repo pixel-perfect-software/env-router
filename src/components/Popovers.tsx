@@ -3,10 +3,11 @@
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { errorMessage } from '../lib/api'
 import { tildify } from '../lib/paths'
+import { usePlatform } from '../lib/platform'
 import { toolLabel } from '../lib/tools'
 import type { Editor, EditorStatus, SetupStatus, Shell } from '../lib/types'
 import { AgentMark } from './icons'
-import { Button, Switch } from './ui'
+import { Button, Switch, ValueText } from './ui'
 
 const EDITOR_LABEL: Record<Editor, string> = {
   code: 'VS Code',
@@ -117,16 +118,22 @@ export function ShellsPopover({
   setup,
   home,
   onSet,
+  onRevealConfig,
+  onOpenRoot,
   onUninstall,
   onClose,
 }: {
   setup: SetupStatus
   home: string
   onSet: (shell: Shell, enabled: boolean) => Promise<void>
+  /** Show config.json, and open ~/.envrouter, in the file manager. A rejection's message replaces the note, as a switch's does. */
+  onRevealConfig: () => Promise<void>
+  onOpenRoot: () => Promise<void>
   onUninstall: () => void
   onClose: () => void
 }) {
-  const { busy, error, run } = useSwitches<Shell>()
+  const { busy, error, run } = useSwitches<Shell | 'config' | 'root'>()
+  const { revealLabelOf } = usePlatform()
   return (
     <TitlePopover id="shells-panel" label="Shell setup" onClose={onClose}>
       <ul>
@@ -157,9 +164,21 @@ export function ShellsPopover({
           </li>
         ))}
       </ul>
-      <Note error={error}>Adds a marked block to the end of each file; turning a shell off removes it.</Note>
-      {/* Setting EnvRouter up lives here, so taking it all away does too. A push button: the window's one accent is elsewhere. */}
+      <Note error={error} home={home}>
+        Adds a marked block to the end of each file; turning a shell off removes it.
+      </Note>
+      {/* The files EnvRouter edits live here too, so the way to them does, and so does taking it all away. Push buttons: the window's one
+          accent is elsewhere. Two rows on purpose, since the three never fit one at the popover's width: the ways to the files, then Uninstall alone
+          at the right. */}
       {/* The note's 6px and this 8px collapse to 8 between them; 12 below with the panel's own padding. */}
+      <div className="mt-2 flex flex-wrap items-center gap-2 px-2.5">
+        <Button busy={busy !== null} onClick={() => run('config', onRevealConfig)}>
+          {revealLabelOf('config.json')}
+        </Button>
+        <Button busy={busy !== null} onClick={() => run('root', onOpenRoot)}>
+          Open ~/.envrouter
+        </Button>
+      </div>
       <div className="mt-2 flex justify-end px-2.5 pb-1.5">
         <Button busy={busy !== null} onClick={onUninstall}>
           Uninstall EnvRouter…
@@ -209,7 +228,9 @@ export function EditorsPopover({
           )
         })}
       </ul>
-      <Note error={error}>Extensions run their own copy of the agent; this sets their process wrapper to EnvRouter. New sessions pick it up.</Note>
+      <Note error={error} home={home}>
+        Extensions run their own copy of the agent; this sets their process wrapper to EnvRouter. New sessions pick it up.
+      </Note>
     </TitlePopover>
   )
 }
@@ -239,10 +260,10 @@ function EditorDetail({ status, agent, home }: { status: EditorStatus; agent: st
 const shortSettingsPath = (file: string) => file.replace('/Library/Application Support/', '/Library/…/')
 
 /** A popover's closing note under a hairline; a failed switch's error takes its place. */
-function Note({ error, children }: { error: string | null; children: ReactNode }) {
+function Note({ error, home, children }: { error: string | null; home: string; children: ReactNode }) {
   return (
     <p role={error ? 'alert' : undefined} className={`mx-2.5 mt-1 mb-1.5 pt-2 text-small hair-t ${error ? 'text-problem' : 'text-ink-2'}`}>
-      {error ?? children}
+      {error ? <ValueText text={error} home={home} /> : children}
     </p>
   )
 }

@@ -3,6 +3,7 @@
 
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
 import { forwardRef, useLayoutEffect, useRef, useState } from 'react'
+import { tildify } from '../lib/paths'
 
 type ButtonKind = 'push' | 'primary' | 'plain'
 type ButtonSize = 'regular' | 'large' | 'toolbar'
@@ -66,7 +67,32 @@ export function Footer({ leading, error, errorId, children }: { leading?: ReactN
   )
 }
 
-/** A borderless square button for an icon, labelled for assistive tech. */
+/**
+ * A backend message with its values set in mono: paths under home, tildified, and `backticked` tokens (serde_json quotes
+ * its values so). A token that is a path is set as one, since a sentence backticks a path with a space in it, which an unquoted
+ * path would end at; any other token keeps quotes, because a lone `,` in mono is easy to misread.
+ */
+export function ValueText({ text, home }: { text: string; home: string }) {
+  const homePath = home ? `|${home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:/[^\\s:]*)?` : ''
+  return text.split(new RegExp(`(\`[^\`]+\`${homePath})`)).map((part, i) => {
+    if (i % 2 === 0) return part
+    const token = part.startsWith('`') ? part.slice(1, -1) : part
+    const path = !part.startsWith('`') || token.startsWith('/') || token.startsWith('~')
+    return path ? (
+      // biome-ignore lint/suspicious/noArrayIndexKey: the parts of one fixed string
+      <code key={i} className="font-mono">
+        {tildify(token, home)}
+      </code>
+    ) : (
+      // biome-ignore lint/suspicious/noArrayIndexKey: the parts of one fixed string
+      <span key={i}>
+        “<code className="font-mono">{token}</code>”
+      </span>
+    )
+  })
+}
+
+/** A borderless square button for an icon, labelled for assistive tech. Pressed (`aria-pressed`) or held open by a menu (`aria-expanded`) it takes the accent tint. */
 export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { label: string }>(function IconButton(
   { label, className = '', children, ...props },
   ref,
@@ -77,7 +103,7 @@ export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTM
       type="button"
       aria-label={label}
       title={label}
-      className={`inline-grid size-[26px] shrink-0 place-items-center rounded-control text-ink-2 hover:bg-[color-mix(in_srgb,var(--er-ink)_8%,transparent)] hover:text-ink active:brightness-90 disabled:opacity-40 aria-pressed:bg-tint aria-pressed:text-accent-ink ${className}`}
+      className={`inline-grid size-[26px] shrink-0 place-items-center rounded-control text-ink-2 hover:bg-[color-mix(in_srgb,var(--er-ink)_8%,transparent)] hover:text-ink active:brightness-90 disabled:opacity-40 aria-pressed:bg-tint aria-pressed:text-accent-ink aria-expanded:bg-tint aria-expanded:text-accent-ink ${className}`}
       {...props}
     >
       {children}
@@ -277,6 +303,7 @@ export {
   DropIcon,
   FolderIcon,
   LockIcon,
+  MoreIcon,
   PencilIcon,
   PlugIcon,
   PlusIcon,

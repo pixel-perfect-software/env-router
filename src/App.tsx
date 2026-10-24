@@ -1,5 +1,6 @@
+import { LogicalPosition } from '@tauri-apps/api/dpi'
 import { listen } from '@tauri-apps/api/event'
-import { Menu } from '@tauri-apps/api/menu'
+import { Menu, type MenuOptions } from '@tauri-apps/api/menu'
 import { open } from '@tauri-apps/plugin-dialog'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { type MouseEvent, useCallback, useEffect, useRef, useState } from 'react'
@@ -20,18 +21,28 @@ import {
   previewFolder,
   quitApp,
   resetUnreadableConfig,
+  revealPlace,
   setEditorIntegration,
   setShellIntegration,
   setUnsavedEdits,
   uninstall,
 } from './lib/api'
-import { confirmDelete, confirmDiscardServer, confirmQuit, confirmStartOver, confirmUninstall, tellBackedUp, tellUninstalled } from './lib/confirm'
+import {
+  confirmDelete,
+  confirmDiscardServer,
+  confirmQuit,
+  confirmStartOver,
+  confirmUninstall,
+  tellBackedUp,
+  tellRevealFailed,
+  tellUninstalled,
+} from './lib/confirm'
 import { accentsOf, docketHasFix, type Health, healthOf } from './lib/health'
-import { withoutServer, withServer, withUsedBy } from './lib/mcp'
+import { hasMcpFiles, withoutServer, withServer, withUsedBy } from './lib/mcp'
 import { tildify } from './lib/paths'
 import { guessPlatform, PlatformContext, platformInfo } from './lib/platform'
 import { ideHooks, KNOWN_TOOLS, toolByCommand } from './lib/tools'
-import type { ConfigState, Editor, EditorStatus, Profile, Shell, ToolInfo } from './lib/types'
+import type { ConfigState, Editor, EditorStatus, Place, Profile, RevealFailed, Shell, ToolInfo } from './lib/types'
 import { hasUnsaved } from './lib/unsaved'
 import { useConfigStore } from './lib/useConfigStore'
 import { useFolderCheck } from './lib/useFolderCheck'
@@ -49,9 +60,14 @@ const UNINSTALLED = 'EnvRouter is uninstalled'
 type Retry =
   | { kind: 'verdict'; action: VerdictAction; shell: Shell }
   | { kind: 'reveal'; path: string }
+  | { kind: 'place'; place: Place }
   | { kind: 'deleteProfile'; profileId: string }
   | { kind: 'uninstall' }
   | { kind: 'quit' }
+
+/** The error banner's title when showing one of EnvRouter's places failed. */
+const placeTitle = (place: Place) =>
+  place.kind === 'config' ? "Couldn't show config.json" : place.kind === 'root' ? "Couldn't open ~/.envrouter" : "Couldn't show the MCP folder"
 
 export default function App() {
   const [editing, setEditing] = useState<string | 'new' | null>(null)
@@ -101,10 +117,15 @@ export default function App() {
   } = useConfigStore(refreshEditors)
   // What the failed action in `actionError` was, for the banner's Try Again.
   const [retry, setRetry] = useState<Retry | null>(null)
+  // Counts the failures shown, so a repeat of the same message is a new line in the banner, which the status region announces again.
+  const [attempt, setAttempt] = useState(0)
   const fail = (err: unknown, again: Retry) => {
     setActionError(errorMessage(err))
     setRetry(again)
+    setAttempt((n) => n + 1)
   }
+  // Whether Try Again for a reveal is waiting on its answer.
+  const [retrying, setRetrying] = useState(false)
   // A check compares against the config; with config.json unreadable (or not read yet) there's none.
   const canCheck = config !== null
   const { check, slip, blocked, checkedOnce, routedTools, defaultShell, runCheck, isLatest, dismiss, reset, unblock } = useFolderCheck(
@@ -335,6 +356,8 @@ export default function App() {
   }
 
   const reveal = (path: string) => revealItemInDir(path).catch((err) => fail(err, { kind: 'reveal', path }))
+  /** One of EnvRouter's own places (the menu on a card, Try Again); the backend says where it is. */
+  const showPlace = (place: Place) => revealPlace(place).catch((err) => fail(err, { kind: 'place', place }))
 
   // Asking again re-confirms: the window may have changed since the first answer.
   const confirmAndDelete = (profile: Profile) =>
@@ -421,6 +444,44 @@ export default function App() {
     }
   }, [])
 
+  // The menu bar reveals without the window; when that fails it comes forward and says why, with Try Again. Only where the banner
+  // can show it: a load or status error outranks an action's, and an uninstall owns the banner (the reveal then failed with the
+  // uninstall's own message, and a stopped one's Try Again must stay).
+  const revealFailed = useRef((_: RevealFailed) => {})
+  revealFailed.current = ({ place, message }) => {
+    if (uninstalling.current || (actionError !== null && (retry?.kind === 'uninstall' || retry?.kind === 'quit'))) return
+    // The unreadable-config banner has a slot for a failed Reveal; the status error's has none, so that one is told natively.
+    if (loadError) setOpenError({ action: 'reveal', message })
+    else if (setupError) tellRevealFailed(message).catch(() => {})
+    else {
+      focusRetry.current = true
+      fail(message, { kind: 'place', place })
+    }
+  }
+  useEffect(() => {
+    const unlisten = listen<RevealFailed>('reveal-failed', (event) => revealFailed.current(event.payload))
+    return () => {
+      unlisten.then((stop) => stop())
+    }
+  }, [])
+
+  /**
+   * Try Again for a reveal. The banner stays as it was, Try Again busy, until the answer, so focus stays on the button instead of
+   * falling to the page when the banner goes and comes back; a success clears it, another failure is shown as a new one.
+   */
+  const retryReveal = async (work: () => Promise<void>) => {
+    setRetrying(true)
+    try {
+      await work()
+      setActionError(null)
+    } catch (err) {
+      setActionError(errorMessage(err))
+      setAttempt((n) => n + 1)
+    } finally {
+      setRetrying(false)
+    }
+  }
+
   /** The banner's Try Again: whatever failed is asked for again, the error gone while it runs. */
   const tryAgain = () => {
     if (health.kind === 'unloaded') {
@@ -428,10 +489,11 @@ export default function App() {
     } else if (health.kind === 'error' && !health.dismissible) {
       refreshSetup()
     } else if (retry) {
-      // An uninstall's banner stays up while it runs again (`startUninstall`).
-      if (retry.kind !== 'uninstall') setActionError(null)
+      // An uninstall's banner stays up while it runs again (`startUninstall`), and so does a reveal's (`retryReveal`).
+      if (retry.kind !== 'uninstall' && retry.kind !== 'reveal' && retry.kind !== 'place') setActionError(null)
       if (retry.kind === 'verdict') runAction(retry.action, retry.shell)
-      else if (retry.kind === 'reveal') reveal(retry.path)
+      else if (retry.kind === 'reveal') retryReveal(() => revealItemInDir(retry.path))
+      else if (retry.kind === 'place') retryReveal(() => revealPlace(retry.place))
       else if (retry.kind === 'uninstall') startUninstall()
       else if (retry.kind === 'quit') quit()
       else {
@@ -450,34 +512,63 @@ export default function App() {
     setEditing('new')
   }
 
+  /** What a folder's menus offer: asking about it, and showing it. */
+  const folderItems = (folder: string) => [
+    { id: 'check', text: 'Check This Folder', action: () => runCheck(folder, defaultShell(), null) },
+    { id: 'reveal', text: platform.revealLabel, action: () => reveal(folder) },
+  ]
+
+  // The menu last shown. A native menu is a resource Tauri keeps until it's closed, and `popup` may resolve before an item's action
+  // has run, so the previous one is closed when the next is built, never right after its own popup.
+  const shownMenu = useRef<Menu | null>(null)
+  /** Pops a native menu: at `at` in the window, or at the pointer. */
+  const popupMenu = async (items: MenuOptions['items'], at?: LogicalPosition) => {
+    const previous = shownMenu.current
+    shownMenu.current = null
+    await previous?.close().catch(() => {})
+    const menu = await Menu.new({ items })
+    shownMenu.current = menu
+    await menu.popup(at)
+  }
+
   const showSlotMenu = async (profile: Profile, folder: string | null, event: MouseEvent) => {
     event.preventDefault()
     try {
-      const menu = await Menu.new({
-        items: [
-          { id: 'edit', text: 'Edit Profile…', action: () => setEditing(profile.id) },
-          { id: 'duplicate', text: 'Duplicate Profile…', action: () => duplicateProfile(profile) },
-          ...(folder
-            ? [
-                { id: 'check', text: 'Check This Folder', action: () => runCheck(folder, defaultShell(), null) },
-                {
-                  id: 'reveal',
-                  text: platform.revealLabel,
-                  action: () => reveal(folder),
-                },
-              ]
-            : []),
-          { item: 'Separator' as const },
-          {
-            id: 'delete',
-            text: 'Delete Profile…',
-            action: () => confirmAndDelete(profile),
-          },
-        ],
-      })
-      await menu.popup()
+      await popupMenu([
+        { id: 'edit', text: 'Edit Profile…', action: () => setEditing(profile.id) },
+        { id: 'duplicate', text: 'Duplicate Profile…', action: () => duplicateProfile(profile) },
+        // Only a saved profile with servers has rendered files to show.
+        ...(hasMcpFiles(profile)
+          ? [{ id: 'mcp', text: platform.revealLabelOf('MCP Folder'), action: () => showPlace({ kind: 'mcpFiles', profileId: profile.id }) }]
+          : []),
+        ...(folder ? [{ item: 'Separator' as const }, ...folderItems(folder)] : []),
+        { item: 'Separator' as const },
+        {
+          id: 'delete',
+          text: 'Delete Profile…',
+          action: () => confirmAndDelete(profile),
+        },
+      ])
     } catch {
       // No native menu (the browser preview): editing stays reachable from the slot itself.
+    }
+  }
+
+  // The folder whose "…" menu is open, which keeps its button in view: `popup` answers when the menu is dismissed (Tauri waits on the main thread).
+  const [menuFolder, setMenuFolder] = useState<string | null>(null)
+
+  /** A folder row's "…": the folder's own menu, under the button, so the keyboard reaches what the right-click offers. */
+  const showFolderMenu = async (folder: string, anchor: HTMLElement) => {
+    try {
+      // Under the button on macOS, where a position is the webview's own. On Linux it is the toplevel window's, which with the system's title
+      // bar starts above the webview (muda's GTK `show_context_menu`), and nothing the window may call says by how much, so the pointer it is.
+      const box = anchor.getBoundingClientRect()
+      setMenuFolder(folder)
+      await popupMenu(folderItems(folder), platform.isMac ? new LogicalPosition(box.left, box.bottom) : undefined)
+    } catch {
+      // No native menu (the browser preview): the right-click menu carries the same items.
+    } finally {
+      setMenuFolder(null)
     }
   }
 
@@ -486,13 +577,16 @@ export default function App() {
   const reported = healthOf(config, setup, loadError, setupError, actionError, home, checkedOnce, blocked, openError, saveWarning)
   // While an uninstall runs the region holds one state, whatever the files it is changing say: the pending line, or on a retry the
   // stop's banner with Try Again busy. Nothing in it is an accent action, so no shell can be turned back on meanwhile.
-  const health: Health = running
+  const titled: Health = running
     ? actionError
       ? { kind: 'error', message: actionError, dismissible: true, busy: true, title: STOPPED }
       : { kind: 'uninstalling' }
     : reported.kind === 'error' && reported.dismissible && (retry?.kind === 'uninstall' || retry?.kind === 'quit')
       ? { ...reported, title: retry.kind === 'quit' ? UNINSTALLED : STOPPED }
-      : reported
+      : reported.kind === 'error' && reported.dismissible && retry?.kind === 'place'
+        ? { ...reported, title: placeTitle(retry.place) }
+        : reported
+  const health: Health = titled.kind === 'error' ? { ...titled, busy: titled.busy || retrying, attempt } : titled
   useEffect(() => {
     if (focusRetry.current && health.kind === 'error' && !health.busy) {
       focusRetry.current = false
@@ -561,7 +655,7 @@ export default function App() {
                 }}
                 onRevealConfig={() => {
                   setOpenError(null)
-                  revealItemInDir(`${home}/.envrouter/config.json`).catch((err) => setOpenError({ action: 'reveal', message: errorMessage(err) }))
+                  revealPlace({ kind: 'config' }).catch((err) => setOpenError({ action: 'reveal', message: errorMessage(err) }))
                 }}
                 onStartOver={startOver}
                 onRetry={tryAgain}
@@ -570,7 +664,17 @@ export default function App() {
               />
             </div>
           )}
-          {shellsOpen && setup && <ShellsPopover setup={setup} home={home} onSet={setShell} onUninstall={startUninstall} onClose={closeShells} />}
+          {shellsOpen && setup && (
+            <ShellsPopover
+              setup={setup}
+              home={home}
+              onSet={setShell}
+              onRevealConfig={() => revealPlace({ kind: 'config' })}
+              onOpenRoot={() => revealPlace({ kind: 'root' })}
+              onUninstall={startUninstall}
+              onClose={closeShells}
+            />
+          )}
           {editorsOpen && editors && <EditorsPopover editors={editors} home={home} onSet={setEditor} onClose={closeEditors} />}
           {/* Soft edges where cards scroll under the banner and the floating check card. */}
           {/* Kept while Profiles shows, only hidden, so a server's unsaved edits survive a trip there and back. */}
@@ -612,6 +716,8 @@ export default function App() {
                       dropTarget={dropTarget}
                       onEdit={setEditing}
                       onContextMenu={showSlotMenu}
+                      onFolderMenu={showFolderMenu}
+                      menuFolder={menuFolder}
                       onOpenServer={openServer}
                     />
                   )}
@@ -650,6 +756,7 @@ export default function App() {
             library={config.mcpServers}
             tools={mcpTools}
             onCancel={() => setEditing(null)}
+            onRevealMcp={editing === 'new' ? undefined : () => revealPlace({ kind: 'mcpFiles', profileId: editingId })}
             onShowServers={() => {
               setEditing(null)
               setView('servers')

@@ -209,6 +209,19 @@ describe('checks and files', () => {
     await expect(call('open_in_editor', { path: '/etc/zshrc' })).rejects.toBe("/etc/zshrc isn't a file in your home folder.")
   })
 
+  it("shows a profile's MCP folder only once it has servers, as locate does", async () => {
+    const call = await boot('?scenario=mcp')
+    const { profiles } = await call<ConfigState>('get_config')
+    const [withServers, without] = [
+      profiles.find((p) => Object.keys(p.mcpServers).length > 0),
+      profiles.find((p) => Object.keys(p.mcpServers).length === 0),
+    ]
+    expect(await call('reveal_place', { place: { kind: 'mcpFiles', profileId: withServers?.id } })).toBeNull()
+    await expect(call('reveal_place', { place: { kind: 'mcpFiles', profileId: without?.id } })).rejects.toBe(
+      'This profile has no MCP files yet. EnvRouter writes them when the profile is saved with an MCP server.',
+    )
+  })
+
   it('starts over only from a config.json that cannot be parsed, as reset_unreadable_config does', async () => {
     const readable = await boot('?scenario=populated')
     await expect(readable('reset_unreadable_config')).rejects.toBe('config.json can be read now, so nothing was changed.')

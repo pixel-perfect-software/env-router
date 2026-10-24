@@ -2,36 +2,10 @@
 
 import type { ReactNode } from 'react'
 import type { Health } from '../lib/health'
-import { tildify } from '../lib/paths'
 import { usePlatform } from '../lib/platform'
 import { listOf, plural } from '../lib/text'
 import type { Shell } from '../lib/types'
-import { Button, CloseIcon, IconButton, StatusTile, type Tone } from './ui'
-
-/**
- * A backend message with its values set in mono: paths under home, tildified, and `backticked` tokens (serde_json quotes
- * its values so). A token that is a path is set as one, since a sentence backticks a path with a space in it, which an unquoted
- * path would end at; any other token keeps quotes, because a lone `,` in mono is easy to misread.
- */
-function ValueText({ text, home }: { text: string; home: string }) {
-  const homePath = home ? `|${home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:/[^\\s:]*)?` : ''
-  return text.split(new RegExp(`(\`[^\`]+\`${homePath})`)).map((part, i) => {
-    if (i % 2 === 0) return part
-    const token = part.startsWith('`') ? part.slice(1, -1) : part
-    const path = !part.startsWith('`') || token.startsWith('/') || token.startsWith('~')
-    return path ? (
-      // biome-ignore lint/suspicious/noArrayIndexKey: the parts of one fixed string
-      <code key={i} className="font-mono">
-        {tildify(token, home)}
-      </code>
-    ) : (
-      // biome-ignore lint/suspicious/noArrayIndexKey: the parts of one fixed string
-      <span key={i}>
-        “<code className="font-mono">{token}</code>”
-      </span>
-    )
-  })
-}
+import { Button, CloseIcon, IconButton, StatusTile, type Tone, ValueText } from './ui'
 
 /** A message of several sentences, one per line (`\n` between them), each with its values in mono. */
 function ValueLines({ text, home }: { text: string; home: string }) {
@@ -137,7 +111,7 @@ export function HealthLine({
         <Banner
           tone="problem"
           title={health.title ?? 'Something went wrong'}
-          detail={<ValueLines text={health.message} home={home} />}
+          detail={<ValueLines key={health.attempt} text={health.message} home={home} />}
           action={
             <>
               {/* `busy` keeps focus on the button the user pressed while its retry runs; the banner stays as it was until the answer. */}
@@ -176,7 +150,9 @@ export function HealthLine({
             health.openError ? (
               <>
                 <ValueText text={health.message} home={home} />
-                <span className="block text-problem">{health.openError.message}</span>
+                <span className="block text-problem">
+                  <ValueText text={health.openError.message} home={home} />
+                </span>
               </>
             ) : (
               <ValueText text={health.message} home={home} />

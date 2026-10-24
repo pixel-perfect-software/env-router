@@ -24,7 +24,8 @@
 // - `&fail=home|status|shell|editor|reveal|uninstall`: the home folder can't be found (the unloaded banner, with no file to open),
 //   the setup status can't be read (the error banner), turning a shell on fails (an error
 //   banner with Dismiss), or no editor opens a file (use it with `?scenario=broken`: the unloaded
-//   banner's Open config.json fails and Reveal takes the accent; `reveal` makes Reveal fail), or
+//   banner's Open config.json fails and Reveal takes the accent; `reveal` makes every reveal fail: the banner's, a folder's, the menu bar's and
+//   the Shells popover's), or
 //   Uninstall EnvRouter… stops (VS Code's and Cursor's settings can't be read and name the shim: the banner
 //   shows why, a line each, with Try Again, and the shells are already off). It keeps failing until `window.__mockFix()` is called, the way a
 //   permission or a missing file keeps failing until the user fixes it.
@@ -37,7 +38,9 @@
 // bar's Quit does: it asks only while an editor holds unsaved edits, and a quit that goes
 // ahead logs "quit" to the console. npm knows
 // every package (at 1.4.0, `next` at 2.0.0-beta.2) except one whose name ends in `-nope`.
-// The profile card's context menu pops up as a DOM stand-in.
+// The profile card's context menu and a folder row's "…" menu pop up as a DOM stand-in, at the position `popup(at)` names or else at the
+// pointer (where it last was: a menu opened from the keyboard on Linux opens there too), and give focus back to where it was when closed by Escape or a choice, as a native menu leaves it. `window.__mockMenuReveal(place)`
+// reveals as the menu bar's items do, without the window, and emits `reveal-failed` when that fails.
 
 import { emit } from '@tauri-apps/api/event'
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
@@ -57,8 +60,10 @@ import type {
   McpServer,
   McpValue,
   Pasted,
+  Place,
   Platform,
   Profile,
+  RevealFailed,
   SaveOutcome,
   ServerCheck,
   SetupStatus,
@@ -711,15 +716,17 @@ interface MenuEntry {
 }
 const menus = new Map<number, MenuEntry[]>()
 let nextRid = 1
-/** `popup()` without a position opens at the pointer. */
+/** `popup()` without a position opens at the pointer; with one, at that point of the window. */
 let pointer = { x: 0, y: 0 }
-document.addEventListener(
-  'contextmenu',
-  (event) => {
-    pointer = { x: event.clientX, y: event.clientY }
-  },
-  true,
-)
+for (const type of ['pointermove', 'pointerdown', 'contextmenu'])
+  document.addEventListener(
+    type,
+    (event) => {
+      const { clientX, clientY } = event as MouseEvent
+      pointer = { x: clientX, y: clientY }
+    },
+    true,
+  )
 
 const MENU_STYLE = `
 #mock-menu { position: fixed; z-index: 2147483647; min-width: 200px; padding: 5px; border-radius: 8px; color-scheme: light dark;
@@ -730,62 +737,78 @@ const MENU_STYLE = `
 #mock-menu [role='separator'] { height: 1px; margin: 5px 10px; background: GrayText; opacity: 0.4; }
 `
 
-const popupMenu = (entries: MenuEntry[]) => {
-  document.getElementById('mock-menu')?.remove()
-  if (!document.getElementById('mock-menu-style')) {
-    const style = document.createElement('style')
-    style.id = 'mock-menu-style'
-    style.textContent = MENU_STYLE
-    document.head.append(style)
-  }
-  const menu = document.createElement('div')
-  menu.id = 'mock-menu'
-  menu.setAttribute('role', 'menu')
-  const items: HTMLButtonElement[] = []
-  const close = () => {
-    menu.remove()
-    document.removeEventListener('pointerdown', outside, true)
-    document.removeEventListener('keydown', keys, true)
-  }
-  const outside = (event: PointerEvent) => {
-    if (!menu.contains(event.target as Node)) close()
-  }
-  const keys = (event: KeyboardEvent) => {
-    const at = items.indexOf(document.activeElement as HTMLButtonElement)
-    if (event.key === 'Escape') close()
-    else if (event.key === 'ArrowDown') items[(at + 1) % items.length]?.focus()
-    else if (event.key === 'ArrowUp') items[(at - 1 + items.length) % items.length]?.focus()
-    else return
-    event.preventDefault()
-  }
-  for (const entry of entries) {
-    if (entry.item === 'Separator') {
-      const line = document.createElement('div')
-      line.setAttribute('role', 'separator')
-      menu.append(line)
-      continue
+/** Closes the menu that's open, if one is: a native menu is modal, so showing another dismisses it. */
+let dismissOpenMenu: (() => void) | null = null
+
+/** Pops the menu and answers when it's dismissed, as Tauri's `popup` does: the main thread is held until the menu closes. */
+const popupMenu = (entries: MenuEntry[], at: { x: number; y: number } = pointer) =>
+  new Promise<void>((resolve) => {
+    dismissOpenMenu?.()
+    // A native menu doesn't take DOM focus, so closing it by choosing or Escape leaves it where it was.
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const giveBack = () => {
+      if (opener?.isConnected) opener.focus()
     }
-    const button = document.createElement('button')
-    button.type = 'button'
-    button.setAttribute('role', 'menuitem')
-    button.textContent = entry.text ?? ''
-    button.disabled = entry.enabled === false
-    button.addEventListener('click', () => {
-      close()
-      const internals = (window as unknown as { __TAURI_INTERNALS__: { runCallback: (id: number, data: unknown) => void } }).__TAURI_INTERNALS__
-      if (entry.handler) internals.runCallback(entry.handler.id, { index: 0, message: entry.id })
-    })
-    items.push(button)
-    menu.append(button)
-  }
-  document.body.append(menu)
-  const { width, height } = menu.getBoundingClientRect()
-  menu.style.left = `${Math.max(4, Math.min(pointer.x, innerWidth - width - 4))}px`
-  menu.style.top = `${Math.max(4, Math.min(pointer.y, innerHeight - height - 4))}px`
-  items[0]?.focus()
-  document.addEventListener('pointerdown', outside, true)
-  document.addEventListener('keydown', keys, true)
-}
+    if (!document.getElementById('mock-menu-style')) {
+      const style = document.createElement('style')
+      style.id = 'mock-menu-style'
+      style.textContent = MENU_STYLE
+      document.head.append(style)
+    }
+    const menu = document.createElement('div')
+    menu.id = 'mock-menu'
+    menu.setAttribute('role', 'menu')
+    const items: HTMLButtonElement[] = []
+    const close = () => {
+      menu.remove()
+      document.removeEventListener('pointerdown', outside, true)
+      document.removeEventListener('keydown', keys, true)
+      dismissOpenMenu = null
+      resolve()
+    }
+    dismissOpenMenu = close
+    const outside = (event: PointerEvent) => {
+      if (!menu.contains(event.target as Node)) close()
+    }
+    const keys = (event: KeyboardEvent) => {
+      const at = items.indexOf(document.activeElement as HTMLButtonElement)
+      if (event.key === 'Escape') {
+        close()
+        giveBack()
+      } else if (event.key === 'ArrowDown') items[(at + 1) % items.length]?.focus()
+      else if (event.key === 'ArrowUp') items[(at - 1 + items.length) % items.length]?.focus()
+      else return
+      event.preventDefault()
+    }
+    for (const entry of entries) {
+      if (entry.item === 'Separator') {
+        const line = document.createElement('div')
+        line.setAttribute('role', 'separator')
+        menu.append(line)
+        continue
+      }
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.setAttribute('role', 'menuitem')
+      button.textContent = entry.text ?? ''
+      button.disabled = entry.enabled === false
+      button.addEventListener('click', () => {
+        close()
+        giveBack()
+        const internals = (window as unknown as { __TAURI_INTERNALS__: { runCallback: (id: number, data: unknown) => void } }).__TAURI_INTERNALS__
+        if (entry.handler) internals.runCallback(entry.handler.id, { index: 0, message: entry.id })
+      })
+      items.push(button)
+      menu.append(button)
+    }
+    document.body.append(menu)
+    const { width, height } = menu.getBoundingClientRect()
+    menu.style.left = `${Math.max(4, Math.min(at.x, innerWidth - width - 4))}px`
+    menu.style.top = `${Math.max(4, Math.min(at.y, innerHeight - height - 4))}px`
+    items[0]?.focus()
+    document.addEventListener('pointerdown', outside, true)
+    document.addEventListener('keydown', keys, true)
+  })
 
 const failed = (status: ServerCheck['status'], message: string, log: string | null = null): ServerCheck => ({ status, tools: [], message, log })
 
@@ -877,15 +900,21 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       menus.set(rid, opts.items ?? [])
       return [rid, opts.id ?? `menu-${rid}`]
     }
-    case 'plugin:menu|popup':
-      popupMenu(menus.get(a.rid as number) ?? [])
+    case 'plugin:menu|popup': {
+      // A `Position` goes over IPC as `{ Logical: { x, y } }` (or `Physical`), by its `toJSON`; no position is `null`.
+      const at = a.at ? (JSON.parse(JSON.stringify(a.at)) as Record<'Logical' | 'Physical', { x: number; y: number }>) : null
+      // As `resources_table.get`: a menu that was closed can't be shown.
+      const entries = menus.get(a.rid as number)
+      if (!entries) throw `resource id ${a.rid} is invalid`
+      await popupMenu(entries, at?.Logical ?? at?.Physical)
       return null
+    }
     case 'plugin:resources|close':
       menus.delete(a.rid as number)
       return null
     case 'plugin:opener|reveal_item_in_dir':
       // WSL with no file manager, say.
-      if (failing === 'reveal') throw 'No file manager could show the file.'
+      if (failing === 'reveal') throw 'No file manager could show it.'
       // Finder or the file manager would open beside the window; nothing to show in a browser.
       return null
     case 'get_config':
@@ -1015,6 +1044,27 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       if (isFileName(name)) toolCache.set(name, { server: structuredClone(server), tools })
       return { status: 'ok', tools, message: null, log: null } satisfies ServerCheck
     }
+    case 'reveal_place': {
+      // `commands::locate`, then `show_place`
+      const place = a.place as Place
+      let path: string
+      if (place.kind === 'config') {
+        if (configMissing) throw "There's no config.json yet. EnvRouter writes it the next time the window reads its settings."
+        path = `${HOME}/.envrouter/config.json`
+      } else if (place.kind === 'root') {
+        path = `${HOME}/.envrouter`
+      } else {
+        if (!isFileName(place.profileId)) throw "That isn't a profile."
+        // The mock renders no files; a saved profile with servers is the one that would have them.
+        const servers = config.profiles.find((p) => p.id === place.profileId)?.mcpServers ?? {}
+        if (Object.keys(servers).length === 0)
+          throw 'This profile has no MCP files yet. EnvRouter writes them when the profile is saved with an MCP server.'
+        path = `${HOME}/.envrouter/mcp/${place.profileId}`
+      }
+      // WSL with no file manager, say. Finder or the file manager would open beside the window; nothing to show in a browser.
+      if (failing === 'reveal') throw `Couldn't show \`${path}\`: No file manager could show it.`
+      return null
+    }
     case 'open_in_editor': {
       const path = String(a.path)
       if (!path.startsWith(`${HOME}/`)) throw `${path} isn't a file in your home folder.`
@@ -1143,6 +1193,7 @@ declare global {
     __mockDeleteConfig: () => void
     __mockQuit: () => Promise<void>
     __mockFix: () => void
+    __mockMenuReveal: (place: Place) => Promise<void>
   }
 }
 
@@ -1152,6 +1203,15 @@ window.__mockEditConfig = (edit) => {
 
 window.__mockFix = () => {
   failing = null
+}
+
+// `tray::reveal_in_background`
+window.__mockMenuReveal = async (place) => {
+  try {
+    await respond('reveal_place', { place })
+  } catch (message) {
+    await emit('reveal-failed', { place, message: String(message) } satisfies RevealFailed)
+  }
 }
 
 window.__mockDeleteConfig = () => {

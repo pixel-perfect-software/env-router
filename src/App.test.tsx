@@ -97,7 +97,7 @@ describe('an unreadable config.json', () => {
     const user = await open('?scenario=broken&fail=reveal')
     const openConfig = await screen.findByRole('button', { name: 'Open config.json' })
     await user.click(screen.getByRole('button', { name: 'Reveal in Finder' }))
-    await screen.findByText('No file manager could show the file.')
+    await screen.findByText(/No file manager could show it/)
     expect(reachableAccents()).toEqual([openConfig])
   })
 
@@ -130,6 +130,152 @@ describe('an unreadable config.json', () => {
     await vi.waitFor(() =>
       expect(confirm).toHaveBeenLastCalledWith(expect.stringContaining('Your old config.json is at ~/.envrouter/config.json.bak.')),
     )
+  })
+})
+
+/** The calls the window makes to the backend, from here on. */
+const spyOnInvoke = () => {
+  const { __TAURI_INTERNALS__: internals } = window as unknown as {
+    __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> }
+  }
+  return vi.spyOn(internals, 'invoke')
+}
+
+describe("a folder row's actions button", () => {
+  it('opens the folder menu from the keyboard, checks the folder from it, and leaves focus on the button', async () => {
+    const user = await open('?scenario=populated')
+    const actions = await screen.findByRole('button', { name: 'Actions for ~/dev/work' })
+    actions.focus()
+    await user.keyboard('{Enter}')
+    const menu = await screen.findByRole('menu')
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent),
+    ).toEqual(['Check This Folder', 'Reveal in Finder'])
+
+    await user.keyboard('{Enter}')
+    await screen.findByText('Routed to Work', undefined, { timeout: 3000 })
+    expect(document.activeElement).toBe(actions)
+  })
+})
+
+describe("a folder row's menu as a native menu", () => {
+  const popups = (invoked: ReturnType<typeof spyOnInvoke>) =>
+    invoked.mock.calls.filter(([command]) => command === 'plugin:menu|popup').map(([, args]) => args)
+
+  it('hangs from the button on macOS, and opens at the pointer on Linux, where a position would count from the title bar', async () => {
+    for (const [search, expected] of [
+      ['?scenario=populated', { Logical: { x: 0, y: 0 } }],
+      ['?scenario=populated&platform=linux', null],
+    ] as const) {
+      const user = await open(search)
+      const invoked = spyOnInvoke()
+      await user.click(await screen.findByRole('button', { name: 'Actions for ~/dev/work' }))
+      await screen.findByRole('menu')
+      const [popup] = popups(invoked) as { at: unknown }[]
+      // As IPC serializes it; happy-dom lays nothing out, so the button sits at the origin.
+      expect(JSON.parse(JSON.stringify(popup.at ?? null))).toEqual(expected)
+      cleanup()
+    }
+  })
+
+  it('keeps its button pressed, so in view, while its menu is open', async () => {
+    const user = await open('?scenario=populated')
+    const actions = await screen.findByRole('button', { name: 'Actions for ~/dev/work' })
+    expect(actions.getAttribute('aria-expanded')).toBe('false')
+    await user.click(actions)
+    await screen.findByRole('menu')
+    expect(actions.getAttribute('aria-expanded')).toBe('true')
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(actions.getAttribute('aria-expanded')).toBe('false'))
+  })
+
+  it('closes the menu it showed before when the next one is built', async () => {
+    const user = await open('?scenario=populated')
+    const invoked = spyOnInvoke()
+    const actions = await screen.findByRole('button', { name: 'Actions for ~/dev/work' })
+    await user.click(actions)
+    await screen.findByRole('menu')
+    const [{ rid: first }] = popups(invoked) as { rid: number }[]
+    expect(invoked).not.toHaveBeenCalledWith('plugin:resources|close', { rid: first }, undefined)
+
+    await user.keyboard('{Escape}')
+    await user.click(actions)
+    await screen.findByRole('menu')
+    expect(invoked).toHaveBeenCalledWith('plugin:resources|close', { rid: first }, undefined)
+  })
+})
+
+describe('MCP folder', () => {
+  it("is offered in the inspector only for a saved profile with servers, and asks for that profile's folder", async () => {
+    const user = await open('?scenario=mcp')
+    const invoked = spyOnInvoke()
+    await user.click(await screen.findByRole('button', { name: 'Edit Northwind' }))
+    expect(inspector().queryByRole('button', { name: 'Reveal MCP Folder in Finder' })).toBeNull()
+    await user.click(inspector().getByRole('button', { name: 'Cancel' }))
+
+    await user.click(screen.getByRole('button', { name: 'Edit Personal' }))
+    await user.click(inspector().getByRole('button', { name: 'Reveal MCP Folder in Finder' }))
+    expect(invoked).toHaveBeenCalledWith('reveal_place', { place: { kind: 'mcpFiles', profileId: 'p1' } }, undefined)
+  })
+
+  it('says why it failed under its button, not in the footer that would grow over the focused button, with the path as a mono value', async () => {
+    const user = await open('?scenario=mcp&fail=reveal')
+    await user.click(await screen.findByRole('button', { name: 'Edit Personal' }))
+    const reveal = inspector().getByRole('button', { name: 'Reveal MCP Folder in Finder' })
+    await user.click(reveal)
+    const why = await inspector().findByText(/No file manager could show it/)
+    expect(why.closest('footer')).toBeNull()
+    expect(inspector().getByText('~/.envrouter/mcp/p1').tagName).toBe('CODE')
+    expect(document.activeElement).toBe(reveal)
+  })
+})
+
+describe('a reveal from the menu bar that failed', () => {
+  it('shows under the unreadable-config banner, where an action error would be hidden, and leaves no Try Again behind', async () => {
+    await open('?scenario=broken&fail=reveal')
+    await screen.findByRole('button', { name: 'Open config.json' })
+    await window.__mockMenuReveal({ kind: 'config' })
+    await screen.findByText(/No file manager could show it/)
+    expect(screen.queryByRole('button', { name: 'Try Again' })).toBeNull()
+  })
+
+  it('brings up the reason in the banner, and Try Again asks for the same place again', async () => {
+    const user = await open('?scenario=populated&fail=reveal')
+    await screen.findByText(/Routing is on in zsh/)
+    await window.__mockMenuReveal({ kind: 'root' })
+    await screen.findByText(/No file manager could show it/)
+    // Its own title, naming what it was after, and the path as a value.
+    expect(screen.getByText("Couldn't open ~/.envrouter")).toBeTruthy()
+    expect(screen.getByText('~/.envrouter').tagName).toBe('CODE')
+
+    window.__mockFix()
+    const invoked = spyOnInvoke()
+    await user.click(screen.getByRole('button', { name: 'Try Again' }))
+    await waitFor(() => expect(invoked).toHaveBeenCalledWith('reveal_place', { place: { kind: 'root' } }, undefined))
+    await waitFor(() => expect(screen.queryByText(/No file manager/)).toBeNull())
+  })
+
+  it('keeps focus on Try Again while it fails again, and shows the repeat as a new line for the status region to announce', async () => {
+    const user = await open('?scenario=populated&fail=reveal')
+    await screen.findByText(/Routing is on in zsh/)
+    await window.__mockMenuReveal({ kind: 'config' })
+    const first = await screen.findByText(/No file manager could show it/)
+    const tryAgain = screen.getByRole('button', { name: 'Try Again' })
+
+    await user.click(tryAgain)
+    await waitFor(() => expect(screen.getByText(/No file manager could show it/)).not.toBe(first))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Try Again' }))
+    expect(document.activeElement).toBe(tryAgain)
+  })
+
+  it("sets the path in the Shells panel's note as a value too, as every other reveal failure does", async () => {
+    const user = await open('?scenario=populated&fail=reveal')
+    await user.click(await screen.findByRole('button', { name: /Shells/ }))
+    await user.click(screen.getByRole('button', { name: 'Reveal config.json in Finder' }))
+    expect((await screen.findByText('~/.envrouter/config.json')).tagName).toBe('CODE')
   })
 })
 
@@ -433,6 +579,26 @@ describe('Uninstall EnvRouter…', () => {
     await user.click(screen.getByRole('button', { name: 'Try Again' }))
     await vi.waitFor(() => expect(log).toHaveBeenCalledWith('quit'))
     expect(invoked.mock.calls.map(([command]) => command)).toEqual(['quit_app'])
+  })
+
+  it('keeps its banner when a reveal from the menu bar fails meanwhile, with the uninstall as its reason', async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    vi.spyOn(console, 'info').mockImplementation(() => {})
+    const user = await open('?scenario=populated')
+    const { __TAURI_INTERNALS__: internals } = window as unknown as {
+      __TAURI_INTERNALS__: { invoke: (command: string, ...rest: unknown[]) => Promise<unknown> }
+    }
+    const real = internals.invoke
+    vi.spyOn(internals, 'invoke').mockImplementation((command, ...rest) =>
+      command === 'quit_app' ? Promise.reject('the window is stuck') : real.call(internals, command, ...rest),
+    )
+    await uninstallFromShells(user)
+    await screen.findByText('EnvRouter is uninstalled')
+
+    await window.__mockMenuReveal({ kind: 'root' })
+    await new Promise((resolve) => setTimeout(resolve))
+    expect(screen.getByText('EnvRouter is uninstalled')).toBeTruthy()
+    expect(screen.getByText('Quit EnvRouter yourself to finish.')).toBeTruthy()
   })
 
   it('moves focus to Try Again when it stops, since the button that held it is gone', async () => {

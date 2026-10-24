@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use envrouter_core::config::{self, ConfigState, IdeHook, McpServer};
 use envrouter_core::platform::{self, Platform};
 use envrouter_core::{agents, mcp, paths, Error, ErrorKind, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::editors::{self, Editor, EditorStatus};
 use crate::shell::{self, FolderCheck, Preview, Shell, ShellStatus};
@@ -535,6 +535,89 @@ pub fn open_in_editor(home: &Path, path: &str) -> Result<()> {
     }
 }
 
+/// One of EnvRouter's own places that the window or the menu bar can show in the file manager.
+/// Not a path: the webview says which place and this side says where it is, so a compromised
+/// page can't ask for any other file (`Place` in `src/lib/types.ts`).
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum Place {
+    /// `~/.envrouter/config.json`.
+    Config,
+    /// `~/.envrouter`.
+    Root,
+    /// The folder a profile's MCP files are rendered into.
+    McpFiles { profile_id: String },
+}
+
+/// Where a [`Place`] is, and how to show it: a file is revealed (selected in its folder), a
+/// folder is opened.
+#[derive(Debug, PartialEq)]
+pub enum Located {
+    File(PathBuf),
+    Folder(PathBuf),
+}
+
+/// Whether anything is at `path`, a link counting even when what it points to is gone (showing
+/// it then fails with the file manager's own reason). Only a plain "not found" is absence: a
+/// failure to ask, such as a folder that can't be searched, is passed on as it is.
+fn exists(path: &Path) -> Result<bool> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(source) => Err(Error::Io {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+/// Finds `place` under `home`, or says why it isn't there yet. It never reads config.json, so it
+/// answers while the file is unreadable, which is when someone wants to see it.
+pub fn locate(home: &Path, place: &Place) -> Result<Located> {
+    let root = paths::root(home);
+    match place {
+        Place::Config => {
+            let file = root.join(config::CONFIG_FILE);
+            if exists(&file)? {
+                Ok(Located::File(file))
+            } else {
+                Err(Error::Invalid(
+                    "There's no config.json yet. EnvRouter writes it the next time the window reads its settings."
+                        .into(),
+                ))
+            }
+        }
+        Place::Root => {
+            if exists(&root)? {
+                Ok(Located::Folder(root))
+            } else {
+                Err(Error::Invalid(
+                    "There's no ~/.envrouter yet. EnvRouter makes it the next time the window reads its settings."
+                        .into(),
+                ))
+            }
+        }
+        Place::McpFiles { profile_id } => {
+            if !config::is_file_name(profile_id) {
+                return Err(Error::Invalid("That isn't a profile.".into()));
+            }
+            let folder = paths::mcp(home).join(profile_id);
+            if exists(&folder)? {
+                Ok(Located::Folder(folder))
+            } else {
+                Err(Error::Invalid(
+                    "This profile has no MCP files yet. EnvRouter writes them when the profile is saved with an MCP server."
+                        .into(),
+                ))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -974,6 +1057,63 @@ mod tests {
         assert!(!backup.exists());
     }
 
+    /// Config.json is revealed, so it's a file; the root and a profile's rendered MCP files are
+    /// opened, so they're folders. `Place` in `src/lib/types.ts`.
+    #[test]
+    fn locates_what_the_window_shows() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        get_config(home).unwrap();
+        let rendered = paths::mcp(home).join("p");
+        std::fs::create_dir_all(&rendered).unwrap();
+        let mcp = Place::McpFiles {
+            profile_id: "p".into(),
+        };
+        assert_eq!(
+            locate(home, &Place::Config).unwrap(),
+            Located::File(paths::root(home).join("config.json"))
+        );
+        assert_eq!(
+            locate(home, &Place::Root).unwrap(),
+            Located::Folder(paths::root(home))
+        );
+        assert_eq!(locate(home, &mcp).unwrap(), Located::Folder(rendered));
+    }
+
+    /// A profile that was never rendered has no folder to show, and an id that climbs out of
+    /// the MCP folder isn't a profile at all.
+    #[test]
+    fn refuses_an_mcp_folder_that_is_missing_or_not_a_profile() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        get_config(home).unwrap();
+        let place = |id: &str| Place::McpFiles {
+            profile_id: id.into(),
+        };
+        // The words `src/dev/mockTauri.ts` repeats.
+        assert_eq!(
+            locate(home, &place("p")).unwrap_err().to_string(),
+            "This profile has no MCP files yet. EnvRouter writes them when the profile is saved with an MCP server."
+        );
+        assert_eq!(
+            locate(home, &place("../x")).unwrap_err().to_string(),
+            "That isn't a profile."
+        );
+    }
+
+    /// Not finding a place is told apart from not being able to look: with `~/.envrouter` a file,
+    /// config.json can't be searched for, and that says so instead of "no config.json yet".
+    #[test]
+    fn passes_on_a_failure_to_look_instead_of_calling_it_absence() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        std::fs::write(paths::root(home), "").unwrap();
+        assert!(matches!(
+            locate(home, &Place::Config),
+            Err(Error::Io { .. })
+        ));
+    }
+
     /// `SaveOutcome` in `src/lib/types.ts`.
     #[test]
     fn wire_format_matches_the_typescript_types() {
@@ -991,6 +1131,21 @@ mod tests {
         assert!(changed["config"]["profiles"].is_array());
         let missing = serde_json::to_value(SaveOutcome::Missing).unwrap();
         assert_eq!(missing, serde_json::json!({ "status": "missing" }));
+        // `Place` in src/lib/types.ts, the three kinds the window sends and the tray emits.
+        let places = [
+            (Place::Config, serde_json::json!({ "kind": "config" })),
+            (Place::Root, serde_json::json!({ "kind": "root" })),
+            (
+                Place::McpFiles {
+                    profile_id: "p".into(),
+                },
+                serde_json::json!({ "kind": "mcpFiles", "profileId": "p" }),
+            ),
+        ];
+        for (place, json) in places {
+            assert_eq!(serde_json::to_value(&place).unwrap(), json);
+            assert_eq!(serde_json::from_value::<Place>(json).unwrap(), place);
+        }
         // `ConfigFault` in src/lib/types.ts: the one rejection that carries a kind.
         let fault = ConfigFault::from(Error::Invalid("m".into()));
         assert_eq!(

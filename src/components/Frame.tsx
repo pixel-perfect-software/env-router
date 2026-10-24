@@ -8,7 +8,7 @@ import { shortcutLabel, usePlatform } from '../lib/platform'
 import { KNOWN_TOOLS, toolLabel } from '../lib/tools'
 import type { Profile } from '../lib/types'
 import { AgentMark } from './icons'
-import { BranchIcon, FolderIcon, IconButton, Mark, type MarkKind, PencilIcon, PlugIcon, PlusIcon, ProfileDot, profileColors } from './ui'
+import { BranchIcon, FolderIcon, IconButton, Mark, type MarkKind, MoreIcon, PencilIcon, PlugIcon, PlusIcon, ProfileDot, profileColors } from './ui'
 
 /** A folder that was just checked, filed in the card that owns it. */
 export interface Slip {
@@ -48,6 +48,8 @@ export function Frame({
   dropTarget,
   onEdit,
   onContextMenu,
+  onFolderMenu,
+  menuFolder,
   onOpenServer,
 }: {
   profiles: Profile[]
@@ -58,6 +60,10 @@ export function Frame({
   dropTarget: DropTarget
   onEdit: (id: string | 'new') => void
   onContextMenu: (profile: Profile, folder: string | null, event: MouseEvent) => void
+  /** A folder row's "…" button: the folder (absolute) and the button, which the menu hangs from. */
+  onFolderMenu: (folder: string, anchor: HTMLElement) => void
+  /** The folder whose menu is open, if any: its button stays in view while it is. */
+  menuFolder: string | null
   /** A server name in a card's footer opens that server in the Servers view. */
   onOpenServer: (name: string) => void
 }) {
@@ -78,6 +84,8 @@ export function Frame({
           targeted={dropTarget?.profileId === profile.id}
           onEdit={() => onEdit(profile.id)}
           onContextMenu={(folder, event) => onContextMenu(profile, folder, event)}
+          onFolderMenu={onFolderMenu}
+          menuFolder={menuFolder}
           onOpenServer={onOpenServer}
         />
       ))}
@@ -98,6 +106,8 @@ function ProfileCard({
   targeted,
   onEdit,
   onContextMenu,
+  onFolderMenu,
+  menuFolder,
   onOpenServer,
 }: {
   profile: Profile
@@ -110,6 +120,8 @@ function ProfileCard({
   targeted: boolean
   onEdit: () => void
   onContextMenu: (folder: string | null, event: MouseEvent) => void
+  onFolderMenu: (folder: string, anchor: HTMLElement) => void
+  menuFolder: string | null
   onOpenServer: (name: string) => void
 }) {
   // Other profiles' triggers inside each of this profile's triggers.
@@ -175,7 +187,11 @@ function ProfileCard({
         {profile.triggerPaths.length === 0 && !slip && <li className="px-1.5 py-1 text-small text-ink-2">No folders yet.</li>}
         {profile.triggerPaths.map((raw) => (
           <li key={raw} data-folder={triggerBase(raw, home)}>
-            <FolderRow display={tildify(triggerBase(raw, home), home)} />
+            <FolderRow
+              display={tildify(triggerBase(raw, home), home)}
+              menuOpen={menuFolder === triggerBase(raw, home)}
+              onMenu={(anchor) => onFolderMenu(triggerBase(raw, home), anchor)}
+            />
             {slip && slip.trigger === triggerBase(raw, home) && (
               <ul className="my-0.5 ml-[13px] pl-2 hair-l">
                 <SlipRow slip={slip} home={home} />
@@ -295,16 +311,29 @@ function EverywhereElse({ slip, home, targeted }: { slip: Slip | null; home: str
   )
 }
 
-function FolderRow({ display }: { display: string }) {
+function FolderRow({ display, menuOpen, onMenu }: { display: string; menuOpen: boolean; onMenu: (anchor: HTMLElement) => void }) {
   const { parent, leaf } = splitLeaf(display)
   return (
-    <p className="flex items-center gap-2 rounded-[6px] px-1.5 py-1 text-ink-2" title={display}>
+    // No padding at the right: the button's edge lines up with the header's pencil, 8px in from the card.
+    <div className="group/row flex items-center gap-2 rounded-[6px] py-1 pl-1.5 text-ink-2" title={display}>
       <FolderIcon />
-      <span className="min-w-0 truncate font-mono text-small select-text">
+      <p className="min-w-0 flex-1 truncate font-mono text-small select-text">
         <span>{parent}</span>
         <span className="text-ink">{leaf}</span>
-      </span>
-    </p>
+      </p>
+      {/* The right-click menu for the keyboard. Quiet until the row is hovered or the button focused, and held in view, pressed, while
+          its menu is open (the pointer is on the menu then, not the row); the negative margin keeps its 26px box inside the row's 16px
+          of content (24 with the padding), so a row doesn't grow. */}
+      <IconButton
+        label={`Actions for ${display}`}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        className="-my-[5px] opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100"
+        onClick={(event) => onMenu(event.currentTarget)}
+      >
+        <MoreIcon />
+      </IconButton>
+    </div>
   )
 }
 

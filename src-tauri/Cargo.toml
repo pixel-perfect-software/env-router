@@ -18,9 +18,13 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 envrouter-core.workspace = true
 envrouter-ops.workspace = true
+serde.workspace = true
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true
