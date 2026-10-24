@@ -23,9 +23,10 @@ import {
   setEditorIntegration,
   setShellIntegration,
   setUnsavedEdits,
+  uninstall,
 } from './lib/api'
-import { confirmDelete, confirmDiscardServer, confirmQuit, confirmStartOver, tellBackedUp } from './lib/confirm'
-import { accentsOf, docketHasFix, healthOf } from './lib/health'
+import { confirmDelete, confirmDiscardServer, confirmQuit, confirmStartOver, confirmUninstall, tellBackedUp, tellUninstalled } from './lib/confirm'
+import { accentsOf, docketHasFix, type Health, healthOf } from './lib/health'
 import { withoutServer, withServer, withUsedBy } from './lib/mcp'
 import { tildify } from './lib/paths'
 import { guessPlatform, PlatformContext, platformInfo } from './lib/platform'
@@ -38,11 +39,19 @@ import { useFolderDrop } from './lib/useFolderDrop'
 import { useShortcuts } from './lib/useShortcuts'
 import type { VerdictAction } from './lib/verdict'
 
+/** The error banner's title when an uninstall is what stopped. */
+const STOPPED = 'Uninstall stopped'
+
+/** The error banner's title when the uninstall finished and only quitting failed. */
+const UNINSTALLED = 'EnvRouter is uninstalled'
+
 /** What a failed one-off action was doing, as data, so Try Again asks for the same thing against the window as it is by then. */
 type Retry =
   | { kind: 'verdict'; action: VerdictAction; shell: Shell }
   | { kind: 'reveal'; path: string }
   | { kind: 'deleteProfile'; profileId: string }
+  | { kind: 'uninstall' }
+  | { kind: 'quit' }
 
 export default function App() {
   const [editing, setEditing] = useState<string | 'new' | null>(null)
@@ -156,8 +165,17 @@ export default function App() {
       current = false
     }
   }, [editing])
+  // Held from the moment an uninstall starts until it stops, and for good once it finishes: reading ~/.envrouter in between would
+  // only fail, or (the part the app's own guard stops too) put it back.
+  const uninstalling = useRef(false)
+  // Whether the uninstall itself is running, past its confirmation: the window shows it and holds still (see `health`).
+  const [running, setRunning] = useState(false)
+  // Set when an uninstall stops, so Try Again takes focus once its banner is on screen (the Shells button that held it is gone).
+  const focusRetry = useRef(false)
   useEffect(() => {
-    const onFocus = inspecting ? refreshSetup : load
+    const onFocus = () => {
+      if (!uninstalling.current) (inspecting ? refreshSetup : load)()
+    }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [inspecting, load, refreshSetup])
@@ -183,7 +201,7 @@ export default function App() {
 
   // A check's answer files into the Profiles map, so checking from Servers goes there.
   const pickAndCheck = async () => {
-    if (!canCheck) return
+    if (!canCheck || uninstalling.current) return
     const picked = await open({ directory: true, defaultPath: home || undefined, title: 'Check Folder' })
     if (typeof picked !== 'string') return
     setView('profiles')
@@ -221,7 +239,7 @@ export default function App() {
 
   // The open inspector takes a drop as a trigger folder itself (ProfileInspector), so the window only checks one.
   const hovering = useFolderDrop(({ path, origin }) => {
-    if (inspecting || !canCheck) return
+    if (inspecting || !canCheck || uninstalling.current) return
     setView('profiles')
     runCheck(path, defaultShell(), origin)
   })
@@ -285,6 +303,8 @@ export default function App() {
     })
 
   const runAction = async (action: VerdictAction, shell: Shell) => {
+    // The check result may still be showing a fix (Turn On…) from before the uninstall began.
+    if (uninstalling.current) return
     try {
       if (action.kind === 'enableShell') {
         await setShell(shell, true) // Checks the folder again itself.
@@ -341,6 +361,66 @@ export default function App() {
         load()
       })
 
+  /**
+   * Quits once the uninstall has finished, or says to. That's no failed uninstall, and asking it again would only find nothing to
+   * do: the banner says it's uninstalled, and Try Again quits. The app's guard keeps every other command off the folder meanwhile.
+   */
+  const quit = () =>
+    quitApp().catch((err) => {
+      setRunning(false)
+      focusRetry.current = true
+      fail(`Quit EnvRouter yourself to finish.\n${errorMessage(err)}`, { kind: 'quit' })
+    })
+  /**
+   * Shells' Uninstall EnvRouter… and the menu bar's. After a finished run the app quits, so there is no window to put right; a
+   * stop leaves the app open with the reason in the banner, and asking again finishes the job. Asking again from that banner
+   * keeps it on screen, Try Again busy, until the answer: clearing it would show the setup the first try left behind
+   * (shells off, so "Turn On") for as long as the run takes.
+   */
+  const startUninstall = async () => {
+    if (uninstalling.current) return
+    uninstalling.current = true
+    setShellsOpen(false)
+    setEditorsOpen(false)
+    const again = actionError !== null && retry?.kind === 'uninstall'
+    const stop = (err: unknown) => {
+      uninstalling.current = false
+      setRunning(false)
+      focusRetry.current = true
+      fail(err, { kind: 'uninstall' })
+      // Shells and editors may have been turned off before it stopped.
+      refreshSetup()
+      refreshEditors()
+    }
+    try {
+      if (!(await confirmUninstall(platform.secretStore, hasUnsaved()))) {
+        uninstalling.current = false
+        // The popover that held the button is gone; its toolbar button, or the banner's Try Again, is where the user was.
+        document.querySelector<HTMLElement>(again ? '#try-again' : '[aria-controls="shells-panel"]')?.focus()
+        return
+      }
+      if (!again) setActionError(null)
+      setRunning(true)
+      const report = await uninstall(false)
+      // One line per problem, as the banner shows them.
+      if (report.problems.length > 0) return stop(report.problems.join('\n'))
+      setActionError(null)
+      // It's done; a note that can't show changes nothing.
+      await tellUninstalled(report, platform.secretStore, home).catch(() => {})
+    } catch (err) {
+      return stop(err)
+    }
+    await quit()
+  }
+  const requestUninstall = useRef(startUninstall)
+  requestUninstall.current = startUninstall
+  useEffect(() => {
+    const unlisten = listen('uninstall-requested', () => requestUninstall.current())
+    return () => {
+      unlisten.then((stop) => stop())
+    }
+  }, [])
+
   /** The banner's Try Again: whatever failed is asked for again, the error gone while it runs. */
   const tryAgain = () => {
     if (health.kind === 'unloaded') {
@@ -348,9 +428,12 @@ export default function App() {
     } else if (health.kind === 'error' && !health.dismissible) {
       refreshSetup()
     } else if (retry) {
-      setActionError(null)
+      // An uninstall's banner stays up while it runs again (`startUninstall`).
+      if (retry.kind !== 'uninstall') setActionError(null)
       if (retry.kind === 'verdict') runAction(retry.action, retry.shell)
       else if (retry.kind === 'reveal') reveal(retry.path)
+      else if (retry.kind === 'uninstall') startUninstall()
+      else if (retry.kind === 'quit') quit()
       else {
         const profile = config?.profiles.find((p) => p.id === retry.profileId)
         if (profile) confirmAndDelete(profile)
@@ -400,7 +483,22 @@ export default function App() {
 
   const closeShells = useCallback(() => setShellsOpen(false), [])
   const closeEditors = useCallback(() => setEditorsOpen(false), [])
-  const health = healthOf(config, setup, loadError, setupError, actionError, home, checkedOnce, blocked, openError, saveWarning)
+  const reported = healthOf(config, setup, loadError, setupError, actionError, home, checkedOnce, blocked, openError, saveWarning)
+  // While an uninstall runs the region holds one state, whatever the files it is changing say: the pending line, or on a retry the
+  // stop's banner with Try Again busy. Nothing in it is an accent action, so no shell can be turned back on meanwhile.
+  const health: Health = running
+    ? actionError
+      ? { kind: 'error', message: actionError, dismissible: true, busy: true, title: STOPPED }
+      : { kind: 'uninstalling' }
+    : reported.kind === 'error' && reported.dismissible && (retry?.kind === 'uninstall' || retry?.kind === 'quit')
+      ? { ...reported, title: retry.kind === 'quit' ? UNINSTALLED : STOPPED }
+      : reported
+  useEffect(() => {
+    if (focusRetry.current && health.kind === 'error' && !health.busy) {
+      focusRetry.current = false
+      document.getElementById('try-again')?.focus()
+    }
+  })
   const accents = accentsOf(health, view, inspecting, docketHasFix(check, setup, routedTools, home))
   // Before the first profile there's no map to show: the window greets instead.
   const welcome = view === 'profiles' && health.kind === 'setup' && health.step === 1
@@ -423,7 +521,8 @@ export default function App() {
             setup={setup}
             blockedShell={blocked?.shell ?? null}
             primary={accents.titlebar}
-            canCheck={canCheck}
+            canCheck={canCheck && !running}
+            busy={running}
             shellsOpen={shellsOpen}
             onToggleShells={() => {
               setEditorsOpen(false)
@@ -471,7 +570,7 @@ export default function App() {
               />
             </div>
           )}
-          {shellsOpen && setup && <ShellsPopover setup={setup} home={home} onSet={setShell} onClose={closeShells} />}
+          {shellsOpen && setup && <ShellsPopover setup={setup} home={home} onSet={setShell} onUninstall={startUninstall} onClose={closeShells} />}
           {editorsOpen && editors && <EditorsPopover editors={editors} home={home} onSet={setEditor} onClose={closeEditors} />}
           {/* Soft edges where cards scroll under the banner and the floating check card. */}
           {/* Kept while Profiles shows, only hidden, so a server's unsaved edits survive a trip there and back. */}
@@ -527,7 +626,7 @@ export default function App() {
                   routedTools={routedTools}
                   shimsDir={setup?.shimsDir ?? `${home}/.envrouter/shims`}
                   hovering={inspecting ? null : hovering}
-                  onRecheck={(shell, tool) => check && runCheck(check.folder, shell, null, tool)}
+                  onRecheck={(shell, tool) => check && !uninstalling.current && runCheck(check.folder, shell, null, tool)}
                   onAction={runAction}
                   primary={accents.docket}
                   onDismiss={() => {

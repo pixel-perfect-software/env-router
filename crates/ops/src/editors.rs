@@ -209,6 +209,41 @@ pub fn set_integration(
     Ok(status(editor, home, command, hook))
 }
 
+/// Clears `setting` from the editor's settings when it names exactly the shim (what `set_integration`
+/// off does), keeping every comment and other key, and says whether it was set. `dry_run` writes
+/// nothing. Someone else's wrapper stays. A missing file, or a link to nothing, has nothing to
+/// clear and is never created. A file that doesn't parse is skipped unless its text names the
+/// shim: then it is the reason a wrapper may stay behind pointing at a deleted shim.
+pub fn clear_ours(editor: Editor, home: &Path, setting: &str, dry_run: bool) -> Result<bool> {
+    let Some(file) = config::write_target(&editor.settings_file(home)) else {
+        return Ok(false);
+    };
+    let current = match fs::read_to_string(&file) {
+        Ok(text) => text,
+        Err(err) if err.kind() == ErrorKind::NotFound => return Ok(false),
+        Err(source) => return Err(Error::Io { path: file, source }),
+    };
+    let ours = shim(home);
+    let updated = match with_wrapper(&current, setting, &ours, false) {
+        Ok(updated) => updated,
+        Err(_) if !current.contains(&ours) => return Ok(false),
+        Err(_) => {
+            return Err(Error::Invalid(format!(
+                "`{}` couldn't be read, and it names EnvRouter's shim in `{setting}`. Fix it in {}, or delete that setting, then uninstall again.",
+                file.display(),
+                editor.label()
+            )))
+        }
+    };
+    if updated == current {
+        return Ok(false);
+    }
+    if !dry_run {
+        config::write_atomic(&file, updated)?;
+    }
+    Ok(true)
+}
+
 /// The installed shim, as the setting names it. Editors don't expand `~`.
 fn shim(home: &Path) -> String {
     paths::shim_binary(home).display().to_string()
@@ -473,5 +508,56 @@ mod tests {
         set_integration(Editor::Code, home, "claude", &hook(), false).unwrap();
         assert!(fs::symlink_metadata(&link).unwrap().is_symlink());
         assert!(!home.join("unmounted").exists());
+    }
+
+    #[test]
+    fn clearing_takes_only_the_shims_own_setting() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let file = Editor::Code.settings_file(home);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        let mine = format!(
+            "{{\n  // keep\n  \"a\": 1,\n  \"{KEY}\": \"{}\"\n}}\n",
+            shim(home)
+        );
+        fs::write(&file, &mine).unwrap();
+
+        assert!(clear_ours(Editor::Code, home, KEY, true).unwrap());
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            mine,
+            "a dry run writes nothing"
+        );
+        assert!(clear_ours(Editor::Code, home, KEY, false).unwrap());
+        let cleared = fs::read_to_string(&file).unwrap();
+        assert!(
+            cleared.contains("// keep") && cleared.contains("\"a\": 1"),
+            "{cleared}"
+        );
+        assert!(!cleared.contains(KEY), "{cleared}");
+        assert!(
+            !clear_ours(Editor::Code, home, KEY, false).unwrap(),
+            "already clear"
+        );
+
+        let theirs = format!("{{ \"{KEY}\": \"/usr/local/bin/my-wrapper\" }}");
+        fs::write(&file, &theirs).unwrap();
+        assert!(!clear_ours(Editor::Code, home, KEY, false).unwrap());
+        assert_eq!(fs::read_to_string(&file).unwrap(), theirs);
+
+        // A file that won't parse is only a problem when it names the shim.
+        fs::write(&file, "{ \"a\": ").unwrap();
+        assert!(!clear_ours(Editor::Code, home, KEY, false).unwrap());
+        fs::write(&file, format!("{{ \"{KEY}\": \"{}\" ", shim(home))).unwrap();
+        let err = clear_ours(Editor::Code, home, KEY, false).unwrap_err();
+        assert!(err.to_string().contains("couldn't be read"), "{err}");
+        // The window sets what is in backticks in mono: the file (its path has spaces) and the setting.
+        let named =
+            format!("settings.json` couldn't be read, and it names EnvRouter's shim in `{KEY}`");
+        assert!(err.to_string().contains(&named), "{err}");
+
+        // Nothing to clear in an editor that never ran, and nothing is created.
+        assert!(!clear_ours(Editor::Cursor, home, KEY, false).unwrap());
+        assert!(!Editor::Cursor.settings_file(home).exists());
     }
 }

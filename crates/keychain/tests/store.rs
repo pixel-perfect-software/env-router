@@ -25,6 +25,20 @@ fn saves_reads_updates_and_deletes_the_secrets() {
     assert!(envrouter_keychain::read(home).unwrap().is_empty());
 }
 
+/// Over 5,120 bytes, so the Credential Manager keeps it in three parts.
+#[test]
+#[ignore = "uses the machine's secret store"]
+fn deletes_the_whole_item_and_is_fine_with_none() {
+    let home = tempfile::tempdir().unwrap();
+    let home = home.path();
+    envrouter_keychain::delete(home).unwrap();
+
+    let big = HashMap::from([("A1".to_string(), "x".repeat(6000))]);
+    envrouter_keychain::write(home, &big).unwrap();
+    envrouter_keychain::delete(home).unwrap();
+    assert!(envrouter_keychain::read(home).unwrap().is_empty());
+}
+
 #[test]
 #[ignore = "uses the machine's secret store"]
 fn finds_no_problem_with_a_store_it_can_use() {

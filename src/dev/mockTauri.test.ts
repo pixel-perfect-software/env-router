@@ -3,7 +3,7 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ConfigState, EditorStatus, ImportCandidate, McpServer, Pasted, SaveOutcome, SetupStatus, ToolInfo } from '../lib/types'
+import type { ConfigState, EditorStatus, ImportCandidate, McpServer, Pasted, SaveOutcome, SetupStatus, ToolInfo, UninstallReport } from '../lib/types'
 
 const boot = async (search: string) => {
   vi.resetModules()
@@ -256,5 +256,54 @@ describe('npm', () => {
     expect(await call('npm_dist_tags', { command: 'npx', package: '@acme/mcp' })).toMatchObject({ latest: '1.4.0' })
     await expect(call('npm_dist_tags', { command: 'npx', package: 'acme-nope' })).rejects.toBe('npm has no package named acme-nope.')
     await expect(call('npm_dist_tags', { command: 'uvx', package: 'git' })).rejects.toBe("uvx isn't npx, so there's no npm package to look up.")
+  })
+})
+
+describe('uninstall', () => {
+  const GUARD = 'EnvRouter is uninstalled. Quit it to finish.'
+  const zsh = async (call: Awaited<ReturnType<typeof boot>>) => (await call<SetupStatus>('get_setup_status')).shells.find((s) => s.shell === 'zsh')
+
+  it('changes nothing when it only plans', async () => {
+    const call = await boot('?scenario=populated')
+    const plan = await call<UninstallReport>('uninstall', { dryRun: true })
+    expect(plan).toMatchObject({
+      dryRun: true,
+      shellFiles: ['/Users/sam/.zshrc'],
+      secrets: { status: 'wouldDelete' },
+      folder: 'wouldDelete',
+      problems: [],
+    })
+    expect((await zsh(call))?.installed).toBe(true)
+    expect((await call<ConfigState>('get_config')).profiles).not.toHaveLength(0)
+  })
+
+  it('stops at an editor it cannot read before the store and the folder, as uninstall::run does, and finishes once that is fixed', async () => {
+    const call = await boot('?scenario=populated&fail=uninstall')
+    const stopped = await call<UninstallReport>('uninstall', { dryRun: false })
+    expect(stopped.problems).toEqual([
+      "`/Users/sam/Library/Application Support/Code/User/settings.json` couldn't be read, and it names EnvRouter's shim in `claudeCode.claudeProcessWrapper`. Fix it in VS Code, or delete that setting, then uninstall again.",
+      "`/Users/sam/Library/Application Support/Cursor/User/settings.json` couldn't be read, and it names EnvRouter's shim in `claudeCode.claudeProcessWrapper`. Fix it in Cursor, or delete that setting, then uninstall again.",
+    ])
+    expect(stopped).toMatchObject({ secrets: { status: 'notReached' }, folder: 'notReached' })
+    // Every shell was still attempted, and nothing after the stop was touched.
+    expect((await zsh(call))?.installed).toBe(false)
+    expect((await call<ConfigState>('get_config')).profiles).not.toHaveLength(0)
+
+    window.__mockFix()
+    expect(await call<UninstallReport>('uninstall', { dryRun: false })).toMatchObject({ problems: [], folder: 'deleted' })
+  })
+
+  it('refuses every command that reaches the home folder once finished, with the unreachable store noted, as home() does', async () => {
+    const call = await boot('?scenario=mcp&store=off&platform=linux')
+    const done = await call<UninstallReport>('uninstall', { dryRun: false })
+    expect(done).toMatchObject({ problems: [], secrets: { status: 'unreachable' }, folder: 'deleted' })
+    expect(done.removeNext).toEqual([{ what: 'app', command: 'sudo apt remove env-router' }])
+
+    await expect(call('get_config')).rejects.toEqual({ kind: 'other', message: GUARD })
+    await expect(call('get_setup_status')).rejects.toBe(GUARD)
+    await expect(call('save_config', { payload: {}, secrets: {} })).rejects.toBe(GUARD)
+    // The window can still ask to quit, and read pasted text.
+    await call('set_unsaved_edits', { unsaved: false })
+    await call('quit_app')
   })
 })

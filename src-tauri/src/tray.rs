@@ -20,6 +20,9 @@ const TRAY_ID: &str = "main";
 /// Emitted to the window when the menu's "Check Folder…" is chosen.
 pub const CHECK_FOLDER_EVENT: &str = "check-folder";
 
+/// Emitted to the window when the menu's "Uninstall EnvRouter…" is chosen.
+pub const UNINSTALL_EVENT: &str = "uninstall-requested";
+
 /// Decoded at compile time, so the app needs no PNG decoder at runtime.
 const ICON: Image<'static> = tauri::include_image!("icons/tray.png");
 // `include_image!` embeds a decoded copy from `OUT_DIR`, so Cargo wouldn't notice the PNG
@@ -38,6 +41,10 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             "check" => {
                 show_window(app);
                 let _ = app.emit(CHECK_FOLDER_EVENT, ());
+            }
+            "uninstall" => {
+                show_window(app);
+                let _ = app.emit(UNINSTALL_EVENT, ());
             }
             "quit" => app.exit(0),
             _ => {}
@@ -151,6 +158,13 @@ fn menu(app: &AppHandle, (status, profiles): (String, Option<String>)) -> tauri:
         app,
         "open",
         "Open EnvRouter",
+        true,
+        None::<&str>,
+    )?));
+    items.push(Box::new(MenuItem::with_id(
+        app,
+        "uninstall",
+        "Uninstall EnvRouter…",
         true,
         None::<&str>,
     )?));

@@ -14,15 +14,20 @@ use std::ptr;
 use envrouter_core::{Error, Result};
 use windows_sys::Win32::Foundation::{GetLastError, ERROR_NOT_FOUND};
 use windows_sys::Win32::Security::Credentials::{
-    CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_MAX_CREDENTIAL_BLOB_SIZE,
-    CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
+    CredDeleteW, CredEnumerateW, CredFree, CredReadW, CredWriteW, CREDENTIALW,
+    CRED_MAX_CREDENTIAL_BLOB_SIZE, CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
 };
 
 fn target(service: &str, account: &str, part: usize) -> Vec<u16> {
-    format!("{service}:{account}#{part}")
+    format!("{}{part}", target_prefix(service, account))
         .encode_utf16()
         .chain(Some(0))
         .collect()
+}
+
+/// What every part's target name starts with: `<service>:<account>#`.
+fn target_prefix(service: &str, account: &str) -> String {
+    format!("{service}:{account}#")
 }
 
 fn last_error(action: &str) -> Error {
@@ -124,11 +129,76 @@ pub fn set(service: &str, account: &str, value: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Deleting an item that isn't there is fine.
+/// The numbers of the item's parts that exist, found by name with the Credential Manager's own
+/// prefix filter, so no blob is read and a part past a missing one (an old failed cleanup) is
+/// found too.
+fn parts_present(service: &str, account: &str) -> Result<Vec<usize>> {
+    let prefix = target_prefix(service, account);
+    let filter: Vec<u16> = format!("{prefix}*").encode_utf16().chain(Some(0)).collect();
+    let mut count: u32 = 0;
+    let mut credentials: *mut *mut CREDENTIALW = ptr::null_mut();
+    // SAFETY: `filter` is a NUL-terminated UTF-16 string that outlives the call, and `count`
+    // and `credentials` are valid out pointers.
+    let ok = unsafe { CredEnumerateW(filter.as_ptr(), 0, &raw mut count, &raw mut credentials) };
+    if ok == 0 {
+        // SAFETY: as in `last_error`.
+        return if unsafe { GetLastError() } == ERROR_NOT_FOUND {
+            Ok(Vec::new())
+        } else {
+            Err(last_error("list"))
+        };
+    }
+    let mut names = Vec::new();
+    // SAFETY: on success `credentials` points to `count` valid credential pointers, each with a
+    // NUL-terminated `TargetName` (the one we filtered on, so never null); all of it stays valid
+    // until `CredFree`, after the names are copied out.
+    unsafe {
+        for &credential in std::slice::from_raw_parts(credentials, count as usize) {
+            let credential = &*credential;
+            if credential.Type != CRED_TYPE_GENERIC || credential.TargetName.is_null() {
+                continue;
+            }
+            let mut len = 0;
+            while *credential.TargetName.add(len) != 0 {
+                len += 1;
+            }
+            names.push(String::from_utf16_lossy(std::slice::from_raw_parts(
+                credential.TargetName,
+                len,
+            )));
+        }
+        CredFree(credentials.cast());
+    }
+    Ok(part_numbers(&prefix, &names))
+}
+
+/// The part numbers among `names`, which are target names that matched `prefix*`. Another
+/// account that merely begins with this one's (`…/sam#1` against `…/sam`) leaves something
+/// other than a number after the prefix, and is not ours. Names compare without regard to case,
+/// as the Credential Manager's do.
+fn part_numbers(prefix: &str, names: &[String]) -> Vec<usize> {
+    let mut parts: Vec<usize> = names
+        .iter()
+        .filter_map(|name| {
+            let head = name.get(..prefix.len())?;
+            let tail = name.get(prefix.len()..)?;
+            if !head.eq_ignore_ascii_case(prefix) || !tail.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            tail.parse().ok()
+        })
+        .collect();
+    parts.sort_unstable();
+    parts.dedup();
+    parts
+}
+
+/// Deleting an item that isn't there is fine. Every part present goes, from the last down to
+/// `#0`, so a failure part-way leaves parts from `#0` up, which `get` still reads, rather than
+/// stranding some behind a gap.
 pub fn delete(service: &str, account: &str) -> Result<()> {
-    let mut part = 0;
-    while delete_part(&target(service, account, part))? {
-        part += 1;
+    for part in parts_present(service, account)?.into_iter().rev() {
+        delete_part(&target(service, account, part))?;
     }
     Ok(())
 }

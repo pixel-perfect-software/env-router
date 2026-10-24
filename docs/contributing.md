@@ -125,12 +125,12 @@ shell startup files. Two ways to avoid that:
 
   | Parameter | Shows |
   |---|---|
-  | `&platform=linux` | A Linux desktop: `/home/sam`, bash reading `.bashrc`, `~/.config` editor settings, the keyring |
+  | `&platform=linux` | A Linux desktop: `/home/sam`, bash reading `.bashrc`, `~/.config` editor settings, the keyring; an uninstall ends by naming `sudo apt remove env-router` |
   | `&platform=wsl` | A WSL distro: bash reading `.profile` and `.bashrc`, no zsh, the Credential Manager, VS Code Server and Cursor Server |
   | `&check=<result>` | Forces a folder check's answer (use it with `populated` or `mcp`): `routed` (the default, worked out from the config), `managed` (an admin's `managed-mcp.json` turns the profile's MCP servers off), `alias` (the run goes through an alias that runs the tool), `owned` (a profile owns the folder but leaves the agent alone), `unowned` (no profile owns it), `shadowedOnPath`, `byPromptHook`, `shadowedByShell`, `notFound`, `notInstalled`, `shimFailed`, or the failures `timeout` and `noPath` |
   | `&shim=stale` | The shim missing or out of date; any save or switch reinstalls it |
-  | `&store=off` | No secret store: a save that adds a secret fails as it would there, one that drops a secret goes through with a warning banner, and off macOS (`&platform=linux`) the setup status says so up front, locking the lock off |
-  | `&fail=<what>` | `home` (no home folder, so nothing to open the config from), `status` (the setup status can't be read), `shell` (turning a shell on is refused), `editor` (no editor opens a file: with `?scenario=broken`, Open config.json fails and Reveal takes the accent) or `reveal` (Reveal fails, and the accent stays on Open): the failure stays until `window.__mockFix()` in the console, then Try Again works |
+  | `&store=off` | No secret store: a save that adds a secret fails as it would there, one that drops a secret goes through with a warning banner, and off macOS (`&platform=linux`) the setup status says so up front, locking the lock off. Uninstall EnvRouter… goes on past an unreachable store off macOS and says the secrets are still there; on macOS, where only the delete can tell, it stops at the store |
+  | `&fail=<what>` | `home` (no home folder, so nothing to open the config from), `status` (the setup status can't be read), `shell` (turning a shell on is refused), `editor` (no editor opens a file: with `?scenario=broken`, Open config.json fails and Reveal takes the accent), `reveal` (Reveal fails, and the accent stays on Open) or `uninstall` (Uninstall EnvRouter… stops at VS Code's and Cursor's settings, which can't be read and name the shim: the banner shows why, a line each, the shells are already off, and nothing after that was touched): the failure stays until `window.__mockFix()` in the console, then Try Again works |
 
   The `mcp` library also holds a server named `slow`, whose check times out, and Import there
   reads realistic agent files, so a server already in the library shows as such.
@@ -140,7 +140,8 @@ shell startup files. Two ways to avoid that:
   behind the window's back, as the CLI or a hand edit would, so the next save meets it;
   `window.__mockDeleteConfig()` deletes it the same way. `window.__mockQuit()` quits as the menu
   bar's Quit does: with unsaved edits in an editor the window asks first, and a quit that goes
-  ahead logs `quit` to the console. The mock's
+  ahead logs `quit` to the console. Uninstall EnvRouter… (in the Shells popover) runs to its end here too: the mock clears
+  what it changed, then answers every command but the quit ones with the guard's message, as the app does until it quits (`quit` is logged). The mock's
   npm knows every package at `1.4.0` (`next` at `2.0.0-beta.2`), except a name ending in `-nope`. When you change a command's behaviour, keep the mock answering the way the
   real backend does.
 

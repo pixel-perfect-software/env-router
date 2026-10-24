@@ -169,6 +169,24 @@ export interface EditorStatus {
   installed: boolean
 }
 
+/** `uninstall::UninstallReport`: what an uninstall did, or with `dryRun` would do. */
+export interface UninstallReport {
+  dryRun: boolean
+  /** The startup files that held EnvRouter's block. */
+  shellFiles: string[]
+  /** The settings that named the shim. */
+  editorFiles: { editor: Editor; settingsFile: string; setting: string }[]
+  /** `unreachable`: the store can't be used from here, so any secrets EnvRouter kept in it are still there. `notReached`: an earlier step stopped the run. */
+  secrets: { status: 'deleted' | 'wouldDelete' | 'notReached' } | { status: 'unreachable'; reason: string }
+  folder: 'deleted' | 'wouldDelete' | 'absent' | 'notReached'
+  /** Things found and left alone, such as where a linked `~/.envrouter` pointed. */
+  left: string[]
+  /** Why it stopped, one sentence each, worded to show as it is, with paths and setting names in backticks. Empty when it went through. */
+  problems: string[]
+  /** The commands that remove what EnvRouter can't remove from itself, once it has finished. */
+  removeNext: { what: 'app' | 'cli'; command: string }[]
+}
+
 /** `shell::FolderCheck`: what running a tool in a folder does in a new terminal window. */
 export type FolderCheck =
   /** The shim runs. `profile` is null when no profile owns the folder. `mcp`: the servers it adds, if every secret they need is readable. */

@@ -10,3 +10,4 @@ pub mod npm;
 pub mod rpc;
 pub mod shell;
 pub mod shims;
+pub mod uninstall;

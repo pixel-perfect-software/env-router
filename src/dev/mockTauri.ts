@@ -21,11 +21,15 @@
 // - `&store=off`: there's no secret store, so saving a secret (or checking a server that needs
 //   a saved one) fails as it does there, and a save that drops a secret goes through with a warning. Off macOS the setup status says so up front
 //   (`secretStoreProblem`); on macOS nothing can tell until a save, so it stays null.
-// - `&fail=home|status|shell|editor|reveal`: the home folder can't be found (the unloaded banner, with no file to open),
+// - `&fail=home|status|shell|editor|reveal|uninstall`: the home folder can't be found (the unloaded banner, with no file to open),
 //   the setup status can't be read (the error banner), turning a shell on fails (an error
 //   banner with Dismiss), or no editor opens a file (use it with `?scenario=broken`: the unloaded
-//   banner's Open config.json fails and Reveal takes the accent; `reveal` makes Reveal fail). It keeps failing until `window.__mockFix()` is called, the way a
+//   banner's Open config.json fails and Reveal takes the accent; `reveal` makes Reveal fail), or
+//   Uninstall EnvRouter… stops (VS Code's and Cursor's settings can't be read and name the shim: the banner
+//   shows why, a line each, with Try Again, and the shells are already off). It keeps failing until `window.__mockFix()` is called, the way a
 //   permission or a missing file keeps failing until the user fixes it.
+// Uninstall EnvRouter… (Shells) works through to its end here: it clears what it changed, and then, as the app does, every command
+// but the quit ones answers "EnvRouter is uninstalled. Quit it to finish." while the window waits to quit (logged as "quit").
 // The mcp library has a server named `slow` whose check times out. `window.__mockDrop(path, x, y)`
 // simulates a Finder drop. `window.__mockEditConfig(edit)` changes config.json as the CLI or a
 // hand edit would, behind the window's back, so a save from an open editor meets it, and
@@ -39,7 +43,7 @@ import { emit } from '@tauri-apps/api/event'
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
 import { isSecret } from '../lib/mcp'
 import { platformInfo } from '../lib/platform'
-import { withAgents } from '../lib/tools'
+import { ideHooks, withAgents } from '../lib/tools'
 import type {
   AgentDef,
   ConfigFault,
@@ -61,6 +65,7 @@ import type {
   Shell,
   ShellStatus,
   ToolInfo,
+  UninstallReport,
 } from '../lib/types'
 
 const params = new URLSearchParams(location.search)
@@ -72,7 +77,9 @@ const scenario = params.get('scenario') ?? 'first-run'
 const forcedCheck = params.get('check')
 const storeOff = params.get('store') === 'off'
 /** What `&fail=` breaks, until `window.__mockFix()`. */
-let failing: string | null = ['home', 'status', 'shell', 'editor', 'reveal'].includes(params.get('fail') ?? '') ? params.get('fail') : null
+let failing: string | null = ['home', 'status', 'shell', 'editor', 'reveal', 'uninstall'].includes(params.get('fail') ?? '')
+  ? params.get('fail')
+  : null
 
 /** `config::CONFIG_VERSION`: every save writes it. */
 const CONFIG_VERSION = 5
@@ -173,6 +180,8 @@ const backedUp = new Set<string>()
 let backups = 0
 /** config.json was deleted behind the window's back; the next read creates an empty one. */
 let configMissing = false
+/** An uninstall finished: `UNINSTALLED` in src-tauri, which refuses every command that reaches the home folder. */
+let uninstalled = false
 /** `quit::UNSAVED` and `quit::ASKED`. */
 let unsaved = false
 let quitAsked = false
@@ -780,8 +789,71 @@ const popupMenu = (entries: MenuEntry[]) => {
 
 const failed = (status: ServerCheck['status'], message: string, log: string | null = null): ServerCheck => ({ status, tools: [], message, log })
 
+/** What `home()` in src-tauri answers once an uninstall has finished. */
+const UNINSTALLED = 'EnvRouter is uninstalled. Quit it to finish.'
+
+/** The commands that never ask for the home folder, so the guard in `home()` doesn't stop them. */
+const UNGUARDED = ['set_unsaved_edits', 'quit_app', 'parse_mcp_json']
+
+/** `uninstall::remove_next`, as an app installed the usual way would hear it. */
+const removeNext = (): UninstallReport['removeNext'] =>
+  macos
+    ? [
+        { what: 'app', command: 'brew uninstall --zap --cask envrouter' },
+        { what: 'cli', command: 'brew uninstall envrouter-cli' },
+      ]
+    : [{ what: 'app', command: 'sudo apt remove env-router' }]
+
+/**
+ * `uninstall::run`: shells, then editors (every file tried, a problem stops the run before the next step), then the stored secrets (a store
+ * that can't be reached doesn't stop it, one that won't delete does), then the folder. `dryRun` changes nothing.
+ */
+const uninstall = (dryRun: boolean): UninstallReport => {
+  const shellFiles = [...new Set(setup.shells.filter((s) => s.installed).flatMap((s) => s.startupFiles))]
+  const settings = [...new Set(Object.values(ideHooks()).map((hook) => hook.setting))]
+  const editorFiles: UninstallReport['editorFiles'] = []
+  const problems: string[] = []
+  for (const spot of editorSpots) {
+    for (const setting of settings) {
+      const key = `${spot.settingsFile} ${setting}`
+      if (failing === 'uninstall' && (spot.editor === 'code' || spot.editor === 'cursor')) {
+        problems.push(
+          `\`${spot.settingsFile}\` couldn't be read, and it names EnvRouter's shim in \`${setting}\`. Fix it in ${spot.label}, or delete that setting, then uninstall again.`,
+        )
+      } else if (wrappers.get(key) === SHIM) {
+        editorFiles.push({ editor: spot.editor, settingsFile: spot.settingsFile, setting })
+        if (!dryRun) wrappers.delete(key)
+      }
+    }
+  }
+  if (!dryRun) for (const s of setup.shells) s.installed = false
+  const report = { dryRun, shellFiles, editorFiles, left: [], problems, removeNext: removeNext() }
+  if (problems.length > 0) return { ...report, secrets: { status: 'notReached' }, folder: 'notReached' }
+
+  // Off macOS `store::usable` says so before anything is deleted; the Keychain can't tell until it's asked, and refuses the delete.
+  const unreachable = storeOff && !macos
+  if (storeOff && macos && !dryRun) {
+    const why = `Couldn't delete the stored MCP secrets: ${storeError.replace(/\.$/, '')}. \`~/.envrouter\` is still there: remove \`EnvRouter MCP secrets\` from the ${storeName} yourself if this keeps failing, then run uninstall again.`
+    return { ...report, problems: [why], secrets: { status: 'notReached' }, folder: 'notReached' }
+  }
+  const secrets: UninstallReport['secrets'] = unreachable
+    ? { status: 'unreachable', reason: storeError }
+    : { status: dryRun ? 'wouldDelete' : 'deleted' }
+  if (!dryRun) {
+    stored = new Set()
+    config = { version: CONFIG_VERSION, profiles: [], mcpServers: {}, agents: {} }
+    uninstalled = true
+  }
+  return { ...report, secrets, folder: dryRun ? 'wouldDelete' : 'deleted' }
+}
+
 const respond = async (cmd: string, args: unknown): Promise<unknown> => {
   const a = (args ?? {}) as Record<string, unknown>
+  if (uninstalled && !cmd.startsWith('plugin:') && !UNGUARDED.includes(cmd)) {
+    // `get_config` is the one command that rejects with its kind too.
+    if (cmd === 'get_config') throw { kind: 'other', message: UNINSTALLED } satisfies ConfigFault
+    throw UNINSTALLED
+  }
   switch (cmd) {
     case 'plugin:path|resolve_directory':
       // tauri's `Error::UnknownPath`
@@ -890,6 +962,9 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       unsaved = false
       console.info('quit')
       return null
+    case 'uninstall':
+      await delay(700)
+      return uninstall(a.dryRun === true)
     case 'npm_dist_tags': {
       await delay(700)
       const command = String(a.command)

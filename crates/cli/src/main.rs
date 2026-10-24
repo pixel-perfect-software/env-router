@@ -15,6 +15,10 @@ use envrouter_core::{agents, paths, Error, Result};
 use envrouter_ops::commands::{self, CliSave, SecretUse};
 use envrouter_ops::editors::{Editor, EditorStatus};
 use envrouter_ops::shell::{FolderCheck, Shell, ShellStatus};
+use envrouter_ops::uninstall::{
+    refuse_while_app_runs, Caller, FolderStep, Removable, SecretsStep, UninstallReport,
+    SECRETS_ITEM,
+};
 use envrouter_ops::{rpc, shims};
 
 #[derive(Parser)]
@@ -74,6 +78,16 @@ enum Command {
     Secret {
         #[command(subcommand)]
         action: SecretAction,
+    },
+    /// Turn routing off everywhere, delete the stored MCP secrets and ~/.envrouter, and name the
+    /// commands that remove the app and this command. Asks first; run it again after a stop.
+    Uninstall {
+        /// Don't ask first; required without a terminal.
+        #[arg(long)]
+        yes: bool,
+        /// Show what it would do and change nothing.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Answer the window's commands as JSON lines on stdin and stdout.
     Rpc,
@@ -288,6 +302,7 @@ fn run(cli: &Cli, home: &Path) -> Result<ExitCode> {
             print(cli, &secrets, || secret_lines(&secrets));
             Ok(ExitCode::SUCCESS)
         }
+        Command::Uninstall { yes, dry_run } => uninstall(cli, home, *yes, *dry_run),
         Command::Rpc => {
             serve_rpc(home)?;
             Ok(ExitCode::SUCCESS)
@@ -343,10 +358,7 @@ fn status(cli: &Cli, home: &Path) -> Result<ExitCode> {
 
 /// Installs from the files beside this command, as a release's archive lays them out.
 fn install(cli: &Cli, home: &Path) -> Result<ExitCode> {
-    let me = std::env::current_exe().map_err(|source| Error::Io {
-        path: PathBuf::from("current executable"),
-        source,
-    })?;
+    let me = shims::current_exe()?;
     let changed = shims::install_bundled(home)? | shims::install_cli(home, &me)?;
     // In memory: install changes no config. `apply` (or the window) saves the filled agents.
     shims::sync(home, &agents::with_agents(commands::get_config(home)?))?;
@@ -365,6 +377,162 @@ fn install(cli: &Cli, home: &Path) -> Result<ExitCode> {
         )
     });
     Ok(ExitCode::SUCCESS)
+}
+
+/// Shows the plan, asks, then runs the uninstall. A stop is a report with problems, which exits
+/// 1 so a script notices, and running it again finishes the job.
+fn uninstall(cli: &Cli, home: &Path, yes: bool, dry_run: bool) -> Result<ExitCode> {
+    let asks = !yes && !dry_run;
+    // Checked before anything runs: nobody is there to answer.
+    if asks && !io::stdin().is_terminal() {
+        return Err(Error::Invalid(
+            "envrouter uninstall asks first. Pass --yes to run it without a terminal.".into(),
+        ));
+    }
+    let caller = Caller::Cli {
+        exe: shims::current_exe()?,
+    };
+
+    if dry_run {
+        let plan = commands::uninstall(home, true, &caller)?;
+        print_lines(cli, &plan, &uninstall_lines(&plan, home));
+        if !cli.json {
+            eprint_problems(&plan);
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
+    // Before it asks: the window's next refocus would put the folder back, so there is nothing
+    // to agree to until it is closed. The run itself checks too.
+    refuse_while_app_runs(home, &caller)?;
+    if asks {
+        // On stderr with the question, so `--json` keeps stdout for the report.
+        let plan = commands::uninstall(home, true, &caller)?;
+        eprintln!("{}", uninstall_lines(&plan, home).join("\n"));
+        eprint_problems(&plan);
+        eprint!("Uninstall EnvRouter? [y/N] ");
+        let _ = io::stderr().flush();
+        let mut answer = String::new();
+        io::stdin()
+            .lock()
+            .read_line(&mut answer)
+            .map_err(|err| Error::Command(format!("couldn't read the answer: {err}")))?;
+        if !matches!(answer.trim().to_lowercase().as_str(), "y" | "yes") {
+            eprintln!("Nothing was changed.");
+            return Ok(ExitCode::FAILURE);
+        }
+    }
+
+    let report = commands::uninstall(home, false, &caller)?;
+    let mut lines = uninstall_lines(&report, home);
+    if report.finished() {
+        lines.extend(remove_next_lines(&report));
+    }
+    print_lines(cli, &report, &lines);
+    if !cli.json {
+        eprint_problems(&report);
+    }
+    if report.finished() {
+        return Ok(ExitCode::SUCCESS);
+    }
+    if !cli.json {
+        eprintln!("Nothing after that was removed. Run envrouter uninstall again once it's fixed.");
+    }
+    Ok(ExitCode::FAILURE)
+}
+
+/// Like `print`, but says nothing in the human form when there are no lines.
+fn print_lines<T: serde::Serialize>(cli: &Cli, value: &T, lines: &[String]) {
+    if cli.json || !lines.is_empty() {
+        print(cli, value, || lines.join("\n"));
+    }
+}
+
+/// What the uninstall did, or with a plan would do, one line per step. Problems are separate:
+/// they go to stderr.
+fn uninstall_lines(report: &UninstallReport, home: &Path) -> Vec<String> {
+    let (turned, cleared, deleted) = if report.dry_run {
+        ("Would turn routing off in", "Would clear", "Would delete")
+    } else {
+        ("Turned routing off in", "Cleared", "Deleted")
+    };
+    let store = Platform::current().secret_store_name();
+    let mut lines = Vec::new();
+    // The secrets line below still follows: a lone item can outlive a hand-deleted folder, so the
+    // store is asked either way.
+    if report.shell_files.is_empty()
+        && report.editor_files.is_empty()
+        && report.folder == FolderStep::Absent
+    {
+        lines.push(format!(
+            "Nothing to turn off or delete: no shell block, no editor wrapper and no {}.",
+            tilde(&paths::root(home), home)
+        ));
+    }
+    if !report.shell_files.is_empty() {
+        let files: Vec<String> = report
+            .shell_files
+            .iter()
+            .map(|file| tilde(Path::new(file), home))
+            .collect();
+        lines.push(format!("{turned} {}", files.join(", ")));
+    }
+    for file in &report.editor_files {
+        lines.push(format!(
+            "{cleared} {} in {} ({})",
+            file.setting,
+            file.editor.label(),
+            tilde(Path::new(&file.settings_file), home)
+        ));
+    }
+    match &report.secrets {
+        SecretsStep::Deleted | SecretsStep::WouldDelete => {
+            lines.push(format!(
+                "{deleted} any MCP secrets EnvRouter kept in the {store}"
+            ));
+        }
+        SecretsStep::Unreachable { reason } => lines.push(format!(
+            "Couldn't reach the {store} ({reason}), so any MCP secrets EnvRouter kept there are still in it, as \"{SECRETS_ITEM}\"."
+        )),
+        SecretsStep::NotReached => {}
+    }
+    if matches!(report.folder, FolderStep::Deleted | FolderStep::WouldDelete) {
+        lines.push(format!("{deleted} {}", tilde(&paths::root(home), home)));
+    }
+    for target in &report.left {
+        lines.push(format!(
+            "Left {} alone: {} pointed there",
+            tilde(Path::new(target), home),
+            tilde(&paths::root(home), home)
+        ));
+    }
+    lines
+}
+
+fn eprint_problems(report: &UninstallReport) {
+    for problem in &report.problems {
+        eprintln!("envrouter: {problem}");
+    }
+    if report.dry_run && !report.problems.is_empty() {
+        eprintln!("A real run would stop there.");
+    }
+}
+
+/// The commands that remove what is left, after a finished uninstall.
+fn remove_next_lines(report: &UninstallReport) -> Vec<String> {
+    let mut lines = Vec::new();
+    for next in &report.remove_next {
+        match next.what {
+            Removable::App => {
+                lines.push(format!("Next, to remove the app: {}", next.command));
+                lines.push("Opening the app sets EnvRouter up again.".into());
+            }
+            Removable::Cli => lines.push(format!(
+                "Next, to remove the envrouter command: {}",
+                next.command
+            )),
+        }
+    }
+    lines
 }
 
 /// A save that went through but couldn't finish tidying the secret store says so, as the window
@@ -511,12 +679,13 @@ fn serve_rpc(home: &Path) -> Result<()> {
         .map_err(|err| Error::Command(err.to_string()))?;
     let stdin = io::stdin();
     let mut stdout = io::stdout().lock();
+    let mut session = rpc::Session::new(home);
     for line in stdin.lock().lines() {
         let line = line.map_err(|err| Error::Command(err.to_string()))?;
         if line.trim().is_empty() {
             continue;
         }
-        let response = runtime.block_on(rpc::handle_line(home, &line));
+        let response = runtime.block_on(session.handle_line(&line));
         let json = serde_json::to_string(&response).expect("a response always serializes");
         writeln!(stdout, "{json}")
             .and_then(|()| stdout.flush())
@@ -707,5 +876,45 @@ fn tilde(path: &Path, home: &Path) -> String {
         Ok(rest) if rest.as_os_str().is_empty() => "~".into(),
         Ok(rest) => format!("~/{}", rest.display()),
         Err(_) => path.display().to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plan(shell_files: &[&str], folder: FolderStep) -> UninstallReport {
+        UninstallReport {
+            dry_run: true,
+            shell_files: shell_files.iter().map(|file| (*file).to_string()).collect(),
+            editor_files: Vec::new(),
+            secrets: SecretsStep::WouldDelete,
+            folder,
+            left: Vec::new(),
+            problems: Vec::new(),
+            remove_next: Vec::new(),
+        }
+    }
+
+    /// A machine that never had EnvRouter says so, and still names the store, since an item can
+    /// outlive a folder deleted by hand; a machine that has it doesn't say so.
+    #[test]
+    fn a_plan_with_nothing_set_up_says_so_and_still_names_the_store() {
+        let home = Path::new("/home/sam");
+        let empty = uninstall_lines(&plan(&[], FolderStep::Absent), home);
+        assert!(
+            empty[0].starts_with("Nothing to turn off or delete"),
+            "{empty:?}"
+        );
+        assert!(
+            empty[1].starts_with("Would delete any MCP secrets EnvRouter kept"),
+            "{empty:?}"
+        );
+
+        let set_up = uninstall_lines(&plan(&["/home/sam/.zshrc"], FolderStep::WouldDelete), home);
+        assert!(
+            set_up.iter().all(|line| !line.starts_with("Nothing")),
+            "{set_up:?}"
+        );
     }
 }

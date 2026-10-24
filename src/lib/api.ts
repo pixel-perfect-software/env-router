@@ -19,6 +19,7 @@ import type {
   Shell,
   ShellStatus,
   ToolInfo,
+  UninstallReport,
 } from './types'
 
 /**
@@ -88,6 +89,13 @@ export const getMcpTools = () => invoke<Record<string, ToolInfo[]>>('get_mcp_too
 export const importCandidates = (payload: ConfigState) => invoke<ImportCandidate[]>('import_candidates', { payload })
 /** The servers in pasted JSON. Rejects with a message to show as is. */
 export const parseMcpJson = (text: string) => invoke<Pasted>('parse_mcp_json', { text })
+
+/**
+ * Turns routing off in every shell and editor, deletes the stored MCP secrets and `~/.envrouter`, and names the commands that
+ * remove the app and the CLI. A stop is a resolved report with `problems` (nothing irreversible happened; asking again finishes the
+ * job), not a rejection. After a finished run every other command rejects until the app quits. `dryRun` reports and changes nothing.
+ */
+export const uninstall = (dryRun: boolean) => invoke<UninstallReport>('uninstall', { dryRun })
 
 /** Opens a file inside the home folder in the default text editor. */
 export const openInEditor = (path: string) => invoke<void>('open_in_editor', { path })

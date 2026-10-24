@@ -12,6 +12,7 @@ export function TitleBand({
   blockedShell,
   primary,
   canCheck,
+  busy,
   shellsOpen,
   onToggleShells,
   editorsShown,
@@ -28,6 +29,8 @@ export function TitleBand({
   primary: boolean
   /** Off while there's no config to check against (config.json unreadable, or still loading). */
   canCheck: boolean
+  /** An uninstall is running: Shells… and Editors… (which write) look disabled but keep focus, and the view switch is left alone. */
+  busy: boolean
   shellsOpen: boolean
   onToggleShells: () => void
   /** An editor on this Mac runs an agent extension EnvRouter can route. */
@@ -78,6 +81,7 @@ export function TitleBand({
             aria-expanded={shellsOpen}
             aria-haspopup="dialog"
             aria-controls="shells-panel"
+            busy={busy}
             onClick={onToggleShells}
             title="Shells…"
             className="min-w-0 gap-2 pr-2.5 text-small !shrink"
@@ -120,6 +124,7 @@ export function TitleBand({
             aria-haspopup="dialog"
             aria-controls="editors-panel"
             aria-label="Editors…"
+            busy={busy}
             onClick={onToggleEditors}
             title="Editors…"
             className="w-[34px] justify-center !px-0"

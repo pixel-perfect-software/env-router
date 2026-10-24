@@ -38,8 +38,9 @@ cask "envrouter" do
   ]
 
   caveats <<~EOS
-    Before uninstalling, open EnvRouter and turn off every shell (Shells…) and editor
-    (Editors…), so it takes its lines back out of your startup files and editor settings.
-    MCP secrets stay in the "EnvRouter MCP secrets" Keychain item until you delete it.
+    To remove EnvRouter, open it and choose Uninstall EnvRouter… (at the bottom of Shells, or in
+    the menu bar icon's menu) first. It turns routing off in your shells and editors, deletes any
+    MCP secrets EnvRouter kept in the Keychain and ~/.envrouter, then quits and names this command:
+      brew uninstall --zap --cask envrouter
   EOS
 end

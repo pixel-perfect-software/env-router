@@ -1,6 +1,7 @@
 import { ask, message } from '@tauri-apps/plugin-dialog'
+import { tildify } from './paths'
 import { listOf } from './text'
-import type { Profile } from './types'
+import type { Profile, UninstallReport } from './types'
 
 /** A native warning with two buttons; each confirmation below words its own. */
 const warn = (message: string, title: string, okLabel: string, cancelLabel: string) => ask(message, { title, kind: 'warning', okLabel, cancelLabel })
@@ -69,3 +70,35 @@ export const confirmStartOver = () =>
 /** The native note after Start Over, naming the backup it made (`config.json.bak`, or `.bak-2` and on when that's taken). */
 export const tellBackedUp = (backup: string) =>
   message(`Your old config.json is at ${backup}. Copy it back over config.json to return to it.`, { title: 'Started over', kind: 'info' })
+
+/**
+ * The native confirmation before EnvRouter is uninstalled. `store` is what the secrets' home is called here ("Keychain",
+ * "keyring"); the CLI's `uninstall` plan says the same things.
+ */
+export const confirmUninstall = (store: string, unsaved: boolean) =>
+  warn(
+    `Routing turns off in every shell and editor, any MCP secrets EnvRouter kept in the ${store} are deleted, and ~/.envrouter goes with your profiles and MCP servers. Your agents' config folders stay.${unsaved ? " Changes you haven't saved are lost." : ''}`,
+    'Uninstall EnvRouter?',
+    'Uninstall',
+    'Cancel',
+  )
+
+/** What the store's one item is called in its own tools (`uninstall::SECRETS_ITEM`). */
+const SECRETS_ITEM = 'EnvRouter MCP secrets'
+
+/**
+ * The native note after a finished uninstall: what is left for the user to remove (the app and the CLI can't remove themselves),
+ * anything it couldn't do, and that the app quits now.
+ */
+export const tellUninstalled = (report: UninstallReport, store: string, home: string) => {
+  const removals = report.removeNext.map((next) => `${next.what === 'app' ? 'To remove the app' : 'To remove the envrouter CLI'}: ${next.command}`)
+  if (report.removeNext.some((next) => next.what === 'app')) removals.push('Opening the app again sets EnvRouter up again.')
+  const paragraphs = removals.length > 0 ? [removals.join('\n')] : []
+  if (report.secrets.status === 'unreachable')
+    paragraphs.push(
+      `Couldn't reach the ${store} (${report.secrets.reason}), so any MCP secrets EnvRouter kept there are still in it, as "${SECRETS_ITEM}".`,
+    )
+  for (const target of report.left) paragraphs.push(`Left ${tildify(target, home)} alone: ~/.envrouter pointed there.`)
+  paragraphs.push('EnvRouter quits now.')
+  return message(paragraphs.join('\n\n'), { title: 'EnvRouter is uninstalled', kind: 'info' })
+}

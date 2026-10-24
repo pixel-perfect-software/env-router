@@ -76,6 +76,17 @@ pub fn write(home: &Path, secrets: &HashMap<String, String>) -> Result<()> {
     store::set(SERVICE, &account, &json)
 }
 
+/// Deletes the item, every part of it, without reading it first (a read is a prompt on some
+/// stores, and so is the delete: one is enough). An item that isn't there is fine. The failure
+/// comes back as a sentence an uninstall can show as it is.
+pub fn delete(home: &Path) -> Result<()> {
+    store::delete(SERVICE, &account(home)).map_err(|err| {
+        reworded(err, |why| {
+            format!("Couldn't delete the stored MCP secrets: {why}.")
+        })
+    })
+}
+
 /// Adds `new` and drops every secret not in `keep`, in one read and one write. A save calls it
 /// before writing `config.json`, so the config never names a secret that isn't stored yet. A
 /// store's failure comes back as a sentence a save can show as it is.
