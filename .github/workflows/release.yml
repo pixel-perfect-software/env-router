@@ -125,8 +125,37 @@ jobs:
           name: macos
           path: out/*
 
-  linux:
+  # The Windows build of the secrets helper, which the Linux bundles and the Linux CLI archives
+  # carry for WSL: built once, so every one of them has the same bytes, and reproducibly
+  # (.cargo/config.toml links it without a PE timestamp). Before, each of the four Linux jobs
+  # built its own, and their copies differed.
+  windows-helper:
     needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read # to pull the image
+    container:
+      image: ghcr.io/pixel-perfect-software/envrouter-ci@sha256:2d645642c11da781ffaf7647bb6cea427eff84a4da365e257dc99012ac196c62
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup show active-toolchain || rustup toolchain install
+      - run: rustup target add x86_64-pc-windows-gnu
+      - run: cargo build --locked --profile helpers -p envrouter-keychain --target x86_64-pc-windows-gnu
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-helper
+          path: target/x86_64-pc-windows-gnu/helpers/envrouter-keychain.exe
+          if-no-files-found: error
+
+  linux:
+    needs: [check, windows-helper]
     strategy:
       matrix:
         include:
@@ -156,7 +185,11 @@ jobs:
           package-manager-cache: false
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - run: rustup show active-toolchain || rustup toolchain install
-      - run: rustup target add x86_64-pc-windows-gnu
+      # The Windows helper, from the windows-helper job, where a local build would put it.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: windows-helper
+          path: target/x86_64-pc-windows-gnu/helpers
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: cargo-about@0.9.2
@@ -170,7 +203,6 @@ jobs:
           cargo fetch --locked
           pnpm notices &
           notices=$!
-          cargo build --locked --profile helpers -p envrouter-keychain --target x86_64-pc-windows-gnu
           pnpm tauri build --no-bundle
           wait "$notices"
           exe="$PWD/target/x86_64-pc-windows-gnu/helpers/envrouter-keychain.exe"
@@ -255,7 +287,7 @@ jobs:
   # The same on Linux, in the CI image as the app's builds are, with the Windows build of the
   # secrets helper beside the others for WSL.
   cli-linux:
-    needs: check
+    needs: [check, windows-helper]
     strategy:
       matrix:
         include:
@@ -287,7 +319,11 @@ jobs:
           package-manager-cache: false
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - run: rustup show active-toolchain || rustup toolchain install
-      - run: rustup target add x86_64-pc-windows-gnu
+      # The Windows helper, from the windows-helper job, where a local build would put it.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: windows-helper
+          path: target/x86_64-pc-windows-gnu/helpers
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: cargo-about@0.9.2
@@ -299,7 +335,6 @@ jobs:
           pnpm notices notices/THIRD-PARTY-NOTICES.txt &
           notices=$!
           cargo build --locked --release -p envrouter-cli
-          cargo build --locked --profile helpers -p envrouter-keychain --target x86_64-pc-windows-gnu
           wait "$notices"
       - name: Package
         run: |
@@ -328,9 +363,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The release's files, not the windows-helper artifact: the helper ships inside the Linux
+      # bundles and archives, not on its own.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: out
+          pattern: '{macos,linux-*,cli-*}'
           merge-multiple: true
       - run: cd out && sha256sum -- * > SHA256SUMS
       # A signed build provenance attestation for every asset in SHA256SUMS: it ties the file to

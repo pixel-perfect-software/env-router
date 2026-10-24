@@ -1,0 +1,5 @@
+# The Windows build of the secrets helper (for WSL) links with no PE timestamp, so the same source
+# always gives the same bytes: the release builds it once, and anyone can rebuild it to check
+# what shipped. Without this, two builds of one commit differ.
+[target.x86_64-pc-windows-gnu]
+rustflags = ["-C", "link-arg=-Wl,--no-insert-timestamp"]
