@@ -9,10 +9,12 @@ exe=/target/x86_64-pc-windows-gnu/helpers/envrouter-keychain.exe
 pnpm install --frozen-lockfile >/dev/null
 # AppImage tooling is itself an AppImage, and containers have no FUSE.
 export APPIMAGE_EXTRACT_AND_RUN=1
-# Compiled, then bundled, as release.yml does, so only the bundle step gets the extra config.
+# Compiled, then bundled, as release.yml does, so only the bundle step gets the extra config: the
+# licences (LICENSE and the rendered notices) and the Windows helper.
+pnpm notices
 pnpm tauri build --no-bundle
 files="{\"files\":{\"/usr/bin/envrouter-keychain.exe\":\"$exe\"}}"
-pnpm tauri bundle --config "{\"bundle\":{\"linux\":{\"deb\":$files,\"appimage\":$files}}}"
+pnpm tauri bundle --config src-tauri/tauri.licences.conf.json --config "{\"bundle\":{\"linux\":{\"deb\":$files,\"appimage\":$files}}}"
 # The output volume outlives each run; only this build's bundles go in it, so the checks below see one of each.
 rm -f /out/*.deb /out/*.AppImage
 cp /target/release/bundle/deb/*.deb /target/release/bundle/appimage/*.AppImage /out/ 2>/dev/null || true

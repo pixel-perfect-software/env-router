@@ -97,22 +97,29 @@ jobs:
           tool: cargo-about@0.9.2
       - run: pnpm install --frozen-lockfile
       # Signs ad hoc (bundle.macOS.signingIdentity "-"); there's no Developer ID to notarize with.
-      # The licences go in Contents/Resources.
+      # The licences go in Contents/Resources (src-tauri/tauri.licences.conf.json, the file
+      # `pnpm bundle` uses too). They're a bundle-time config, not in tauri.conf.json, because
+      # tauri-build checks every resource exists when the app crate compiles.
       - name: Build
         run: |
           cargo fetch --locked
-          pnpm notices notices/THIRD-PARTY-NOTICES.txt &
+          pnpm notices &
           notices=$!
           pnpm tauri build --no-bundle
           wait "$notices"
-          pnpm tauri bundle --config \
-            '{"bundle":{"resources":{"../LICENSE":"LICENSE","../notices/THIRD-PARTY-NOTICES.txt":"THIRD-PARTY-NOTICES.txt"}}}'
+          pnpm tauri bundle --config src-tauri/tauri.licences.conf.json
       - name: Package
         run: |
           mkdir -p out
+          # GPL-3.0 and the dependencies' licences travel with every copy: a bundle without them
+          # stops the release here.
+          for file in LICENSE THIRD-PARTY-NOTICES.txt; do
+            test -s "target/release/bundle/macos/EnvRouter.app/Contents/Resources/$file" \
+              || { echo "::error::EnvRouter.app has no Contents/Resources/$file."; exit 1; }
+          done
           # ditto keeps the bundle's symlinks, permissions and signature intact.
           ditto -c -k --keepParent target/release/bundle/macos/EnvRouter.app "out/EnvRouter-$VERSION-arm64.zip"
-          cp notices/THIRD-PARTY-NOTICES.txt out/
+          cp target/notices/THIRD-PARTY-NOTICES.txt out/
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: macos
@@ -157,40 +164,43 @@ jobs:
       # Both bundles carry the Windows build of the secrets helper beside the shim, in usr/bin,
       # where the app installs it from: a WSL distro runs it to keep its secrets in the Windows
       # Credential Manager (Windows on Arm runs it too). The licences go in the app's resources
-      # (/usr/lib/EnvRouter in the .deb), in both bundles.
+      # (/usr/lib/EnvRouter in the .deb), in both bundles, as on macOS.
       - name: Build
         run: |
           cargo fetch --locked
-          pnpm notices notices/THIRD-PARTY-NOTICES.txt &
+          pnpm notices &
           notices=$!
           cargo build --locked --profile helpers -p envrouter-keychain --target x86_64-pc-windows-gnu
           pnpm tauri build --no-bundle
           wait "$notices"
           exe="$PWD/target/x86_64-pc-windows-gnu/helpers/envrouter-keychain.exe"
-          resources='"resources":{"../LICENSE":"LICENSE","../notices/THIRD-PARTY-NOTICES.txt":"THIRD-PARTY-NOTICES.txt"}'
           files="{\"files\":{\"/usr/bin/envrouter-keychain.exe\":\"$exe\"}}"
-          pnpm tauri bundle --config "{\"bundle\":{$resources,\"linux\":{\"deb\":$files,\"appimage\":$files}}}"
+          pnpm tauri bundle --config src-tauri/tauri.licences.conf.json \
+            --config "{\"bundle\":{\"linux\":{\"deb\":$files,\"appimage\":$files}}}"
       - run: mkdir -p out && cp target/release/bundle/deb/*.deb target/release/bundle/appimage/*.AppImage out/
       # Until 0.7.2 only the .deb had the helper, so WSL users on the AppImage couldn't store a
       # secret. A bundle without it fails here, before anything is published.
-      - name: Check both bundles carry the Windows helper
+      # And both carry the licences, which GPL-3.0 and the dependencies' licences require with
+      # every copy (#46).
+      - name: Check both bundles carry the Windows helper and the licences
         working-directory: out
         run: |
+          want="usr/bin/envrouter-keychain.exe usr/lib/EnvRouter/LICENSE usr/lib/EnvRouter/THIRD-PARTY-NOTICES.txt"
           deb=$(dpkg-deb -c ./*.deb)
-          if ! echo "$deb" | grep -q 'usr/bin/envrouter-keychain.exe$'; then
-            echo "::error::The .deb has no usr/bin/envrouter-keychain.exe."
-            echo "$deb" | grep usr/bin/
-            exit 1
-          fi
           set -- ./*.AppImage
-          "$1" --appimage-extract 'usr/bin/*' >/dev/null
-          if [ ! -s squashfs-root/usr/bin/envrouter-keychain.exe ]; then
-            echo "::error::The AppImage has no usr/bin/envrouter-keychain.exe."
-            ls -la squashfs-root/usr/bin
-            exit 1
-          fi
+          "$1" --appimage-extract 'usr/*' >/dev/null
+          for file in $want; do
+            if ! echo "$deb" | grep -q "$file\$"; then
+              echo "::error::The .deb has no $file."
+              exit 1
+            fi
+            if [ ! -s "squashfs-root/$file" ]; then
+              echo "::error::The AppImage has no $file."
+              exit 1
+            fi
+          done
           rm -rf squashfs-root
-          echo "The .deb and the AppImage both carry envrouter-keychain.exe."
+          echo "The .deb and the AppImage both carry: $want"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-${{ matrix.triple }}

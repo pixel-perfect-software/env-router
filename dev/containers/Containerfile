@@ -18,5 +18,9 @@ RUN arch=$(dpkg --print-architecture | sed 's/amd64/x64/') \
     | tar -xJ -C /usr/local --strip-components=1 \
  && npm install -g --allow-scripts=pnpm pnpm >/dev/null
 
+# cargo-about, for the third-party notices every bundle carries (linux-bundle), at the version CI
+# installs.
+RUN cargo install --locked --features cli cargo-about@0.9.2
+
 ENV CARGO_TARGET_DIR=/target ENVROUTER_REQUIRE_SHELLS=1
 WORKDIR /work

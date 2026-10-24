@@ -157,6 +157,8 @@ You need, once:
    doesn't read the pin; if you use it, match the version by hand.)
 3. Node.js 24 or later, from [nodejs.org](https://nodejs.org) or `brew install node`
 4. pnpm: `npm install -g pnpm`. The project pins its own pnpm version, and pnpm fetches it.
+5. cargo-about, which writes the third-party notices every build carries:
+   `cargo install --locked --features cli cargo-about`
 
 (With [asdf](https://asdf-vm.com), `asdf install` sets up the Node and pnpm versions pinned in
 `.tool-versions` instead of steps 3 and 4.)
@@ -167,7 +169,7 @@ Then clone and build:
 git clone https://github.com/pixel-perfect-software/env-router.git
 cd env-router
 pnpm install
-pnpm tauri build
+pnpm bundle    # tauri build, with LICENSE and the third-party notices inside
 # macOS: copy the app into Applications
 ditto target/release/bundle/macos/EnvRouter.app /Applications/EnvRouter.app
 open /Applications/EnvRouter.app
