@@ -1,8 +1,8 @@
 [package]
 name = "envrouter"
 version.workspace = true
-description = "Per-directory environment routing for developer CLIs"
-authors = ["Tyler Robertson"]
+description = "Routes each coding agent to the right account and MCP servers by folder"
+authors = ["Tyler Robertson <tylerrdev@gmail.com>"]
 license = "GPL-3.0-or-later"
 edition = "2021"
 publish = false
