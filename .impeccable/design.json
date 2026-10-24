@@ -9,7 +9,7 @@
       "neutrals": "Tinted a few percent toward the app icon's signal-box navy (light shadows and hairline use rgb(16 24 48 / a)).",
       "hairline": "1px, or 0.5px at min-resolution 2dppx",
       "vibrancy": {
-        "window": "tauri.conf.json: transparent true, windowEffects underWindowBackground (followsWindowActiveState), macOSPrivateApi true",
+        "window": "tauri.conf.json: transparent true, windowEffects underWindowBackground (followsWindowActiveState)",
         "flag": "main.tsx sets data-vibrant on <html> only when __TAURI_INTERNALS__ exists; the browser preview stays solid",
         "ground": ":root[data-vibrant] body { background: color-mix(in srgb, var(--er-window) 76%, transparent) }",
         "titlebar": ":root[data-vibrant] [data-titlebar] { background: color-mix(in srgb, var(--er-window) 90%, transparent) }",
