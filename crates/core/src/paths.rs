@@ -49,6 +49,17 @@ pub fn mcp(home: &Path) -> PathBuf {
     root(home).join("mcp")
 }
 
+pub const MCP_LAUNCH_FILE: &str = "launch.json";
+
 pub fn mcp_launch(home: &Path, profile_id: &str, command: &str) -> PathBuf {
-    mcp(home).join(profile_id).join(command).join("launch.json")
+    mcp(home)
+        .join(profile_id)
+        .join(command)
+        .join(MCP_LAUNCH_FILE)
+}
+
+/// When each rendered MCP file a save stopped naming went stale, so a later save can remove it
+/// once no agent can still be opening it. Beside [`mcp`], not in it, so no profile id meets it.
+pub fn mcp_retired(home: &Path) -> PathBuf {
+    root(home).join("mcp-retired.json")
 }

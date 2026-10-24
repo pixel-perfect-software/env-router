@@ -13,6 +13,8 @@ use std::ffi::OsString;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -193,10 +195,23 @@ pub fn render(config: &ConfigState, home: &Path) -> Vec<(PathBuf, String)> {
     files
 }
 
-/// Writes what [`render`] gives, then removes every other file under [`paths::mcp`]. New files
-/// land before old ones go, so a tool starting mid-save never finds a manifest missing.
+/// How long a server file outlives the save that stopped naming it. A shim that read the old
+/// manifest just before the save hands the agent that file, and the agent opens it as it starts.
+#[cfg(unix)]
+const RETIRED_GRACE: Duration = Duration::from_secs(600);
+
+/// Writes what [`render`] gives, then removes the rest of [`paths::mcp`]. New files land before
+/// old ones go, so a tool starting mid-save never finds a manifest missing. A manifest that's no
+/// longer rendered goes at once, so no new run gets servers the config dropped; a server file goes
+/// only once it's been unnamed for [`RETIRED_GRACE`], at a later save, since a run that read the
+/// old manifest may still open it.
 #[cfg(unix)]
 pub fn sync(config: &ConfigState, home: &Path) -> Result<()> {
+    sync_at(config, home, SystemTime::now())
+}
+
+#[cfg(unix)]
+fn sync_at(config: &ConfigState, home: &Path, now: SystemTime) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
     let root = paths::mcp(home);
@@ -214,13 +229,47 @@ pub fn sync(config: &ConfigState, home: &Path) -> Result<()> {
         config::write_private(path, contents)?;
     }
     let keep: HashSet<&Path> = files.iter().map(|(path, _)| path.as_path()).collect();
-    remove_except(&root, &keep)
+    let now = now.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let mut retired = Retired {
+        // Unreadable means every stale file counts as retired now: it's kept longer, never lost.
+        since: fs::read_to_string(paths::mcp_retired(home))
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default(),
+        now,
+        seen: HashSet::new(),
+    };
+    remove_stale(&root, &keep, &mut retired)?;
+    let since: BTreeMap<_, _> = retired
+        .since
+        .into_iter()
+        .filter(|(path, _)| retired.seen.contains(path))
+        .collect();
+    let record = paths::mcp_retired(home);
+    if since.is_empty() {
+        match fs::remove_file(&record) {
+            Err(err) if err.kind() != ErrorKind::NotFound => Err(io_err(&record)(err)),
+            _ => Ok(()),
+        }
+    } else {
+        config::write_private(&record, pretty(&since))
+    }
 }
 
-/// Removes everything in `dir` that isn't in `keep`, and folders left empty. Links are removed,
-/// never followed. Only [`sync`] uses it, which is Unix-only until Windows gets its own.
+/// The stale server files [`sync`] is keeping, by path, with the time each went stale.
 #[cfg(unix)]
-fn remove_except(dir: &Path, keep: &HashSet<&Path>) -> Result<()> {
+struct Retired {
+    since: BTreeMap<PathBuf, u64>,
+    now: u64,
+    /// The ones still on disk, so a file removed by hand drops out of the record.
+    seen: HashSet<PathBuf>,
+}
+
+/// Removes what in `dir` isn't in `keep`: a manifest at once, a server file once it's been
+/// retired for [`RETIRED_GRACE`], and folders left empty. Links are removed, never followed.
+/// Only [`sync`] uses it, which is Unix-only until Windows gets its own.
+#[cfg(unix)]
+fn remove_stale(dir: &Path, keep: &HashSet<&Path>, retired: &mut Retired) -> Result<()> {
     let io_err = |path: &Path| {
         let path = path.to_path_buf();
         move |source| Error::Io { path, source }
@@ -229,12 +278,23 @@ fn remove_except(dir: &Path, keep: &HashSet<&Path>) -> Result<()> {
         let path = entry.map_err(io_err(dir))?.path();
         let meta = fs::symlink_metadata(&path).map_err(io_err(&path))?;
         if meta.is_dir() {
-            remove_except(&path, keep)?;
+            remove_stale(&path, keep, retired)?;
             if fs::read_dir(&path).map_err(io_err(&path))?.next().is_none() {
                 fs::remove_dir(&path).map_err(io_err(&path))?;
             }
-        } else if !keep.contains(path.as_path()) {
+            continue;
+        }
+        if keep.contains(path.as_path()) {
+            continue;
+        }
+        let since = *retired.since.entry(path.clone()).or_insert(retired.now);
+        let manifest = path
+            .file_name()
+            .is_some_and(|name| name == paths::MCP_LAUNCH_FILE);
+        if manifest || retired.now.saturating_sub(since) >= RETIRED_GRACE.as_secs() {
             fs::remove_file(&path).map_err(io_err(&path))?;
+        } else {
+            retired.seen.insert(path);
         }
     }
     Ok(())
@@ -614,16 +674,85 @@ mod tests {
             2
         );
 
+        // A stale server file outlives its save (see the test below); one save past the grace
+        // period removes it.
+        let later = SystemTime::now() + RETIRED_GRACE;
         config.profiles[0].mcp_servers.remove("linear");
         sync(&config, home).unwrap();
+        sync_at(&config, home, later).unwrap();
         let servers = launch.parent().unwrap().join("servers");
         assert!(servers.join("github.json").exists());
         assert!(!servers.join("linear.json").exists());
 
+        // A manifest goes with the save that stops rendering it, so no new run gets the servers.
         config.profiles[0].mcp_servers.clear();
         sync(&config, home).unwrap();
-        assert_eq!(fs::read_dir(paths::mcp(home)).unwrap().count(), 0);
         assert_eq!(load_launch(home, "work", "claude").unwrap(), None);
+        sync_at(&config, home, later + RETIRED_GRACE).unwrap();
+        assert_eq!(fs::read_dir(paths::mcp(home)).unwrap().count(), 0);
+        assert!(!paths::mcp_retired(home).exists(), "nothing left to retire");
+    }
+
+    /// A shim that read the manifest just before a save starts the agent with the file it named;
+    /// the agent opens it a moment later. The save used to delete it at once, handing that agent
+    /// `--mcp-config=<deleted file>`.
+    #[cfg(unix)]
+    #[test]
+    fn a_save_keeps_the_files_the_last_manifest_named_for_a_while() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let mut config = config();
+        sync(&config, home).unwrap();
+        // What a shim read just before the save.
+        let launched = load_launch(home, "work", "claude").unwrap().unwrap();
+        let linear = launched
+            .servers
+            .iter()
+            .find(|s| s.name == "linear")
+            .unwrap();
+        let file = PathBuf::from(linear.args[0].split_once('=').unwrap().1);
+
+        config.profiles[0].mcp_servers.remove("linear");
+        let saved = SystemTime::now();
+        sync_at(&config, home, saved).unwrap();
+        assert!(file.exists(), "deleted while an agent may be opening it");
+        let current = load_launch(home, "work", "claude").unwrap().unwrap();
+        assert!(current.servers.iter().all(|s| s.name != "linear"));
+
+        // Saves inside the grace period keep it, counting from when it went stale.
+        sync_at(
+            &config,
+            home,
+            saved + RETIRED_GRACE - Duration::from_secs(1),
+        )
+        .unwrap();
+        assert!(file.exists());
+        sync_at(&config, home, saved + RETIRED_GRACE).unwrap();
+        assert!(!file.exists());
+        assert!(!paths::mcp_retired(home).exists());
+    }
+
+    /// A server that's added back before its file is removed is current again, and its
+    /// countdown is forgotten, so a later removal starts a fresh one.
+    #[cfg(unix)]
+    #[test]
+    fn a_server_added_back_is_no_longer_retired() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let full = config();
+        let mut without = full.clone();
+        without.profiles[0].mcp_servers.remove("linear");
+        let file = paths::mcp_launch(home, "work", "claude")
+            .with_file_name("servers")
+            .join("linear.json");
+        let start = SystemTime::now();
+
+        sync_at(&full, home, start).unwrap();
+        sync_at(&without, home, start).unwrap();
+        sync_at(&full, home, start + RETIRED_GRACE).unwrap();
+        assert!(!paths::mcp_retired(home).exists());
+        sync_at(&without, home, start + RETIRED_GRACE).unwrap();
+        assert!(file.exists(), "retired again just now, not 10 minutes ago");
     }
 
     #[test]
