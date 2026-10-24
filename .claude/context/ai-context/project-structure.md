@@ -40,7 +40,7 @@ env-router/
 │   ├── icons/                 # app icon and menu bar glyph: SVG sources plus the PNGs and icon.icns rendered from them
 │   └── binaries/, gen/        # generated, gitignored
 ├── src/                       # React frontend (Vite)
-│   ├── App.tsx                # composition: view, inspector and popover state, the handlers that tie the hooks below to the components
+│   ├── App.tsx                # composition: view, inspector and popover state, the handlers that tie the hooks below to the components; App.test.tsx drives it against the mock (the one accent button, unsaved edits, focus)
 │   ├── index.css              # design tokens (light/dark, system accent), hairline utilities
 │   ├── assets/                # illustrations drawn from the mark's SVG: the first-run welcome and the empty server library
 │   ├── components/            # Titlebar, Health (banner and setup steps), Popovers (Shells and Editors), Frame (slots),
@@ -50,7 +50,7 @@ env-router/
 │   │                          # mcp.ts (server drafts, rename/remove, secret locking), mcpCatalog.ts (well-known servers), serverLogo.ts (logo matching),
 │   │                          # verdict.ts (check wording, tested in verdict.test.ts), health.ts (the health line and the one-accent rule, tested in health.test.ts), paths.ts, text.ts (plural, listOf), confirm.ts,
 │   │                          # hooks the window composes: useConfigStore.ts (load, save and its merge loop), useFolderCheck.ts, useShortcuts.ts, useFolderDrop.ts
-│   └── dev/mockTauri.ts       # dev-only browser mock (?scenario=, ?platform=, ?check= and more; see docs/contributing.md); never bundled; mockTauri.test.ts pins it
+│   └── dev/mockTauri.ts       # dev-only browser mock (?scenario=, ?platform=, ?check= and more; see docs/contributing.md); never bundled; mockTauri.test.ts pins it, and App.test.tsx boots it
 ├── packaging/homebrew/        # cask and CLI formula templates; render.sh fills them from a release's SHA256SUMS
 ├── packaging/notices/         # `pnpm notices`: render.mjs and cargo-about's about.toml write THIRD-PARTY-NOTICES.txt for releases
 ├── dev/containers/            # compose.yaml (project envrouter-dev): Linux tests, app build, bundles, Windows helper under Wine
@@ -113,7 +113,7 @@ command of the same name and arguments.
 | Frontend | React 19, TypeScript 7, Vite 8 |
 | Styling | Tailwind CSS 4 via `@tailwindcss/vite` |
 | Lint / format | Biome 2.5 (TS/JSON/CSS); `cargo fmt` and clippy (Rust) |
-| Tests | `cargo test` (Rust, including the built shim and real zsh, bash and fish); Vitest (`src/**/*.test.ts`) |
+| Tests | `cargo test` (Rust, including the built shim and real zsh, bash and fish); Vitest: `src/**/*.test.ts` in node, and `src/**/*.test.tsx` (the window rendered against `mockTauri` with Testing Library) in happy-dom, chosen by a `// @vitest-environment happy-dom` comment on the file |
 | Package manager | pnpm 12.14.0 and Node 24.22.1 (pinned in `.tool-versions`; pnpm also in `packageManager`) |
 | Platform | macOS 11+ on Apple Silicon with Safari 16.4+ (the window's WebKit; `vite.config.ts` targets it); Linux x86_64 and aarch64 (glibc of Ubuntu 22.04 or later), WSL 2 included |
 
