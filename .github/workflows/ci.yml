@@ -11,11 +11,13 @@ on:
 permissions:
   contents: read
 
-# A new push to a pull request cancels its run in progress. On main every run finishes: the
-# release ships only a commit whose run passed (.github/scripts/ci-passed.sh), and v0.6.0 was
-# tagged on one whose run a later push cancelled.
+# A new push to a pull request cancels its run in progress. On main every commit's run finishes:
+# the release ships only a commit whose run passed (.github/scripts/ci-passed.sh), and v0.6.0 was
+# tagged on one whose run a later push cancelled. So main's runs are grouped by commit, not by
+# branch: within one group GitHub keeps one queued run and cancels the one before it, even with
+# cancel-in-progress off, which dropped 0151e31's run unstarted when three merges landed at once.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
