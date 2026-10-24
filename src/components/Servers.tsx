@@ -101,7 +101,7 @@ export function ServersView({
           <h2 className="min-w-0 flex-1 truncate text-title font-semibold">
             Servers <span className="font-normal text-ink-2">{names.length}</span>
           </h2>
-          <IconButton label="Add Server" onClick={() => go({ kind: 'edit', name: null })}>
+          <IconButton id="add-server" label="Add by Hand" onClick={() => go({ kind: 'edit', name: null })}>
             <PlusIcon />
           </IconButton>
           {/* Each opens its view in the detail card, and pressed again, closes it. */}
@@ -247,7 +247,7 @@ export function ServersView({
               detail.name
                 ? async () => {
                     if (!detail.name) return
-                    // The editor closes with the server, so focus goes to the row that takes its place, or Add Server.
+                    // The editor closes with the server, so focus goes to the row that takes its place, or the + button.
                     const at = names.indexOf(detail.name)
                     const next = names[at + 1] ?? names[at - 1]
                     await onDelete(detail.name)
@@ -255,7 +255,7 @@ export function ServersView({
                     onDetail({ kind: 'none' })
                     requestAnimationFrame(() => {
                       const row = next ? document.querySelector<HTMLElement>(`[data-server="${CSS.escape(next)}"]`) : null
-                      if (document.activeElement === document.body) (row ?? document.querySelector<HTMLElement>('[aria-label="Add Server"]'))?.focus()
+                      if (document.activeElement === document.body) (row ?? document.getElementById('add-server'))?.focus()
                     })
                   }
                 : undefined

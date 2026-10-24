@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react'
 import type { Health } from '../lib/health'
 import { tildify } from '../lib/paths'
-import { plural } from '../lib/text'
+import { listOf, plural } from '../lib/text'
 import type { Shell } from '../lib/types'
 import { Button, CloseIcon, IconButton, StatusTile, type Tone } from './ui'
 
@@ -156,7 +156,7 @@ export function HealthLine({
           }
           action={
             <Button kind={accent} onClick={onReinstall}>
-              Reinstall
+              Reinstall Shim
             </Button>
           }
         />
@@ -179,7 +179,7 @@ export function HealthLine({
         <Banner
           tone="warn"
           title={`Routing is off in ${health.shell.shell}, your login shell`}
-          detail={`It's on in ${health.on.join(' and ')}.`}
+          detail={`It's on in ${listOf(health.on)}.`}
           action={<Button onClick={() => onEnableShell(health.shell.shell)}>Turn On {health.shell.shell}</Button>}
         />
       )
@@ -197,7 +197,7 @@ export function HealthLine({
       return (
         <div className="mx-4 flex h-5 shrink-0 items-center gap-2 px-0.5 text-small">
           <StatusTile tone="ok" size={16} badge />
-          <p className="min-w-0 truncate font-medium">Routing is on in {health.on.join(' and ')}</p>
+          <p className="min-w-0 truncate font-medium">Routing is on in {listOf(health.on)}</p>
           {summary && <p className="ml-auto shrink-0 text-ink-2 tabular-nums">{summaryLine(summary)}</p>}
         </div>
       )

@@ -169,6 +169,15 @@ fn menu(app: &AppHandle, (status, profiles): (String, Option<String>)) -> tauri:
 
 /// The status line and, once there are profiles, how many.
 /// The status lines, given the shells routing is on in (asked lazily: not when nothing's set up).
+/// "zsh", "zsh and bash", "zsh, bash and fish": the window's `listOf`, so the two say it alike.
+fn list_of(items: &[&str]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => (*one).to_string(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
 fn summary(app: &AppHandle, on: impl Iterator<Item = Shell>) -> (String, Option<String>) {
     let Ok(home) = app.path().home_dir() else {
         return ("EnvRouter".into(), None);
@@ -184,7 +193,7 @@ fn summary(app: &AppHandle, on: impl Iterator<Item = Shell>) -> (String, Option<
     let status = if on.is_empty() {
         "Routing is off".to_string()
     } else {
-        format!("Routing on in {}", on.join(", "))
+        format!("Routing is on in {}", list_of(&on))
     };
     let profiles = if count == 1 {
         "1 profile".to_string()
@@ -192,4 +201,16 @@ fn summary(app: &AppHandle, on: impl Iterator<Item = Shell>) -> (String, Option<
         format!("{count} profiles")
     };
     (status, Some(profiles))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::list_of;
+
+    #[test]
+    fn lists_shells_as_the_window_does() {
+        assert_eq!(list_of(&["zsh"]), "zsh");
+        assert_eq!(list_of(&["zsh", "bash"]), "zsh and bash");
+        assert_eq!(list_of(&["zsh", "bash", "fish"]), "zsh, bash and fish");
+    }
 }

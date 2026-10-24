@@ -620,7 +620,12 @@ fn verdict(check: &FolderCheck, tool: &str, shell: Shell, home: &Path) -> String
             )
         }
         FolderCheck::ShadowedByShell { kind, origin } => format!(
-            "Blocked: a {kind} named {tool} runs before PATH is searched{}.",
+            "Blocked: {} {kind} named {tool} runs before PATH is searched{}.",
+            if kind.starts_with(['a', 'e', 'i', 'o', 'u']) {
+                "an"
+            } else {
+                "a"
+            },
             origin.as_deref().map_or_else(String::new, |o| format!(
                 " (defined in {})",
                 tilde(Path::new(o), home)
