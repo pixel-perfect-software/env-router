@@ -2,13 +2,43 @@
 import process from 'node:process'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import * as simpleIcons from 'simple-icons'
+import { defineConfig, type Plugin } from 'vite'
+
+/**
+ * Serves `simple-icons` as plain `{ title, path, hex }` objects, the fields the window reads.
+ * Each of its icons also carries a slug, a source URL, an `svg` getter and guidelines, which
+ * tree-shaking can't drop from an object it keeps: about 180 bytes an icon. Every icon is still
+ * its own export, so only the ones imported are bundled.
+ */
+function leanSimpleIcons(): Plugin {
+  const id = '\0simple-icons-lean'
+  return {
+    name: 'lean-simple-icons',
+    enforce: 'pre',
+    resolveId: (source) => (source === 'simple-icons' ? id : undefined),
+    load(loading) {
+      if (loading !== id) return undefined
+      return Object.entries(simpleIcons)
+        .filter(([name]) => name.startsWith('si'))
+        .map(([name, icon]) => `export const ${name} = ${JSON.stringify({ title: icon.title, path: icon.path, hex: icon.hex })}`)
+        .join('\n')
+    },
+  }
+}
 
 const host = process.env.TAURI_DEV_HOST
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
-  plugins: [react(), tailwindcss()],
+  plugins: [leanSimpleIcons(), react(), tailwindcss()],
+
+  // The window only ever runs in the system's WebKit (WKWebView on macOS, WebKitGTK on Linux), and
+  // Tailwind 4's CSS (`color-mix()`, cascade layers, `@property`) needs Safari 16.4's, so that's
+  // the target, as README's requirements say, rather than Vite's general browser list.
+  build: {
+    target: 'safari16.4',
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

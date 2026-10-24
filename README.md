@@ -76,8 +76,9 @@ selection of MCP servers from a library you keep in the app:
 
 ## 📋 Requirements
 
-- **macOS** 11 or later, on Apple Silicon. Intel Macs should work the same way but haven't been
-  tried, and the bundle is arm64-only for now.
+- **macOS** 11 Big Sur or later, on Apple Silicon, with Safari 16.4 or later: the window is drawn
+  by the system's WebKit, which Safari updates bring, and its styles need 16.4's. Intel Macs should
+  work the same way but haven't been tried, and the bundle is arm64-only for now.
 - **Linux** on x86_64 or aarch64: Ubuntu 22.04 or newer, or a distro of the same age, and WSL 2.
   The app needs WebKitGTK 4.1, which the `.deb` installs. Secrets need a keyring (GNOME Keyring
   or KWallet); in WSL they go to Windows instead, through a helper that comes with EnvRouter.
