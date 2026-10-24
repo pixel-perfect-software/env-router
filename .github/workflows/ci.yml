@@ -168,12 +168,42 @@ jobs:
       - run: cargo clippy --locked -p envrouter --all-targets -- -D warnings
       - run: cargo test --locked -p envrouter
 
+  # The shim sits in front of every agent launch, so what it adds is gated: with 60 triggers and 8
+  # PATH entries ahead of the tool, its median launch time as a multiple of a program that only
+  # execs the tool (.github/scripts/shim-overhead.sh). A multiple, because runner machines differ
+  # in speed by 40% (a bare exec took 0.68 to 0.97 ms across three), which moves milliseconds but
+  # not the ratio; on Linux, because GitHub's macOS runners swing 16x between identical runs.
+  # Measured on ubuntu-24.04: 1.58 to 1.67x, against 1.94 to 2.08x before the trigger and PATH
+  # work (#50, #51), so 1.8x trips on a regression of that size on any of them.
+  shim-timing:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: hyperfine@2.0.0
+      # The shim users get: built as crates/build-support builds it (the helpers profile, with
+      # the secrets helper, for the host triple, into target/shim).
+      - run: |
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          cargo build --locked --profile helpers -p envrouter-shim -p envrouter-keychain --target "$host" --target-dir target/shim
+          sh .github/scripts/shim-overhead.sh "target/shim/$host/helpers/envrouter-shim" 1.8
+
   # The check branch protection requires for everything that doesn't need a Mac. It passes only
-  # when checks, rust and app-linux all passed, or all were skipped for a docs-only change. It runs
-  # whatever they did (`always()`): left to the default, a failure above would skip it, and a
-  # skipped job counts as passing.
+  # when checks, rust, app-linux and shim-timing all passed, or all were skipped for a docs-only
+  # change. It runs whatever they did (`always()`): left to the default, a failure above would
+  # skip it, and a skipped job counts as passing.
   linux:
-    needs: [changes, checks, rust, app-linux]
+    needs: [changes, checks, rust, app-linux, shim-timing]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -183,14 +213,15 @@ jobs:
           CHECKS: ${{ needs.checks.result }}
           RUST: ${{ needs.rust.result }}
           APP: ${{ needs.app-linux.result }}
+          TIMING: ${{ needs.shim-timing.result }}
           CODE: ${{ needs.changes.outputs.code }}
         run: |
-          echo "changes: $CHANGES, checks: $CHECKS, rust: $RUST, app-linux: $APP"
+          echo "changes: $CHANGES, checks: $CHECKS, rust: $RUST, app-linux: $APP, shim-timing: $TIMING"
           [ "$CHANGES" = success ] || exit 1
           if [ "$CODE" = true ]; then
-            [ "$CHECKS" = success ] && [ "$RUST" = success ] && [ "$APP" = success ]
+            [ "$CHECKS" = success ] && [ "$RUST" = success ] && [ "$APP" = success ] && [ "$TIMING" = success ]
           else
-            [ "$CHECKS" = skipped ] && [ "$RUST" = skipped ] && [ "$APP" = skipped ]
+            [ "$CHECKS" = skipped ] && [ "$RUST" = skipped ] && [ "$APP" = skipped ] && [ "$TIMING" = skipped ]
           fi
 
   macos:
