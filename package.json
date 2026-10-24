@@ -16,6 +16,7 @@
     "format-and-lint": "biome check .",
     "format-and-lint:fix": "biome check . --write",
     "notices": "node packaging/notices/render.mjs",
+    "bundle": "pnpm notices && tauri build --config src-tauri/tauri.licences.conf.json",
     "update-deps": "autd update"
   },
   "dependencies": {

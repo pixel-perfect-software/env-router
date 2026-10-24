@@ -36,7 +36,7 @@ recommends its extension and turns on format-on-save.
 | Run the desktop app with hot reload | `pnpm tauri dev` |
 | Review the UI in a browser, with the backend mocked | `pnpm dev`, then open `http://localhost:1420/?scenario=populated` (add `&platform=linux` for Linux chrome) |
 | Run the CLI against a scratch home | `HOME=/tmp/envrouter-home cargo run -p envrouter-cli -- status` |
-| Build the release app | `pnpm tauri build` |
+| Build the release app, with LICENSE and the notices inside (needs cargo-about) | `pnpm bundle` (a bare `pnpm tauri build` leaves them out) |
 | Frontend tests (Vitest) | `pnpm test` |
 | Rust tests, including the built shim and real zsh, bash and fish | `cargo test --workspace` |
 | The secrets round trip through this machine's real store | `cargo test -p envrouter-keychain -- --ignored` |
