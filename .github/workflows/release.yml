@@ -154,9 +154,9 @@ jobs:
         with:
           tool: cargo-about@0.9.2
       - run: pnpm install --frozen-lockfile
-      # The .deb carries the Windows build of the secrets helper beside the shim, where the app
-      # installs it from: a WSL distro runs it to keep its secrets in the Windows Credential
-      # Manager (Windows on Arm runs it too). The licences go in the app's resources
+      # Both bundles carry the Windows build of the secrets helper beside the shim, in usr/bin,
+      # where the app installs it from: a WSL distro runs it to keep its secrets in the Windows
+      # Credential Manager (Windows on Arm runs it too). The licences go in the app's resources
       # (/usr/lib/EnvRouter in the .deb), in both bundles.
       - name: Build
         run: |
@@ -168,8 +168,29 @@ jobs:
           wait "$notices"
           exe="$PWD/target/x86_64-pc-windows-gnu/helpers/envrouter-keychain.exe"
           resources='"resources":{"../LICENSE":"LICENSE","../notices/THIRD-PARTY-NOTICES.txt":"THIRD-PARTY-NOTICES.txt"}'
-          pnpm tauri bundle --config "{\"bundle\":{$resources,\"linux\":{\"deb\":{\"files\":{\"/usr/bin/envrouter-keychain.exe\":\"$exe\"}}}}}"
+          files="{\"files\":{\"/usr/bin/envrouter-keychain.exe\":\"$exe\"}}"
+          pnpm tauri bundle --config "{\"bundle\":{$resources,\"linux\":{\"deb\":$files,\"appimage\":$files}}}"
       - run: mkdir -p out && cp target/release/bundle/deb/*.deb target/release/bundle/appimage/*.AppImage out/
+      # Until 0.7.2 only the .deb had the helper, so WSL users on the AppImage couldn't store a
+      # secret. A bundle without it fails here, before anything is published.
+      - name: Check both bundles carry the Windows helper
+        working-directory: out
+        run: |
+          deb=$(dpkg-deb -c ./*.deb)
+          if ! echo "$deb" | grep -q 'usr/bin/envrouter-keychain.exe$'; then
+            echo "::error::The .deb has no usr/bin/envrouter-keychain.exe."
+            echo "$deb" | grep usr/bin/
+            exit 1
+          fi
+          set -- ./*.AppImage
+          "$1" --appimage-extract 'usr/bin/*' >/dev/null
+          if [ ! -s squashfs-root/usr/bin/envrouter-keychain.exe ]; then
+            echo "::error::The AppImage has no usr/bin/envrouter-keychain.exe."
+            ls -la squashfs-root/usr/bin
+            exit 1
+          fi
+          rm -rf squashfs-root
+          echo "The .deb and the AppImage both carry envrouter-keychain.exe."
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-${{ matrix.triple }}
