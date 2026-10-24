@@ -1,53 +1,35 @@
 import { ask } from '@tauri-apps/plugin-dialog'
-import { listOf } from './merge'
+import { listOf } from './text'
 import type { Profile } from './types'
+
+/** A native warning with two buttons; each confirmation below words its own. */
+const warn = (message: string, title: string, okLabel: string, cancelLabel: string) => ask(message, { title, kind: 'warning', okLabel, cancelLabel })
+
+/** The confirmation before an editor closes or the app quits with edits that haven't been saved. */
+const unsaved = (title: string, okLabel: string) => warn("Your changes haven't been saved.", title, okLabel, 'Keep Editing')
 
 /** The native confirmation before the inspector closes with edits that haven't been saved. */
 export const confirmDiscard = (profileName: string | undefined) =>
-  ask("Your changes haven't been saved.", {
-    title: profileName ? `Discard changes to “${profileName}”?` : 'Discard this new profile?',
-    kind: 'warning',
-    okLabel: 'Discard',
-    cancelLabel: 'Keep Editing',
-  })
+  unsaved(profileName ? `Discard changes to “${profileName}”?` : 'Discard this new profile?', 'Discard')
 
 /** The native confirmation before quitting with unsaved edits in an editor. */
-export const confirmQuit = () =>
-  ask("Your changes haven't been saved.", {
-    title: 'Quit without saving?',
-    kind: 'warning',
-    okLabel: 'Quit',
-    cancelLabel: 'Keep Editing',
-  })
+export const confirmQuit = () => unsaved('Quit without saving?', 'Quit')
 
 /** The native confirmation before a profile is deleted, from the editor or a context menu. */
 export const confirmDelete = (profile: Profile) =>
-  ask("New terminals in its folders will use the next profile up, or each agent's default config.", {
-    title: `Delete “${profile.name}”?`,
-    kind: 'warning',
-    okLabel: 'Delete',
-    cancelLabel: 'Cancel',
-  })
+  warn("New terminals in its folders will use the next profile up, or each agent's default config.", `Delete “${profile.name}”?`, 'Delete', 'Cancel')
 
 /** The native confirmation before the server editor closes with unsaved edits. */
 export const confirmDiscardServer = (serverName: string | null) =>
-  ask("Your changes haven't been saved.", {
-    title: serverName ? `Discard changes to “${serverName}”?` : 'Discard this new server?',
-    kind: 'warning',
-    okLabel: 'Discard',
-    cancelLabel: 'Keep Editing',
-  })
+  unsaved(serverName ? `Discard changes to “${serverName}”?` : 'Discard this new server?', 'Discard')
 
 /** The native confirmation before a library server is deleted. */
 export const confirmDeleteServer = (serverName: string, usedBy: string[]) =>
-  ask(
+  warn(
     usedBy.length > 0 ? `${usedBy.join(', ')} will stop loading it in new terminals.` : 'No profile uses it, so nothing changes in your terminals.',
-    {
-      title: `Delete the MCP server “${serverName}”?`,
-      kind: 'warning',
-      okLabel: 'Delete',
-      cancelLabel: 'Cancel',
-    },
+    `Delete the MCP server “${serverName}”?`,
+    'Delete',
+    'Cancel',
   )
 
 /**
@@ -55,12 +37,12 @@ export const confirmDeleteServer = (serverName: string, usedBy: string[]) =>
  * envrouter CLI or in config.json) to the same profiles or servers. `conflicts` as `mergeConfig` words them.
  */
 export const confirmReplace = (conflicts: string[]) =>
-  ask('config.json changed after you started editing. Changes to anything else are kept either way.', {
-    title: `Replace the other ${conflicts.length === 1 ? 'change' : 'changes'} to ${listOf(conflicts)}?`,
-    kind: 'warning',
-    okLabel: 'Replace',
-    cancelLabel: 'Cancel',
-  })
+  warn(
+    'config.json changed after you started editing. Changes to anything else are kept either way.',
+    `Replace the other ${conflicts.length === 1 ? 'change' : 'changes'} to ${listOf(conflicts)}?`,
+    'Replace',
+    'Cancel',
+  )
 
 /**
  * The native confirmation before a save writes config.json again after it was deleted outside
@@ -68,9 +50,9 @@ export const confirmReplace = (conflicts: string[]) =>
  * choice is the window's whole version or nothing.
  */
 export const confirmRestore = () =>
-  ask('It was deleted after you started editing. Saving writes it again with every profile and server shown here.', {
-    title: 'Save config.json again?',
-    kind: 'warning',
-    okLabel: 'Save',
-    cancelLabel: 'Cancel',
-  })
+  warn(
+    'It was deleted after you started editing. Saving writes it again with every profile and server shown here.',
+    'Save config.json again?',
+    'Save',
+    'Cancel',
+  )

@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import { checkMcpServer, errorMessage } from '../lib/api'
 import { type ProfileChip, type ServerDraft, serverOf } from '../lib/mcp'
+import { plural } from '../lib/text'
 import type { ServerCheck, ToolInfo } from '../lib/types'
 import { CheckIcon } from './icons'
 import { Button, ChevronIcon, ProfileDot, StatusTile, type Tone } from './ui'
@@ -63,14 +64,13 @@ export function CheckSection({
   const fromCache = !current && cached !== undefined
   const tools = result?.status === 'ok' ? result.tools : fromCache ? cached : null
   const tone: Tone = running ? 'pending' : result ? CHECK_TONE[result.status] : problem ? 'problem' : fromCache ? 'ok' : 'neutral'
-  const count = (n: number) => `${n} ${n === 1 ? 'tool' : 'tools'}`
   // A short list starts open; a long one folds away until asked for. The user's choice holds.
   const [open, setOpen] = useState<boolean | null>(null)
   const listOpen = open ?? (tools?.length ?? 0) <= 8
   const headline = running
     ? 'Starting the server…'
     : result?.status === 'ok'
-      ? count(result.tools.length)
+      ? plural(result.tools.length, 'tool', 'tools')
       : result?.status === 'needsLogin'
         ? 'Needs a sign-in'
         : result?.status === 'unsupported'
@@ -80,7 +80,7 @@ export function CheckSection({
             : problem
               ? "Can't check yet"
               : fromCache
-                ? count(cached.length)
+                ? plural(cached.length, 'tool', 'tools')
                 : null
 
   return (

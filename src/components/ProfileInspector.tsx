@@ -9,6 +9,7 @@ import { confirmDelete, confirmDiscard } from '../lib/confirm'
 import { mcpAgentLabels, serverSummary } from '../lib/mcp'
 import { splitLeaf, tildify } from '../lib/paths'
 import { shortcutLabel, usePlatform } from '../lib/platform'
+import { plural } from '../lib/text'
 import { KNOWN_TOOLS } from '../lib/tools'
 import type { McpServer, Profile, ToolInfo } from '../lib/types'
 import { setUnsaved } from '../lib/unsaved'
@@ -405,7 +406,7 @@ function ToolFilter({
         className={`${indent} pb-1.5 text-caption text-ink-2 ${off.length ? '' : 'italic'}`}
         title={`Check the server in MCP Servers (${shortcutLabel('2', platform)}) to choose its tools.`}
       >
-        {off.length ? `${off.length} ${off.length === 1 ? 'tool' : 'tools'} off` : 'All tools'}
+        {off.length ? `${plural(off.length, 'tool', 'tools')} off` : 'All tools'}
       </p>
     )
   }

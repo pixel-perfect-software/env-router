@@ -25,6 +25,7 @@ import {
 import { type Access, accessOf, type CatalogFilter, catalog, filterCatalog, isLocal } from '../lib/mcpCatalog'
 import { tildify } from '../lib/paths'
 import { usePlatform } from '../lib/platform'
+import { plural } from '../lib/text'
 import { withAgents } from '../lib/tools'
 import type { ConfigState, ImportCandidate, McpServer } from '../lib/types'
 import { LocalIcon, OpenIcon, RemoteIcon, SearchIcon, SignInIcon } from './icons'
@@ -108,7 +109,7 @@ export function CatalogView({
       <Header title="Catalog" count={entries.length} onClose={onBack} focusClose={false} />
       {/* The count, for a screen reader, as the search and filters narrow the list. */}
       <p role="status" className="sr-only">
-        {entries.length === 1 ? '1 server' : `${entries.length} servers`}
+        {plural(entries.length, 'server', 'servers')}
       </p>
       <div className="flex flex-col gap-2 px-5 pb-3">
         <span className="relative flex">
