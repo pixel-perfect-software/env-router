@@ -1,6 +1,7 @@
 // The MCP server library as the window edits it: one-line summaries, an editable draft of a
 // server, and the config changes that rename or remove one everywhere it's used.
 
+import { listOf } from './text'
 import { KNOWN_TOOLS, toolLabel } from './tools'
 import type { ConfigState, McpServer, McpValue, Profile } from './types'
 
@@ -166,7 +167,7 @@ export function plainCredentials(draft: ServerDraft): string[] {
 
 /** The warning for `plainCredentials`, as one line: "Argument 3 looks like a credential…". */
 export function plainNote(where: string[]): string {
-  const list = where.length > 1 ? `${where.slice(0, -1).join(', ')} and ${where[where.length - 1]}` : where[0]
+  const list = listOf(where)
   const first = list.charAt(0).toUpperCase() + list.slice(1)
   const fix = where.includes('the URL')
     ? 'use a header if the server takes one'

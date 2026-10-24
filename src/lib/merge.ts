@@ -63,6 +63,3 @@ export function mergeConfig(base: ConfigState, mine: ConfigState, theirs: Config
     conflicts,
   }
 }
-
-/** `a`, `a and b`, `a, b and c`. */
-export const listOf = (items: string[]) => (items.length < 2 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`)

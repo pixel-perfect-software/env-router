@@ -1,106 +1,42 @@
 import { listen } from '@tauri-apps/api/event'
 import { Menu } from '@tauri-apps/api/menu'
-import { homeDir } from '@tauri-apps/api/path'
 import { open } from '@tauri-apps/plugin-dialog'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { type MouseEvent, useCallback, useEffect, useRef, useState } from 'react'
-import { EditorsPopover, editorsToShow, type Health, HealthLine, ShellsPopover, TitleBand } from './components/Chrome'
-import { type CheckState, Docket } from './components/Docket'
-import { type DropTarget, Frame, type Slip } from './components/Frame'
+import { Docket } from './components/Docket'
+import { type DropTarget, Frame } from './components/Frame'
+import { HealthLine } from './components/Health'
+import { EditorsPopover, editorsToShow, ShellsPopover } from './components/Popovers'
 import { ProfileInspector } from './components/ProfileInspector'
 import { type Detail, ServersView } from './components/Servers'
+import { TitleBand } from './components/Titlebar'
 import { profileColors } from './components/ui'
 import { Welcome } from './components/Welcome'
 import {
-  checkFolder,
   errorMessage,
-  getConfig,
   getEditorStatus,
   getMcpTools,
-  getSetupStatus,
   openInEditor,
   previewFolder,
   quitApp,
-  saveConfig,
   setEditorIntegration,
   setShellIntegration,
   setUnsavedEdits,
 } from './lib/api'
-import { confirmDelete, confirmDiscardServer, confirmQuit, confirmReplace, confirmRestore } from './lib/confirm'
+import { confirmDelete, confirmDiscardServer, confirmQuit } from './lib/confirm'
+import { accentsOf, docketHasAction, healthOf } from './lib/health'
 import { withoutServer, withServer, withUsedBy } from './lib/mcp'
-import { mergeConfig } from './lib/merge'
-import { owningTrigger } from './lib/paths'
-import { guessPlatform, isShortcut, PlatformContext, platformInfo } from './lib/platform'
-import { ideHooks, KNOWN_TOOLS, toolByCommand, withAgents } from './lib/tools'
-import type { ConfigState, Editor, EditorStatus, Profile, SetupStatus, Shell, ToolInfo } from './lib/types'
+import { guessPlatform, PlatformContext, platformInfo } from './lib/platform'
+import { ideHooks, KNOWN_TOOLS, toolByCommand } from './lib/tools'
+import type { ConfigState, Editor, EditorStatus, Profile, Shell, ToolInfo } from './lib/types'
 import { hasUnsaved } from './lib/unsaved'
+import { useConfigStore } from './lib/useConfigStore'
+import { useFolderCheck } from './lib/useFolderCheck'
 import { useFolderDrop } from './lib/useFolderDrop'
-import { type VerdictAction, verdictOf } from './lib/verdict'
-
-const CHECKED_KEY = 'envrouter.checkedOnce'
-
-/** Per-viewer convenience: whether first-run's third step has been done on this Mac. */
-const readChecked = () => {
-  try {
-    return localStorage.getItem(CHECKED_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-const writeChecked = () => {
-  try {
-    localStorage.setItem(CHECKED_KEY, '1')
-  } catch {
-    // Storage unavailable: first-run just shows its last step again next launch.
-  }
-}
-
-/** A check that found something stopping the shim in a shell, until a later check clears it. */
-type Blocked = { shell: Shell; tool: string; headline: string; folder: string }
-
-function healthOf(
-  config: ConfigState | null,
-  setup: SetupStatus | null,
-  loadError: string | null,
-  setupError: string | null,
-  actionError: string | null,
-  home: string,
-  checkedOnce: boolean,
-  blocked: Blocked | null,
-  openError: string | null,
-): Health {
-  if (loadError) return { kind: 'unloaded', message: loadError, canOpen: home !== '', openError: openError ?? undefined }
-  if (setupError) return { kind: 'error', message: setupError, dismissible: false }
-  if (actionError) return { kind: 'error', message: actionError, dismissible: true }
-  if (!config || !setup) return { kind: 'loading' }
-  const available = setup.shells.filter((s) => s.available)
-  const login = available.find((s) => s.isDefault) ?? available[0]
-  const on = available.filter((s) => s.installed).map((s) => s.shell)
-
-  if (config.profiles.length === 0) return { kind: 'setup', step: 1, shell: login }
-  if (on.length === 0 && login) return checkedOnce ? { kind: 'off', shell: login } : { kind: 'setup', step: 2, shell: login }
-  if (!setup.shimInstalled) return { kind: 'shim' }
-  // What a real shell reported outranks what the config and startup files suggest.
-  if (blocked && on.includes(blocked.shell)) return { kind: 'blocked', ...blocked }
-  if (!checkedOnce) return { kind: 'setup', step: 3, shell: login }
-  if (login && !login.installed) return { kind: 'partial', on, shell: login }
-  return { kind: 'ok', on }
-}
+import { useShortcuts } from './lib/useShortcuts'
+import type { VerdictAction } from './lib/verdict'
 
 export default function App() {
-  const [home, setHome] = useState('')
-  const [config, setConfig] = useState<ConfigState | null>(null)
-  // A check compares against the config; with config.json unreadable (or not read yet) there's none.
-  const canCheck = config !== null
-  const [setup, setSetup] = useState<SetupStatus | null>(null)
-  // config.json (or the home folder) couldn't be read, so there's nothing to show yet.
-  const [loadError, setLoadError] = useState<string | null>(null)
-  // Opening an unreadable config.json failed too; shown under the parse error, not instead of it.
-  const [openError, setOpenError] = useState<string | null>(null)
-  // A failed status refresh. Cleared by the next one that works.
-  const [setupError, setSetupError] = useState<string | null>(null)
-  // A failed one-off action (turning on a shell, reinstalling). Cleared by the next success.
-  const [actionError, setActionError] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | 'new' | null>(null)
   // What a new profile starts from when it's a copy; gone once the inspector closes.
   const [template, setTemplate] = useState<Profile | null>(null)
@@ -117,28 +53,9 @@ export default function App() {
   const [editorsOpen, setEditorsOpen] = useState(false)
   // Read at launch, to know whether to offer Editors…, and each time it opens: the editors' own settings may have changed meanwhile.
   const [editors, setEditors] = useState<EditorStatus[] | null>(null)
-  const [check, setCheck] = useState<CheckState | null>(null)
-  const [slip, setSlip] = useState<Slip | null>(null)
-  const [blocked, setBlocked] = useState<Blocked | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget>(null)
-  const [checkedOnce, setCheckedOnce] = useState(readChecked)
   // The id the next new profile is saved with, so the inspector can show the colour it will get.
   const [newId, setNewId] = useState(() => crypto.randomUUID())
-  const checkKey = useRef(0)
-  // Bumped by every save, so a read of config.json that started before it can't put the old file back.
-  const configSeq = useRef(0)
-  // A check reads the shell's status when its result arrives, not when it started: a switch may have flipped meanwhile.
-  const latestSetup = useRef(setup)
-  latestSetup.current = setup
-
-  const refreshSetup = useCallback(async () => {
-    try {
-      setSetup(await getSetupStatus())
-      setSetupError(null)
-    } catch (err) {
-      setSetupError(errorMessage(err))
-    }
-  }, [])
 
   const refreshEditors = useCallback(async () => {
     try {
@@ -148,29 +65,30 @@ export default function App() {
     }
   }, [])
 
-  const load = useCallback(async () => {
-    refreshSetup()
-    refreshEditors()
-    const seq = configSeq.current
-    try {
-      // Home first: if the config can't be read, the banner still needs it to open the file.
-      setHome(await homeDir())
-      const loaded = await getConfig()
-      if (seq !== configSeq.current) return
-      setConfig(loaded)
-      setLoadError(null)
-      setOpenError(null)
-    } catch (err) {
-      if (seq !== configSeq.current) return
-      // Nothing is editable until the file is fixed: a save would replace whatever is in it.
-      setConfig(null)
-      setLoadError(errorMessage(err))
-    }
-  }, [refreshSetup, refreshEditors])
-
-  useEffect(() => {
-    load()
-  }, [load])
+  const {
+    home,
+    config,
+    setup,
+    setSetup,
+    loadError,
+    openError,
+    setOpenError,
+    setupError,
+    actionError,
+    setActionError,
+    refreshSetup,
+    load,
+    commit: save,
+  } = useConfigStore(refreshEditors)
+  // A check compares against the config; with config.json unreadable (or not read yet) there's none.
+  const canCheck = config !== null
+  const { check, slip, blocked, checkedOnce, routedTools, defaultShell, runCheck, isLatest, dismiss, reset, unblock } = useFolderCheck(
+    config,
+    setup,
+    home,
+  )
+  // A saved change drops the shown check: it may have moved the folder to another slot.
+  const commit = (edited: ConfigState, secrets: Record<string, string> = {}) => save(edited, secrets, reset)
 
   // config.json and the startup files can change from a terminal while the window is open, so
   // coming back reads both again. Not the config while the inspector is open: it saves on top
@@ -218,54 +136,6 @@ export default function App() {
     return () => window.removeEventListener('focus', onFocus)
   }, [inspecting, load, refreshSetup])
 
-  const defaultShell = (): Shell => {
-    const available = setup?.shells.filter((s) => s.available) ?? []
-    return (available.find((s) => s.isDefault) ?? available[0])?.shell ?? 'zsh'
-  }
-  /** Agents at least one profile sets, in registry order. Checks offer these. */
-  // A profile's MCP servers give an agent a shim too, as `config::tool_names` decides.
-  const routedTools = KNOWN_TOOLS.filter((tool) =>
-    config?.profiles.some((p) => p.tools[tool.command]?.path.trim() || (tool.mcp && Object.keys(p.mcpServers).length > 0)),
-  ).map((t) => t.command)
-  const defaultTool = () => (check && routedTools.includes(check.tool) ? check.tool : (routedTools[0] ?? KNOWN_TOOLS[0].command))
-
-  const runCheck = async (folder: string, shell: Shell, origin: { x: number; y: number } | null, tool = defaultTool()) => {
-    if (!config) return
-    const key = ++checkKey.current
-    setCheck({ key, folder, shell, tool, trigger: null, preview: null, result: null, error: null })
-    let preview = null
-    try {
-      preview = await previewFolder(config, folder, tool)
-    } catch {
-      // The real check below reports anything wrong with the folder.
-    }
-    if (key !== checkKey.current) return
-    // Which trigger won, for display; only trusted when it agrees with Rust's answer.
-    const owner = owningTrigger(config.profiles, folder, home)
-    const trigger = owner && owner.profileId === preview?.profileId ? owner.base : null
-    setCheck((c) => (c && c.key === key ? { ...c, preview, trigger } : c))
-    setSlip({ key, folder, profileId: preview?.profileId ?? null, trigger, mark: 'pending', origin })
-    try {
-      const result = await checkFolder(shell, folder, tool)
-      if (key !== checkKey.current) return
-      setCheck((c) => (c && c.key === key ? { ...c, result } : c))
-      setSlip((s) => (s && s.key === key ? { ...s, mark: result.status === 'routed' ? 'on' : 'problem' } : s))
-      const latest = latestSetup.current
-      const status = latest?.shells.find((s) => s.shell === shell)
-      const verdict = status && latest ? verdictOf(result, status, tool, routedTools.includes(tool), latest.shimsDir, home, trigger) : null
-      if (verdict?.blocksShell) setBlocked({ shell, tool, headline: verdict.headline, folder })
-      else setBlocked((b) => (b && b.shell === shell && b.tool === tool ? null : b))
-      if (result.status === 'routed') {
-        setCheckedOnce(true)
-        writeChecked()
-      }
-    } catch (err) {
-      if (key !== checkKey.current) return
-      setCheck((c) => (c && c.key === key ? { ...c, error: errorMessage(err) } : c))
-      setSlip((s) => (s && s.key === key ? { ...s, mark: 'problem' } : s))
-    }
-  }
-
   const setView = (next: 'profiles' | 'servers') => {
     setShellsOpen(false)
     setEditorsOpen(false)
@@ -293,7 +163,7 @@ export default function App() {
     setView('profiles')
     runCheck(picked, defaultShell(), null)
   }
-  // The menu bar's "Check Folder…" and keyboard shortcuts reach the latest handlers through a ref.
+
   // While the inspector is open a check stands down, as it does for a folder dropped on the window.
   const shortcuts = {
     checkFolder: () => {
@@ -308,11 +178,7 @@ export default function App() {
       if (!inspecting) setView(next)
     },
   }
-  const actions = useRef(shortcuts)
-  actions.current = shortcuts
   const platform = platformInfo(setup?.platform ?? guessPlatform(), setup?.secretStore)
-  const platformRef = useRef(platform)
-  platformRef.current = platform
 
   // The app asks before quitting only while an editor holds unsaved edits (`src-tauri/src/quit.rs`).
   useEffect(() => {
@@ -325,27 +191,7 @@ export default function App() {
     }
   }, [])
 
-  useEffect(() => {
-    const unlisten = listen('check-folder', () => actions.current.checkFolder())
-    const onKey = (e: KeyboardEvent) => {
-      if (!isShortcut(e, platformRef.current)) return
-      if (e.key === 'n') {
-        e.preventDefault()
-        actions.current.newProfile()
-      } else if (e.key === 'o') {
-        e.preventDefault()
-        actions.current.checkFolder()
-      } else if (e.key === '1' || e.key === '2') {
-        e.preventDefault()
-        actions.current.view(e.key === '1' ? 'profiles' : 'servers')
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => {
-      unlisten.then((stop) => stop())
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [])
+  useShortcuts(platform, shortcuts)
 
   const hovering = useFolderDrop(({ path, origin }) => {
     if (inspecting || !canCheck) return
@@ -368,55 +214,6 @@ export default function App() {
     }
   }, [hovering, config, inspecting])
 
-  /**
-   * Saves `edited`, an edit of the window's `config`. If config.json changed meanwhile (the CLI
-   * saved, or a hand edit), the edit is folded into the file as it is now, and only a profile or
-   * server changed on both sides asks first. Declining shows the file's version and rejects. If
-   * config.json is gone, the save asks before writing the window's version back.
-   */
-  const commit = async (edited: ConfigState, secrets: Record<string, string> = {}) => {
-    if (!config) return
-    const mine = withAgents(edited)
-    let next = mine
-    let base: ConfigState | null = config
-    let replace = false
-    // A file that keeps changing under the save gets a few tries, not a loop.
-    for (let tries = 0; ; tries++) {
-      const outcome = await saveConfig(next, secrets, base)
-      if (outcome.status === 'saved') {
-        next = outcome.config
-        break
-      }
-      if (outcome.status === 'missing') {
-        if (!(await confirmRestore())) throw new Error('Not saved. config.json is still missing.')
-        base = null
-        continue
-      }
-      if (tries === 2) throw new Error('config.json kept changing while saving. Save again.')
-      const merged = mergeConfig(config, mine, outcome.config)
-      if (merged.conflicts.length > 0 && !replace) {
-        replace = await confirmReplace(merged.conflicts)
-        if (!replace) {
-          configSeq.current++
-          setConfig(outcome.config)
-          throw new Error('Not saved. The other change was kept.')
-        }
-      }
-      next = withAgents(merged.config)
-      base = outcome.config
-    }
-    configSeq.current++
-    setActionError(null)
-    setConfig(next)
-    refreshSetup()
-    // A saved change can move a checked folder to another slot; the next check says where.
-    // A check still running was asked of the old config, so its answer is dropped too.
-    checkKey.current++
-    setSlip(null)
-    setCheck(null)
-    setBlocked(null)
-  }
-
   const saveProfile = async (profile: Profile) => {
     if (!config) return
     const exists = config.profiles.some((p) => p.id === profile.id)
@@ -435,12 +232,12 @@ export default function App() {
     const shown = check
     const status = await setShellIntegration(shell, enabled)
     setActionError(null)
-    setBlocked((b) => (b && b.shell === shell ? null : b))
+    unblock(shell)
     setSetup((s) => (s ? { ...s, shells: s.shells.map((x) => (x.shell === shell ? status : x)) } : s))
     refreshSetup()
     // The docket's result describes this shell before the switch; ask it again rather than
     // read the old answer against the new setting.
-    if (shown?.shell === shell && shown.key === checkKey.current) runCheck(shown.folder, shell, null, shown.tool)
+    if (shown?.shell === shell && isLatest(shown.key)) runCheck(shown.folder, shell, null, shown.tool)
   }
 
   useEffect(() => {
@@ -523,16 +320,8 @@ export default function App() {
 
   const closeShells = useCallback(() => setShellsOpen(false), [])
   const closeEditors = useCallback(() => setEditorsOpen(false), [])
-  // A Mac window has one default button. The banner's action outranks the check result's,
-  // which outranks Check Folder… in the titlebar.
-  const bannerHasPrimary = (h: Health) => h.kind === 'setup' || h.kind === 'shim' || h.kind === 'off' || (h.kind === 'unloaded' && h.canOpen)
-  const docketHasAction = (() => {
-    const status = check?.result && setup?.shells.find((s) => s.shell === check.shell)
-    return status && check?.result && setup
-      ? Boolean(verdictOf(check.result, status, check.tool, routedTools.includes(check.tool), setup.shimsDir, home).action)
-      : false
-  })()
   const health = healthOf(config, setup, loadError, setupError, actionError, home, checkedOnce, blocked, openError)
+  const accents = accentsOf(health, view, inspecting, docketHasAction(check, setup, routedTools, home))
   const editingId = editing === 'new' ? newId : editing
   // Before the first profile there's no map to show: the window greets instead.
   const welcome = view === 'profiles' && health.kind === 'setup' && health.step === 1
@@ -554,7 +343,7 @@ export default function App() {
           <TitleBand
             setup={setup}
             blockedShell={blocked?.shell ?? null}
-            primary={view === 'profiles' && !inspecting && !bannerHasPrimary(health) && !docketHasAction}
+            primary={accents.titlebar}
             canCheck={canCheck}
             shellsOpen={shellsOpen}
             onToggleShells={() => {
@@ -579,7 +368,7 @@ export default function App() {
                 health={health}
                 home={home}
                 summary={summary}
-                quiet={view === 'servers'}
+                quiet={accents.quiet}
                 onNewProfile={() => setEditing('new')}
                 onEnableShell={enableShell}
                 onCheckFolder={pickAndCheck}
@@ -651,11 +440,9 @@ export default function App() {
                   hovering={hovering}
                   onRecheck={(shell, tool) => check && runCheck(check.folder, shell, null, tool)}
                   onAction={runAction}
-                  primary={!inspecting && !bannerHasPrimary(health)}
+                  primary={accents.docket}
                   onDismiss={() => {
-                    checkKey.current++
-                    setCheck(null)
-                    setSlip(null)
+                    dismiss()
                     // Dismiss leaves with the result; Check Folder… is where the next one starts.
                     document.getElementById('check-folder')?.focus()
                   }}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { listOf, mergeConfig } from './merge'
+import { mergeConfig } from './merge'
 import type { ConfigState, McpServer, Profile } from './types'
 
 const profile = (id: string, name: string, triggerPaths: string[] = []): Profile => ({ id, name, triggerPaths, tools: {}, mcpServers: {} })
@@ -55,10 +55,4 @@ describe('mergeConfig', () => {
     const changed = { ...base, profiles: [profile('p1', 'Job', ['~/work']), base.profiles[1]] }
     expect(mergeConfig(base, changed, structuredClone(changed)).conflicts).toEqual([])
   })
-})
-
-it('lists for a sentence', () => {
-  expect(listOf(['a'])).toBe('a')
-  expect(listOf(['a', 'b'])).toBe('a and b')
-  expect(listOf(['a', 'b', 'c'])).toBe('a, b and c')
 })

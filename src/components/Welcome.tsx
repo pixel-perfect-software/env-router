@@ -5,7 +5,7 @@
 import welcomeArt from '../assets/welcome.svg'
 import { shortcutLabel, usePlatform } from '../lib/platform'
 import { KNOWN_TOOLS } from '../lib/tools'
-import { SetupSteps } from './Chrome'
+import { SetupSteps } from './Health'
 import { Button } from './ui'
 
 /** `primary`: off while the inspector is open over it, so its Save stays the window's one accent button. */

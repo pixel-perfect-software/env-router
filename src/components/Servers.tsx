@@ -8,6 +8,7 @@ import libraryArt from '../assets/servers-library.svg'
 import { getMcpTools } from '../lib/api'
 import { confirmDiscardServer } from '../lib/confirm'
 import { duplicateDraft, type ProfileChip, profilesUsing, type ServerDraft, TRANSPORTS } from '../lib/mcp'
+import { plural } from '../lib/text'
 import type { ConfigState, McpServer, ToolInfo } from '../lib/types'
 import { CatalogIcon, ImportIcon, PasteIcon, TransportIcon } from './icons'
 import { ServerEditor } from './ServerEditor'
@@ -152,7 +153,7 @@ export function ServersView({
                         <span className="flex items-center gap-1 text-caption text-ink-2">
                           <TransportIcon transport={server.transport} size={11} />
                           {TRANSPORTS.find(([t]) => t === server.transport)?.[1]}
-                          {tools[name] && ` · ${tools[name].length} ${tools[name].length === 1 ? 'tool' : 'tools'}`}
+                          {tools[name] && ` · ${plural(tools[name].length, 'tool', 'tools')}`}
                         </span>
                       </span>
                       {users.length > 0 && (
