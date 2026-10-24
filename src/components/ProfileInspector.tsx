@@ -336,7 +336,9 @@ export function ProfileInspector({
                           />
                           <CheckBox checked={on} />
                           <ServerMark name={server} server={library[server]} size={20} />
-                          <span className={`shrink-0 font-mono text-small ${on ? 'text-ink' : 'text-ink-2'}`}>{server}</span>
+                          <span className={`max-w-[60%] shrink-0 truncate font-mono text-small ${on ? 'text-ink' : 'text-ink-2'}`} title={server}>
+                            {server}
+                          </span>
                           <span className="min-w-0 flex-1 truncate font-mono text-caption text-ink-2" title={serverSummary(library[server])}>
                             {serverSummary(library[server])}
                           </span>

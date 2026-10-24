@@ -387,7 +387,9 @@ export function ImportView({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline gap-2">
-                      <span className="font-mono text-small text-ink">{row.as}</span>
+                      <span className="min-w-0 truncate font-mono text-small text-ink" title={row.as}>
+                        {row.as}
+                      </span>
                       {row.present ? (
                         <span className="text-caption text-ink-2">In the library</span>
                       ) : (

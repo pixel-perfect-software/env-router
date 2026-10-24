@@ -133,7 +133,9 @@ export function ShellsPopover({
                 {s.isDefault && <span className="ml-2 rounded-full bg-tint px-1.5 py-px text-caption font-normal text-accent-ink">login shell</span>}
               </p>
               {s.available ? (
-                <p className="truncate font-mono text-small text-ink-2 select-text">{s.startupFiles.map((f) => tildify(f, home)).join(', ')}</p>
+                <p className="truncate font-mono text-small text-ink-2 select-text" title={s.startupFiles.map((f) => tildify(f, home)).join(', ')}>
+                  {s.startupFiles.map((f) => tildify(f, home)).join(', ')}
+                </p>
               ) : (
                 <p className="text-small text-ink-2 italic">Not installed</p>
               )}
