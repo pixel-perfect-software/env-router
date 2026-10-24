@@ -94,9 +94,15 @@ export default function App() {
   // coming back reads both again. Not the config while the inspector is open: it saves on top
   // of the config it opened with.
   const inspecting = editing !== null
+  const editingId = editing === 'new' ? newId : editing
   // Closing a panel puts focus back where it was before the panel opened (the pencil, the
   // titlebar button, a card), whichever way it was opened: button, shortcut or menu.
   const lastOutside = useRef<HTMLElement | null>(null)
+  // The profile the inspector showed last, whose card takes focus when what opened the inspector is gone.
+  const lastEdited = useRef<string | null>(null)
+  useEffect(() => {
+    if (editingId !== null) lastEdited.current = editingId
+  }, [editingId])
   useEffect(() => {
     const onFocus = (event: FocusEvent) => {
       const target = event.target as HTMLElement
@@ -112,7 +118,11 @@ export default function App() {
       // A card swaps its pencil for "Editing" while open, so the pencil that was pressed is a
       // new element now: find it again by its accessible name.
       const label = last?.getAttribute('aria-label')
-      const target = last?.isConnected ? last : label ? document.querySelector<HTMLElement>(`[aria-label="${CSS.escape(label)}"]`) : null
+      const opener = last?.isConnected ? last : label ? document.querySelector<HTMLElement>(`[aria-label="${CSS.escape(label)}"]`) : null
+      // Gone after a delete, a rename or Welcome's first save: then the profile's own pencil if its card is
+      // still there, else New Profile.
+      const edited = lastEdited.current ? `[data-profile="${CSS.escape(lastEdited.current)}"] [aria-label^="Edit "]` : null
+      const target = opener ?? (edited ? document.querySelector<HTMLElement>(edited) : null) ?? document.getElementById('new-profile')
       target?.focus()
     }
     wasInspecting.current = inspecting
@@ -322,7 +332,6 @@ export default function App() {
   const closeEditors = useCallback(() => setEditorsOpen(false), [])
   const health = healthOf(config, setup, loadError, setupError, actionError, home, checkedOnce, blocked, openError)
   const accents = accentsOf(health, view, inspecting, docketHasAction(check, setup, routedTools, home))
-  const editingId = editing === 'new' ? newId : editing
   // Before the first profile there's no map to show: the window greets instead.
   const welcome = view === 'profiles' && health.kind === 'setup' && health.step === 1
   const summary = config

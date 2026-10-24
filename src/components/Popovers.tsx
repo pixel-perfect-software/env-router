@@ -141,7 +141,7 @@ export function ShellsPopover({
             {s.available && (
               <Switch
                 checked={s.installed}
-                disabled={busy !== null}
+                busy={busy !== null}
                 onChange={(next) => run(s.shell, () => onSet(s.shell, next))}
                 label={`EnvRouter in ${s.shell}`}
               />
@@ -186,7 +186,7 @@ export function EditorsPopover({
               </div>
               <Switch
                 checked={e.installed}
-                disabled={busy !== null}
+                busy={busy !== null}
                 onChange={(next) => run(key, () => onSet(e.editor, e.command, next))}
                 label={`EnvRouter for ${agent} in ${EDITOR_LABEL[e.editor]}`}
               />

@@ -141,6 +141,7 @@ function ProfileCard({
   return (
     <section
       aria-label={`Profile ${profile.name}`}
+      data-profile={profile.id}
       onContextMenu={(event) => {
         event.preventDefault()
         const row = (event.target as HTMLElement).closest<HTMLElement>('[data-folder]')
@@ -261,6 +262,7 @@ function NewProfileCard({ first, selected, onNew }: { first: boolean; selected: 
   return (
     <button
       type="button"
+      id="new-profile"
       disabled={selected}
       onClick={onNew}
       className={`group flex min-h-[176px] flex-col items-center justify-center gap-2 rounded-card text-ink-2 shadow-[inset_0_0_0_1.5px_var(--er-rule)] transition-[opacity,background-color,color] duration-150 hover:bg-card hover:text-accent-ink disabled:pointer-events-none ${

@@ -101,11 +101,51 @@ describe('unsaved edits', () => {
 })
 
 describe('focus', () => {
+  const closed = () => waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
   it('returns to the pencil that opened the inspector when Cancel closes it', async () => {
     const user = await open('?scenario=populated')
     await user.click(await screen.findByRole('button', { name: 'Edit Work' }))
     await user.click(inspector().getByRole('button', { name: 'Cancel' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await closed()
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit Work' }))
+  })
+
+  it('goes to New Profile when the inspector deletes its profile', async () => {
+    vi.stubGlobal('confirm', () => true)
+    const user = await open('?scenario=populated')
+    await user.click(await screen.findByRole('button', { name: 'Edit Work' }))
+    await user.click(inspector().getByRole('button', { name: /^Delete/ }))
+    await closed()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /New Profile/ }))
+  })
+
+  it("goes to the new profile's pencil after the first save from Welcome", async () => {
+    const user = await open('?scenario=first-run')
+    await user.click(await screen.findByRole('button', { name: 'New Profile' }))
+    await user.type(inspector().getByLabelText('Name'), 'Mine')
+    await user.click(inspector().getByRole('button', { name: 'Save' }))
+    await closed()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit Mine' }))
+  })
+
+  it('goes to the next server when one is deleted', async () => {
+    vi.stubGlobal('confirm', () => true)
+    const user = await open('?scenario=mcp')
+    await user.click(await screen.findByRole('button', { name: 'MCP Servers' }))
+    await user.click(screen.getByRole('button', { name: /^playwright/ }))
+    await user.click(within(screen.getByRole('form', { name: 'Edit playwright' })).getByRole('button', { name: /^Delete/ }))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: /^postgres/ })))
+  })
+
+  it('stays on a switch while it turns a shell on or off', async () => {
+    const user = await open('?scenario=populated')
+    await user.click(await screen.findByRole('button', { name: /Shells/ }))
+    const toggle = screen.getByRole('switch', { name: 'EnvRouter in bash' })
+    await user.click(toggle)
+    // A browser moves focus off a button that turns `disabled`; happy-dom doesn't, so this reads the cause.
+    expect(toggle.getAttribute('aria-disabled')).toBe('true')
+    expect(toggle.hasAttribute('disabled')).toBe(false)
+    await waitFor(() => expect(toggle.hasAttribute('aria-disabled')).toBe(false))
   })
 })

@@ -246,9 +246,17 @@ export function ServersView({
             onDelete={
               detail.name
                 ? async () => {
-                    if (detail.name) await onDelete(detail.name)
+                    if (!detail.name) return
+                    // The editor closes with the server, so focus goes to the row that takes its place, or Add Server.
+                    const at = names.indexOf(detail.name)
+                    const next = names[at + 1] ?? names[at - 1]
+                    await onDelete(detail.name)
                     dirty.current = false
                     onDetail({ kind: 'none' })
+                    requestAnimationFrame(() => {
+                      const row = next ? document.querySelector<HTMLElement>(`[data-server="${CSS.escape(next)}"]`) : null
+                      if (document.activeElement === document.body) (row ?? document.querySelector<HTMLElement>('[aria-label="Add Server"]'))?.focus()
+                    })
                   }
                 : undefined
             }
