@@ -13,8 +13,9 @@ their issues there (17 to 54, in the order listed here, then later findings at t
 milestone); M3 to M7 keep theirs in this file until each is next. A new finding goes into its
 milestone here first, then into an issue. PRs are assigned to the milestone they advance.
 
-**Status (2026-10-23):** M0 is done: all 12 issues fixed and merged (PRs #55 to #66), not yet
-released. M1 is next.
+**Status (2026-10-23):** M0 and M1 are done. M0's 12 issues were merged in PRs #55 to #66 and
+M1's 13 in PRs #72 to #90; both shipped in 0.7.1 except M1's last four PRs (#87 to #90), which
+change only CI, the Homebrew templates and docs. M2 is next.
 
 Order: M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7. The first three are small and make the next
 release trustworthy. M4 (agents) is what brings users and can start as soon as M0 lands, since
@@ -23,7 +24,7 @@ it's mostly data and one new dialect. M7 can start after M3, which carries the W
 | Milestone | Goal | Size |
 |---|---|---|
 | M0: Correctness floor (done) | Fix every verified bug that loses data, crosses profiles or blocks the tool | small |
-| M1: Release integrity | A release can only ship what CI tested, and every shipped target is checked for advisories | small |
+| M1: Release integrity (done) | A release can only ship what CI tested, and every shipped target is checked for advisories | small |
 | M2: Lean and fast | Ship only what each platform needs, and keep the shim's overhead flat as configs grow | small |
 | M3: Every state has a way out | No dead ends in the window, no silent losses, and the files the app touches are one click away | medium |
 | M4: More agents, moving ecosystem | Add agents as data, starting with Codex, and keep the MCP side current with the spec and the registry | medium |
@@ -122,6 +123,16 @@ the file disappeared is refused; closing the window with unsaved edits asks firs
 ---
 
 ## M1: Release integrity
+
+**Status:** done 2026-10-23. All 13 issues were fixed and merged (PRs #72 to #90), and 0.7.1 was
+the first release through the new checks: its `check` job waited for CI on the tagged commit,
+the Linux builds ran in the pinned CI image, and every asset has a provenance attestation that
+`gh attestation verify --signer-workflow …/release.yml` accepts. Beyond the plan: the Linux CI and
+release jobs run in a prebuilt image (`.github/ci/Containerfile`) instead of installing packages
+from Ubuntu's mirror, which caused every stalled job; main's CI runs are grouped by commit
+(#87); and the release's CLI build is split into macOS and Linux jobs. Not verified on a real
+machine: an Intel Mac hitting the formula's arm64-only error, and the AppImage built without
+`libxdo-dev` running on a desktop.
 
 **Goal:** a release can only ship what CI tested, and every target we ship is checked for
 advisories. **Size:** small.
