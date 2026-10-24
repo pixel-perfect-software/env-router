@@ -47,6 +47,7 @@ pub fn active_profile<'a>(
     folder: &Path,
 ) -> Option<&'a Profile> {
     let folder = fs::canonicalize(folder).unwrap_or_else(|_| folder.to_path_buf());
+    let ancestors = Ancestors::of(&folder);
     let mut best: Option<(usize, &Profile)> = None;
     for profile in &config.profiles {
         for raw in &profile.trigger_paths {
@@ -55,16 +56,65 @@ pub fn active_profile<'a>(
             let Ok(base) = config::trigger_base(raw, home) else {
                 continue;
             };
-            let base = fs::canonicalize(&base).unwrap_or(base);
-            let depth = base.components().count();
-            // `starts_with` compares whole components, so ~/dev/work doesn't match
-            // ~/dev/workshop.
-            if folder.starts_with(&base) && best.is_none_or(|(deepest, _)| depth > deepest) {
-                best = Some((depth, profile));
+            if let Some(depth) = ancestors.depth_of(&base) {
+                if best.is_none_or(|(deepest, _)| depth > deepest) {
+                    best = Some((depth, profile));
+                }
             }
         }
     }
     best.map(|(_, profile)| profile)
+}
+
+/// The folder being resolved and the folders above it, so each trigger can be tested against
+/// them: the shim does this for every trigger on every agent launch.
+struct Ancestors<'a> {
+    folder: &'a Path,
+    /// On Unix, each existing ancestor's device and inode, with its depth.
+    #[cfg(unix)]
+    ids: Vec<((u64, u64), usize)>,
+}
+
+impl<'a> Ancestors<'a> {
+    fn of(folder: &'a Path) -> Self {
+        Self {
+            folder,
+            #[cfg(unix)]
+            ids: folder
+                .ancestors()
+                .filter_map(|dir| Some((id(dir)?, dir.components().count())))
+                .collect(),
+        }
+    }
+
+    /// How deep the folder `base` names sits, if it's the folder or one above it.
+    ///
+    /// On Unix that's a match of device and inode, which follows a symlinked trigger and, on a
+    /// case-insensitive volume, ignores letter case, as comparing canonical paths would, at one
+    /// `stat` per trigger rather than canonicalizing it, which costs one per component (about
+    /// 200,000 instructions per trigger on macOS). A trigger that doesn't exist, or a platform
+    /// without inodes, falls back to comparing paths: `starts_with` compares whole components, so
+    /// ~/dev/work doesn't match ~/dev/workshop.
+    fn depth_of(&self, base: &Path) -> Option<usize> {
+        #[cfg(unix)]
+        if let Some(base_id) = id(base) {
+            return self
+                .ids
+                .iter()
+                .find(|(dir, _)| *dir == base_id)
+                .map(|&(_, depth)| depth);
+        }
+        let base = fs::canonicalize(base).unwrap_or_else(|_| base.to_path_buf());
+        self.folder
+            .starts_with(&base)
+            .then(|| base.components().count())
+    }
+}
+
+#[cfg(unix)]
+fn id(path: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    fs::metadata(path).ok().map(|meta| (meta.dev(), meta.ino()))
 }
 
 #[cfg(test)]
@@ -176,6 +226,44 @@ mod tests {
         let (_root, home) = home_with(&["dev/work/app"]);
         std::os::unix::fs::symlink(home.join("dev/work"), home.join("shortcut")).unwrap();
         assert_eq!(profile_name(&home, "shortcut/app").as_deref(), Some("Work"));
+    }
+
+    /// A trigger that's itself a link (dotfiles pointing ~/work at a disk) owns the folder it
+    /// points to, matched by the folder's identity rather than its text.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_trigger_owns_the_folder_it_points_to() {
+        let (_root, home) = home_with(&["disk/projects/app", "dev"]);
+        std::os::unix::fs::symlink(home.join("disk/projects"), home.join("work")).unwrap();
+        let config = ConfigState {
+            profiles: vec![
+                profile("Personal", &["~"], Some("~/.claude-me")),
+                profile("Linked", &["~/work"], Some("~/.claude-work")),
+            ],
+            ..Default::default()
+        };
+        let owner = |folder: &str| {
+            active_profile(&config, &home, &home.join(folder)).map(|p| p.name.as_str())
+        };
+        assert_eq!(owner("disk/projects/app"), Some("Linked"));
+        assert_eq!(owner("work/app"), Some("Linked"));
+        assert_eq!(owner("dev"), Some("Personal"));
+    }
+
+    /// A trigger folder that doesn't exist yet has no identity, so it's compared as a path, and
+    /// an existing folder is never inside it.
+    #[test]
+    fn a_missing_trigger_folder_owns_nothing() {
+        let (_root, home) = home_with(&["dev/app"]);
+        let config = ConfigState {
+            profiles: vec![profile(
+                "Later",
+                &["~/dev/app/not-yet"],
+                Some("~/.claude-later"),
+            )],
+            ..Default::default()
+        };
+        assert!(active_profile(&config, &home, &home.join("dev/app")).is_none());
     }
 
     #[test]
