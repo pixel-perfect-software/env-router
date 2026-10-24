@@ -203,6 +203,7 @@ export default function App() {
 
   useShortcuts(platform, shortcuts)
 
+  // The open inspector takes a drop as a trigger folder itself (ProfileInspector), so the window only checks one.
   const hovering = useFolderDrop(({ path, origin }) => {
     if (inspecting || !canCheck) return
     setView('profiles')
@@ -344,7 +345,7 @@ export default function App() {
 
   return (
     <PlatformContext.Provider value={platform}>
-      <div className={`relative flex h-full flex-col ${hovering && canCheck ? 'shadow-[inset_0_0_0_2px_var(--er-accent-ink)]' : ''}`}>
+      <div className={`relative flex h-full flex-col ${hovering && canCheck && !inspecting ? 'shadow-[inset_0_0_0_2px_var(--er-accent-ink)]' : ''}`}>
         {/* While the inspector is open, everything behind it is out of reach: Tab, clicks and
           screen readers stay in the editor, so a stray Enter on a card can't drop its edits.
           `contents` keeps the window's layout as if this wrapper weren't there. */}
@@ -446,7 +447,7 @@ export default function App() {
                   home={home}
                   routedTools={routedTools}
                   shimsDir={setup?.shimsDir ?? `${home}/.envrouter/shims`}
-                  hovering={hovering}
+                  hovering={inspecting ? null : hovering}
                   onRecheck={(shell, tool) => check && runCheck(check.folder, shell, null, tool)}
                   onAction={runAction}
                   primary={accents.docket}
