@@ -1,0 +1,17 @@
+# Sorts the notes `gh release create --generate-notes` writes (release.yml's publish job) by the
+# pull requests' labels, so a release says what's a fix and what's new. Unlabelled pull requests
+# land under "Other changes"; docs/contributing.md asks for a label on each.
+changelog:
+  categories:
+    - title: Fixes
+      labels: [bug]
+    - title: New
+      labels: [enhancement]
+    - title: Release and CI
+      labels: [ci]
+    - title: Docs
+      labels: [documentation]
+    - title: Dependencies
+      labels: [dependencies]
+    - title: Other changes
+      labels: ['*']

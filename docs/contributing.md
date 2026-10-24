@@ -258,7 +258,10 @@ published; replace the secret and re-run the job.
    a bug fix.
 3. Run the commands above. CI must pass.
 4. Update the README when the change is visible to users.
-5. Sign off every commit (`git commit -s`). The `Signed-off-by` line certifies the
+5. Label it `bug`, `enhancement`, `ci` (workflows and releases) or `documentation`: the release
+   notes group pull requests by label (`.github/release.yml`), and an unlabelled one lands under
+   "Other changes".
+6. Sign off every commit (`git commit -s`). The `Signed-off-by` line certifies the
    [Developer Certificate of Origin](https://developercertificate.org): you wrote the change, or
    otherwise have the right to submit it, under EnvRouter's licence,
    [GPL-3.0-or-later](../LICENSE). You keep the copyright on what you contribute.

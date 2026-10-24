@@ -109,11 +109,11 @@ command of the same name and arguments.
 |---|---|
 | App shell | Tauri 2 with plugins: dialog, opener |
 | Backend | Rust 2021 edition, Cargo workspace, serde / serde_json / thiserror; clap (CLI); jsonc-parser (editor settings); secret-service (Linux), windows-sys (Windows) |
-| Frontend | React 19, TypeScript 6, Vite 8 |
+| Frontend | React 19, TypeScript 7, Vite 8 |
 | Styling | Tailwind CSS 4 via `@tailwindcss/vite` |
 | Lint / format | Biome 2.5 (TS/JSON/CSS); `cargo fmt` and clippy (Rust) |
 | Tests | `cargo test` (Rust, including the built shim and real zsh, bash and fish); Vitest (`src/**/*.test.ts`) |
-| Package manager | pnpm 12.14.0 and Node 24.21.0 (pinned in `.tool-versions`; pnpm also in `packageManager`) |
+| Package manager | pnpm 12.14.0 and Node 24.22.1 (pinned in `.tool-versions`; pnpm also in `packageManager`) |
 | Platform | macOS 11+ on Apple Silicon; Linux x86_64 and aarch64 (glibc of Ubuntu 22.04 or later), WSL 2 included |
 
 ## Commands
