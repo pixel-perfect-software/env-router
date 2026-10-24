@@ -139,4 +139,54 @@ describe('verdictOf', () => {
     expect(routed.headline).toBe('Routed to Work')
     expect(routed.note).toBe(`Work sets claude's config, but its MCP servers are off because ${managed} manages them on this machine.`)
   })
+
+  it('says a profile owns the folder but leaves the agent alone, when it sets neither config nor servers', () => {
+    const v = verdict({
+      status: 'routed',
+      profile: 'Work',
+      envVar: null,
+      value: null,
+      mcp: [],
+      mcpManagedBy: null,
+      viaAlias: null,
+      real: '/opt/bin/claude',
+    })
+    expect(v.tone).toBe('warn')
+    expect(v.headline).toBe('Owned by Work')
+    expect(v.note).toBe("Work doesn't set claude, so it uses its default config here.")
+  })
+
+  it('says no profile owns a folder, and names no trigger for it', () => {
+    const unowned: FolderCheck = {
+      status: 'routed',
+      profile: null,
+      envVar: null,
+      value: null,
+      mcp: [],
+      mcpManagedBy: null,
+      viaAlias: null,
+      real: '/opt/bin/claude',
+    }
+    const v = verdictOf(unowned, zsh(true), 'claude', true, SHIMS, HOME, `${HOME}/dev`)
+    expect(v.tone).toBe('neutral')
+    expect(v.headline).toBe('No profile owns this folder')
+    expect(v.note).toBe('claude uses its default config here.')
+    expect(v.values).toEqual([{ label: 'runs', value: '/opt/bin/claude' }])
+  })
+
+  it('names a shell function that runs before the shim, and opens the file that defines it', () => {
+    const origin = `${HOME}/.config/zsh/functions.zsh`
+    const v = verdict({ status: 'shadowedByShell', kind: 'function', origin })
+    expect(v.headline).toBe('A zsh function named claude runs first')
+    expect(v.values).toEqual([{ label: 'defined in', value: '~/.config/zsh/functions.zsh' }])
+    expect(v.action).toEqual({ kind: 'openFile', path: origin })
+    expect(v.blocksShell).toBe(true)
+  })
+
+  it("sends an alias, which has no file to name, to the shell's startup file to look in", () => {
+    const v = verdict({ status: 'shadowedByShell', kind: 'alias', origin: null })
+    expect(v.headline).toBe('A zsh alias named claude runs first')
+    expect(v.values).toEqual([{ label: 'look in', value: '~/.zshrc' }])
+    expect(v.action).toEqual({ kind: 'openFile', path: `${HOME}/.zshrc` })
+  })
 })
