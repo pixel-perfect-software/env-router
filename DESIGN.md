@@ -637,7 +637,7 @@ A raised panel hanging from the Shells control, right edges aligned, that opens 
 
 ### The Mark
 The app icon and menu bar glyph, drawn by hand as SVG in `src-tauri/icons/` and rendered into every raster at its exact pixel size with a transparent background.
-- **Regular cut** (`app-icon.svg`): 128 px and up: `128x128.png`, `128x128@2x.png` (256), `icon.png` (512), and the 128 to 1024 px members of `icon.icns`.
+- **Regular cut** (`app-icon.svg`): 128 px and up: `128x128.png`, `256x256.png`, `icon.png` (512), and the 128 to 1024 px members of `icon.icns`.
 - **Small cut** (`app-icon-small.svg`): 64 px and under: `32x32.png` and the 16, 32 and 64 px members of `icon.icns`, assembled through an `iconutil` iconset.
 - **Menu bar glyph** (`tray.svg` to `tray.png`, 36 × 36): loaded by `tray.rs` with `icon_as_template(true)`. A solid black folder masked by the fork: the lit branch (stem, curve) and a 1.8-radius coin are cut fully through (mask #000, alpha 0); the idle branch is half cut (mask #808080, alpha 0.5) and has no coin. Branch strokes are 1.6 wide with round caps.
 - **In the window:** the small cut, imported straight from `app-icon-small.svg`, at 22px before the app name in the titlebar, centred with the traffic lights. Nowhere else; the Welcome and the empty Servers detail use the illustrations below.

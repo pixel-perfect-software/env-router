@@ -19,7 +19,8 @@
     "targets": ["deb", "appimage"],
     "linux": {
       "deb": {
-        "section": "devel"
+        "section": "devel",
+        "recommends": ["gnome-keyring"]
       }
     }
   }

@@ -734,7 +734,7 @@
           "name": "regular",
           "file": "app-icon.svg",
           "sizes": "128 px and up",
-          "rasters": ["128x128.png", "128x128@2x.png", "icon.png", "icon.icns 128 to 1024"],
+          "rasters": ["128x128.png", "256x256.png", "icon.png", "icon.icns 128 to 1024"],
           "folder": "x 312 to 712, y 186 to 486",
           "track": "34 wide, round caps, from y 470",
           "pivot": "r 22 at (512, 598)",
