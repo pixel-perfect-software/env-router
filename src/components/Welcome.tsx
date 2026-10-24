@@ -34,7 +34,13 @@ export function Welcome({ shell, primary, onNewProfile }: { shell: string; prima
         <SetupSteps step={1} shell={shell} className="mt-6 justify-center" />
         {/* The hint hangs off the button, so the button sits on the column's axis with the art and heading. */}
         <div className="relative mt-5">
-          <Button kind={primary ? 'primary' : 'push'} size="large" onClick={onNewProfile} title={`New Profile (${shortcutLabel('n', platform)})`}>
+          <Button
+            id="new-profile"
+            kind={primary ? 'primary' : 'push'}
+            size="large"
+            onClick={onNewProfile}
+            title={`New Profile (${shortcutLabel('n', platform)})`}
+          >
             New Profile
           </Button>
           <kbd className="absolute top-1/2 left-full ml-2.5 -translate-y-1/2 font-sans text-caption whitespace-nowrap text-ink-2">

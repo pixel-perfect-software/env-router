@@ -85,16 +85,17 @@ export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTM
   )
 })
 
+/** `busy`: as `Button`'s, it looks disabled and ignores presses but keeps focus. */
 export function Switch({
   checked,
   onChange,
   label,
-  disabled,
+  busy = false,
 }: {
   checked: boolean
   onChange: (next: boolean) => void
   label: string
-  disabled?: boolean
+  busy?: boolean
 }) {
   return (
     <button
@@ -102,9 +103,9 @@ export function Switch({
       role="switch"
       aria-checked={checked}
       aria-label={label}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={`relative h-[16px] w-[28px] shrink-0 rounded-full transition-colors duration-150 disabled:opacity-45 ${
+      aria-disabled={busy || undefined}
+      onClick={() => busy || onChange(!checked)}
+      className={`relative h-[16px] w-[28px] shrink-0 rounded-full transition-colors duration-150 aria-disabled:opacity-45 ${
         // Off, the track carries a field edge so the control's bounds hold 3:1 (WCAG 1.4.11).
         checked ? 'bg-accent' : 'bg-[color-mix(in_srgb,var(--er-ink)_18%,transparent)] shadow-[inset_0_0_0_1px_var(--er-field-edge)]'
       } forced-colors:border forced-colors:border-[ButtonText] forced-colors:forced-color-adjust-none ${checked ? 'forced-colors:bg-[Highlight]' : 'forced-colors:bg-[Canvas]'}`}
