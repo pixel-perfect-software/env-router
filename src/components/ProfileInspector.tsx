@@ -8,7 +8,7 @@ import { errorMessage } from '../lib/api'
 import { confirmDelete, confirmDiscard } from '../lib/confirm'
 import { mcpAgentLabels, serverSummary } from '../lib/mcp'
 import { splitLeaf, tildify } from '../lib/paths'
-import { plural } from '../lib/text'
+import { listOf, plural } from '../lib/text'
 import { KNOWN_TOOLS } from '../lib/tools'
 import type { McpServer, Profile, ToolInfo } from '../lib/types'
 import { setUnsaved } from '../lib/unsaved'
@@ -372,7 +372,7 @@ export function ProfileInspector({
             </div>
             {libraryNames.length > 0 && mcpAgents.length > 0 && (
               <p className="mt-2 text-caption text-ink-2">
-                {mcpAgents.join(' and ')} {mcpAgents.length > 1 ? 'load' : 'loads'} these in this profile's folders.
+                {listOf(mcpAgents)} {mcpAgents.length > 1 ? 'load' : 'loads'} these in this profile's folders.
               </p>
             )}
           </fieldset>

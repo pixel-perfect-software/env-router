@@ -42,7 +42,7 @@ describe('the one accent button', () => {
   it('goes to Save under the open inspector, though the banner keeps its accent action behind it', async () => {
     const user = await open('?scenario=populated&shim=stale')
     await screen.findByText('The shim is missing or out of date')
-    const reinstall = screen.getByRole('button', { name: 'Reinstall' })
+    const reinstall = screen.getByRole('button', { name: 'Reinstall Shim' })
     expect(reachableAccents()).toEqual([reinstall])
 
     await user.click(screen.getByRole('button', { name: 'Edit Personal' }))
@@ -138,12 +138,12 @@ describe('focus', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit Mine' }))
   })
 
-  it('goes to Add Server when the inspector sends the user to MCP Servers for a first server', async () => {
+  it('goes to the + button when the inspector sends the user to MCP Servers for a first server', async () => {
     const user = await open('?scenario=populated')
     await user.click(await screen.findByRole('button', { name: 'Edit Work' }))
     await user.click(inspector().getByRole('button', { name: 'MCP Servers' }))
     await closed()
-    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add Server' })))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add by Hand' })))
   })
 
   it('goes to the next server when one is deleted', async () => {

@@ -476,7 +476,7 @@ export default function App() {
               setEditing(null)
               setView('servers')
               // The profile's card has gone with the view, so focus goes where a library starts.
-              requestAnimationFrame(() => document.querySelector<HTMLElement>('[aria-label="Add Server"]')?.focus())
+              requestAnimationFrame(() => document.getElementById('add-server')?.focus())
             }}
             onSave={saveProfile}
             onDelete={
