@@ -103,7 +103,9 @@ open /Applications/EnvRouter.app
 
 From the [latest release](https://github.com/pixel-perfect-software/env-router/releases/latest),
 take the `.deb` (Debian, Ubuntu and their relatives) or the AppImage (any distro) for your
-architecture: `amd64`/`x86_64` or `arm64`/`aarch64`.
+architecture: `amd64`/`x86_64` or `arm64`/`aarch64`. The `.deb` is about 7 MB and uses your
+system's WebKitGTK; the AppImage is about 85 MB because it carries WebKitGTK with it, so it
+runs where `webkit2gtk-4.1` isn't packaged. Both work in WSL 2.
 
 ```sh
 sudo apt install ./EnvRouter_<version>_amd64.deb     # then open EnvRouter from your apps
