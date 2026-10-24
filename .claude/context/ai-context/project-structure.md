@@ -114,7 +114,7 @@ command of the same name and arguments.
 | Lint / format | Biome 2.5 (TS/JSON/CSS); `cargo fmt` and clippy (Rust) |
 | Tests | `cargo test` (Rust, including the built shim and real zsh, bash and fish); Vitest (`src/**/*.test.ts`) |
 | Package manager | pnpm 12.14.0 and Node 24.22.1 (pinned in `.tool-versions`; pnpm also in `packageManager`) |
-| Platform | macOS 11+ on Apple Silicon; Linux x86_64 and aarch64 (glibc of Ubuntu 22.04 or later), WSL 2 included |
+| Platform | macOS 11+ on Apple Silicon with Safari 16.4+ (the window's WebKit; `vite.config.ts` targets it); Linux x86_64 and aarch64 (glibc of Ubuntu 22.04 or later), WSL 2 included |
 
 ## Commands
 | Task | Command |
