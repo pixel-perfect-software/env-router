@@ -75,8 +75,9 @@ server to a profile works from both sides (the profile's MCP checklist, the serv
 toggles), so keep both. Before changing the UI, read `PRODUCT.md`,
 `.impeccable/surfaces/src-app-tsx.md` (the direction contracts) and `DESIGN.md` (tokens and
 rules: one accent button per state, status-free profile colours). The window is translucent
-over macOS under-window vibrancy (`transparent`, `windowEffects` and `macOSPrivateApi` in
-`tauri.conf.json`, and the `macos-private-api` Tauri feature): only the ground lets it through,
+over macOS under-window vibrancy (`transparent` and `windowEffects` in `tauri.conf.json`; the
+private API a transparent window needs has been always on since Tauri 2.12.1, so there's no
+`macOSPrivateApi` or `macos-private-api` feature): only the ground lets it through,
 cards stay opaque, and the browser mock shows the solid ground. The app also lives in the menu
 bar (`src-tauri/src/tray.rs`), whose menu refreshes when the window gains focus and when the pointer reaches the icon (macOS, Windows), so a CLI change or hand edit shows; on macOS closing the window only hides it. **Quitting with unsaved edits asks first** (`src-tauri/src/quit.rs`): the editors report their dirty state (`src/lib/unsaved.ts` → `set_unsaved_edits`), and the menu bar's Quit, ⌘Q and closing the window off macOS come through `ExitRequested` or `CloseRequested`, which ask the window (`quit-requested`) only while it holds edits; a second quit it hasn't answered goes ahead. macOS's predefined Quit can't be asked (tao handles only `applicationWillTerminate`), so the app menu's Quit is EnvRouter's own item (`quit::app_menu`); the Dock's Quit still terminates. A server editor holding edits isn't remounted by a reload that changed its server; it says so instead.
 

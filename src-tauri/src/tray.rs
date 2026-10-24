@@ -5,6 +5,7 @@ use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::OnceLock;
 
 use envrouter_core::{config, paths};
+use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 #[cfg(target_os = "macos")]
@@ -19,10 +20,15 @@ const TRAY_ID: &str = "main";
 /// Emitted to the window when the menu's "Check Folder…" is chosen.
 pub const CHECK_FOLDER_EVENT: &str = "check-folder";
 
+/// Decoded at compile time, so the app needs no PNG decoder at runtime.
+const ICON: Image<'static> = tauri::include_image!("icons/tray.png");
+// `include_image!` embeds a decoded copy from `OUT_DIR`, so Cargo wouldn't notice the PNG
+// itself change; this makes it a dependency of the crate, at no cost to the binary.
+const _: &[u8] = include_bytes!("../icons/tray.png");
+
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
-    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
     TrayIconBuilder::with_id(TRAY_ID)
-        .icon(icon)
+        .icon(ICON)
         .icon_as_template(true)
         .tooltip("EnvRouter")
         .menu(&menu(app, ("EnvRouter".into(), None))?)
