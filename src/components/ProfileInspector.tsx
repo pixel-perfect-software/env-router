@@ -8,7 +8,6 @@ import { errorMessage } from '../lib/api'
 import { confirmDelete, confirmDiscard } from '../lib/confirm'
 import { mcpAgentLabels, serverSummary } from '../lib/mcp'
 import { splitLeaf, tildify } from '../lib/paths'
-import { shortcutLabel, usePlatform } from '../lib/platform'
 import { plural } from '../lib/text'
 import { KNOWN_TOOLS } from '../lib/tools'
 import type { McpServer, Profile, ToolInfo } from '../lib/types'
@@ -34,6 +33,7 @@ export function ProfileInspector({
   onSave,
   onDelete,
   onDuplicate,
+  onShowServers,
   template,
 }: {
   /** The profile's id, or the one a new profile will be saved with. */
@@ -47,6 +47,8 @@ export function ProfileInspector({
   /** Each server's tools, where a check has listed them. */
   tools: Record<string, ToolInfo[]>
   onCancel: () => void
+  /** Closes the inspector for the MCP Servers view, where the library is built. */
+  onShowServers: () => void
   onSave: (profile: Profile) => Promise<void>
   onDelete?: () => Promise<void>
   /** Opens a new profile copied from this one. */
@@ -54,7 +56,6 @@ export function ProfileInspector({
   /** A new profile's starting point, when it's a copy of another. */
   template?: Profile
 }) {
-  const platform = usePlatform()
   // What the form starts from, and what counts as unchanged.
   const base = profile ?? template
   const [name, setName] = useState(base?.name ?? '')
@@ -93,8 +94,8 @@ export function ProfileInspector({
     return () => setUnsaved('profile', false)
   }, [dirty])
 
-  /** Escape, the close button and Cancel. Unsaved edits are only dropped once the user says so. */
-  const close = async () => {
+  /** Escape, the close button and Cancel, or leaving for MCP Servers. Unsaved edits are only dropped once the user says so. */
+  const leave = async (then: () => void) => {
     // While saving, stay open: a save Rust rejects reports its reason here.
     if (saving || asking.current) return
     if (dirty) {
@@ -104,8 +105,9 @@ export function ProfileInspector({
       })
       if (!discard) return
     }
-    onCancel()
+    then()
   }
+  const close = () => leave(onCancel)
 
   const addPaths = (picked: string[]) => {
     const paths = picked.map((p) => tildify(p, home))
@@ -312,7 +314,18 @@ export function ProfileInspector({
             <legend className="mb-1.5 text-small font-medium text-ink-2">MCP servers</legend>
             <div className="rounded-card bg-card shadow-card">
               {libraryNames.length === 0 ? (
-                <p className="px-3 py-2.5 text-small text-ink-2 italic">No servers yet. Add them in MCP Servers ({shortcutLabel('2', platform)}).</p>
+                // ⌘2 stands down while the inspector is open, so the way there is this button.
+                <p className="px-3 py-2.5 text-small text-ink-2 italic">
+                  No servers yet. Add them in{' '}
+                  <button
+                    type="button"
+                    onClick={() => leave(onShowServers)}
+                    className="rounded-[3px] underline decoration-[color-mix(in_srgb,var(--er-ink)_28%,transparent)] underline-offset-[3px] hover:text-accent-ink hover:decoration-current"
+                  >
+                    MCP Servers
+                  </button>
+                  .
+                </p>
               ) : (
                 <ul>
                   {libraryNames.map((server) => {
@@ -409,7 +422,6 @@ function ToolFilter({
   off: string[]
   onChange: (off: string[]) => void
 }) {
-  const platform = usePlatform()
   const [open, setOpen] = useState(false)
   // Aligned with the server's mark, past the checkbox.
   const indent = 'pl-[36px] pr-3'
@@ -417,7 +429,7 @@ function ToolFilter({
     return (
       <p
         className={`${indent} pb-1.5 text-caption text-ink-2 ${off.length ? '' : 'italic'}`}
-        title={`Check the server in MCP Servers (${shortcutLabel('2', platform)}) to choose its tools.`}
+        title="Check the server in MCP Servers to choose its tools."
       >
         {off.length ? `${plural(off.length, 'tool', 'tools')} off` : 'All tools'}
       </p>
