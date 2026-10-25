@@ -1153,6 +1153,8 @@ dependencies = [
  "envrouter-build-support",
  "envrouter-core",
  "envrouter-ops",
+ "objc2",
+ "objc2-app-kit",
  "serde",
  "serde_json",
  "tauri",

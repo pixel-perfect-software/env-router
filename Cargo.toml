@@ -24,8 +24,8 @@ thiserror = "2"
 # these are errors there. A curated slice of clippy::pedantic: the lints that catch real
 # mistakes or keep the code uniform, not the ones that only add ceremony to an app.
 [workspace.lints.rust]
-# Denied, not forbidden, so the one FFI module (the Windows Credential Manager) can allow it
-# with a reason. Everything else is an error, as before.
+# Denied, not forbidden, so the two FFI modules (the Windows Credential Manager and the macOS
+# traffic lights) can allow it with a reason. Everything else is an error, as before.
 unsafe_code = "deny"
 
 [workspace.lints.clippy]

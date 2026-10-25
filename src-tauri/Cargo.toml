@@ -23,6 +23,11 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 
+# The macOS traffic lights (`traffic_lights.rs`). Tauri depends on the same versions already.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSButton", "NSControl", "NSResponder", "NSView", "NSWindow"] }
+
 [dev-dependencies]
 serde_json.workspace = true
 
