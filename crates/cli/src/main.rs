@@ -273,7 +273,7 @@ fn run(cli: &Cli, home: &Path) -> Result<ExitCode> {
                 eprintln!("envrouter: config.json changed while applying (the app saved, or someone edited it), so this applied the new version.");
             }
             warn_saved(warning.as_deref());
-            let file = paths::root(home).join(config::CONFIG_FILE);
+            let file = paths::config_file(home);
             let applied = serde_json::json!({
                 "config": file.display().to_string(),
                 "profiles": config.profiles.len(),
@@ -324,7 +324,7 @@ fn status(cli: &Cli, home: &Path) -> Result<ExitCode> {
     let config = commands::get_config(home)?;
     println!(
         "Config  {} ({} profile(s), {} MCP server(s))",
-        tilde(&paths::root(home).join(config::CONFIG_FILE), home),
+        tilde(&paths::config_file(home), home),
         config.profiles.len(),
         config.mcp_servers.len()
     );

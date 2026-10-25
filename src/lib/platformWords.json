@@ -1,0 +1,26 @@
+{
+  "macos": {
+    "secretStore": "Keychain",
+    "sealedLabel": "In Keychain",
+    "fileManager": "Finder",
+    "revealVerb": "Reveal"
+  },
+  "linux": {
+    "secretStore": "keyring",
+    "sealedLabel": "In the keyring",
+    "fileManager": "Files",
+    "revealVerb": "Show"
+  },
+  "wsl": {
+    "secretStore": "Credential Manager",
+    "sealedLabel": "In the Credential Manager",
+    "fileManager": "Files",
+    "revealVerb": "Show"
+  },
+  "windows": {
+    "secretStore": "Credential Manager",
+    "sealedLabel": "In the Credential Manager",
+    "fileManager": "Files",
+    "revealVerb": "Show"
+  }
+}

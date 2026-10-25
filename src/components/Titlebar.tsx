@@ -48,11 +48,11 @@ export function TitleBand({
     <div
       data-tauri-drag-region
       data-titlebar
-      className={`flex h-[52px] shrink-0 items-center gap-3 pr-4 max-[760px]:gap-2 ${platform.isMac ? 'pl-[86px]' : 'pl-4'}`}
+      className={`flex h-[52px] shrink-0 items-center gap-3 pr-4 max-[760px]:gap-2 ${platform.ownsTitlebar ? 'pl-[86px]' : 'pl-4'}`}
     >
       {/* On macOS the band is the title bar, beside the traffic lights. Elsewhere the system's own title bar already names the app, so
           the band is just the toolbar; the name stays for screen readers. */}
-      {platform.isMac ? (
+      {platform.ownsTitlebar ? (
         <div data-tauri-drag-region className="flex items-center gap-2">
           <img data-tauri-drag-region src={appIcon} alt="" width={22} height={22} draggable={false} className="shrink-0" />
           {/* A narrow window keeps the icon; the name stays for screen readers. */}

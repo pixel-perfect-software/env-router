@@ -50,20 +50,42 @@ impl Platform {
         }
     }
 
+    /// What a value kept in that store reads as in its field: "In Keychain", "In the keyring".
+    pub fn sealed_label(self) -> &'static str {
+        match self {
+            Platform::MacOs => "In Keychain",
+            Platform::Linux => "In the keyring",
+            Platform::Wsl | Platform::Windows => "In the Credential Manager",
+        }
+    }
+
     /// Whether this system's secret store is reached through the Windows helper installed in
     /// `~/.envrouter/bin`, which an uninstall must not delete before it has used it.
     pub fn secret_store_runs_installed_helper(self) -> bool {
         self == Platform::Wsl
     }
 
-    /// What the menu bar calls showing `what` in the file manager: "Reveal config.json in Finder"
-    /// on macOS, "Show config.json in Files" elsewhere. The window words the same thing in
-    /// `src/lib/platform.ts` (`revealLabelOf`); #122 sends this one to it.
-    pub fn reveal_label(self, what: &str) -> String {
+    /// What the file manager is called here: Finder on macOS, Files elsewhere.
+    pub fn file_manager(self) -> &'static str {
         match self {
-            Platform::MacOs => format!("Reveal {what} in Finder"),
-            Platform::Linux | Platform::Wsl | Platform::Windows => format!("Show {what} in Files"),
+            Platform::MacOs => "Finder",
+            Platform::Linux | Platform::Wsl | Platform::Windows => "Files",
         }
+    }
+
+    /// The verb for showing something in it: "Reveal" on macOS, "Show" elsewhere.
+    pub fn reveal_verb(self) -> &'static str {
+        match self {
+            Platform::MacOs => "Reveal",
+            Platform::Linux | Platform::Wsl | Platform::Windows => "Show",
+        }
+    }
+
+    /// What the menu bar calls showing `what` in the file manager: "Reveal config.json in Finder"
+    /// on macOS, "Show config.json in Files" elsewhere. The window words the same thing from
+    /// [`Platform::reveal_verb`] and [`Platform::file_manager`], which `SetupStatus` sends it.
+    pub fn reveal_label(self, what: &str) -> String {
+        format!("{} {what} in {}", self.reveal_verb(), self.file_manager())
     }
 
     /// The shell to assume when the login shell can't be found: each system's default.
@@ -264,6 +286,46 @@ mod tests {
     fn wsl_names_the_store_its_secrets_go_to() {
         assert_eq!(Platform::Linux.secret_store_name(), "keyring");
         assert_eq!(Platform::Wsl.secret_store_name(), "Credential Manager");
+    }
+
+    /// `src/lib/platformWords.json` is what the window shows before the status arrives (and what
+    /// its browser mock answers): it must say what each platform here says.
+    #[test]
+    fn the_windows_first_paint_words_match_these() {
+        let file: serde_json::Value =
+            serde_json::from_str(include_str!("../../../src/lib/platformWords.json")).unwrap();
+        let all = [
+            Platform::MacOs,
+            Platform::Linux,
+            Platform::Wsl,
+            Platform::Windows,
+        ];
+        assert_eq!(file.as_object().unwrap().len(), all.len());
+        for platform in all {
+            let key = serde_json::to_value(platform).unwrap();
+            assert_eq!(
+                file[key.as_str().unwrap()],
+                serde_json::json!({
+                    "secretStore": platform.secret_store_name(),
+                    "sealedLabel": platform.sealed_label(),
+                    "fileManager": platform.file_manager(),
+                    "revealVerb": platform.reveal_verb(),
+                }),
+                "{platform:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn words_a_reveal_for_the_file_manager() {
+        assert_eq!(
+            Platform::MacOs.reveal_label("config.json"),
+            "Reveal config.json in Finder"
+        );
+        assert_eq!(
+            Platform::Wsl.reveal_label("config.json"),
+            "Show config.json in Files"
+        );
     }
 
     #[test]

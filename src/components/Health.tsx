@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react'
 import type { Health } from '../lib/health'
+import { tildify } from '../lib/paths'
 import { usePlatform } from '../lib/platform'
 import { listOf, plural } from '../lib/text'
 import type { Shell } from '../lib/types'
@@ -65,7 +66,7 @@ export function HealthLine({
   onRevealConfig: () => void
   /** Copies the unreadable config.json aside and starts with an empty one; asks first. */
   onStartOver: () => void
-  /** Asks again for what failed: the status refresh, the one-off action, or (with no home folder) the config. */
+  /** Asks again for what failed: the status refresh, the one-off action, or (with no file to open) the config. */
   onRetry: () => void
   onDismissError: () => void
   onDismissWarning: () => void
@@ -176,7 +177,7 @@ export function HealthLine({
                 )}
               </>
             ) : (
-              // No home folder to open the file from; asking for it again is the only way out.
+              // The fault names no file to open (no home folder was found); asking again is the only way out.
               <Button kind={accent} onClick={onRetry}>
                 Try Again
               </Button>
@@ -192,7 +193,7 @@ export function HealthLine({
           title="The shim is missing or out of date"
           detail={
             <>
-              No agent is routed until <span className="font-mono">~/.envrouter/bin/envrouter-shim</span> is reinstalled.
+              No agent is routed until <span className="font-mono">{tildify(health.path, home)}</span> is reinstalled.
             </>
           }
           action={

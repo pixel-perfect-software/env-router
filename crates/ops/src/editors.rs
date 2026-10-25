@@ -117,6 +117,8 @@ impl Editor {
 #[serde(rename_all = "camelCase")]
 pub struct EditorStatus {
     pub editor: Editor,
+    /// What the window calls it, from [`Editor::label`].
+    pub label: &'static str,
     /// The agent whose extension this is about.
     pub command: String,
     /// The editor has been run on this machine (for a server, connected to it).
@@ -143,6 +145,7 @@ pub fn status(editor: Editor, home: &Path, command: &str, hook: &IdeHook) -> Edi
     });
     EditorStatus {
         editor,
+        label: editor.label(),
         command: command.to_owned(),
         available: editor.root_dir(home).is_dir(),
         extension_installed,
@@ -351,6 +354,7 @@ mod tests {
         );
         let status = EditorStatus {
             editor: Editor::Code,
+            label: Editor::Code.label(),
             command: "claude".into(),
             available: true,
             extension_installed: false,
@@ -360,7 +364,7 @@ mod tests {
         };
         assert_eq!(
             serde_json::to_string(&status).unwrap(),
-            r#"{"editor":"code","command":"claude","available":true,"extensionInstalled":false,"settingsFile":"/s.json","wrapper":null,"installed":false}"#
+            r#"{"editor":"code","label":"VS Code","command":"claude","available":true,"extensionInstalled":false,"settingsFile":"/s.json","wrapper":null,"installed":false}"#
         );
     }
 

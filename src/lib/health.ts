@@ -29,7 +29,8 @@ export type Health =
   | { kind: 'ok'; on: Shell[] }
   | { kind: 'off'; shell: ShellStatus }
   | { kind: 'partial'; on: Shell[]; shell: ShellStatus }
-  | { kind: 'shim' }
+  /** The installed shim is missing or older than the app's; `path` is where it belongs. */
+  | { kind: 'shim'; path: string }
   /** The last check in this shell found something stopping the shim from running. */
   | { kind: 'blocked'; shell: Shell; tool: string; headline: string; folder: string }
 
@@ -42,7 +43,6 @@ export function healthOf(
   loadError: ConfigFault | null,
   setupError: string | null,
   actionError: string | null,
-  home: string,
   checkedOnce: boolean,
   blocked: Blocked | null,
   openError: FileError | null,
@@ -52,7 +52,7 @@ export function healthOf(
     return {
       kind: 'unloaded',
       message: loadError.message,
-      canOpen: home !== '',
+      canOpen: loadError.path !== null,
       canStartOver: loadError.kind === 'parse',
       openError: openError ?? undefined,
     }
@@ -66,7 +66,7 @@ export function healthOf(
 
   if (config.profiles.length === 0) return { kind: 'setup', step: 1, shell: login }
   if (on.length === 0 && login) return checkedOnce ? { kind: 'off', shell: login } : { kind: 'setup', step: 2, shell: login }
-  if (!setup.shimInstalled) return { kind: 'shim' }
+  if (!setup.shimInstalled) return { kind: 'shim', path: setup.shimPath }
   // What a real shell reported outranks what the config and startup files suggest.
   if (blocked && on.includes(blocked.shell)) return { kind: 'blocked', ...blocked }
   if (!checkedOnce) return { kind: 'setup', step: 3, shell: login }

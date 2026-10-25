@@ -19,9 +19,13 @@ const shell = (name: Shell, installed: boolean, extra: Partial<ShellStatus> = {}
 const setupOf = (shells: ShellStatus[], shimInstalled = true): SetupStatus => ({
   platform: 'macos',
   secretStore: 'Keychain',
+  sealedLabel: 'In Keychain',
   secretStoreProblem: null,
+  fileManager: 'Finder',
+  revealVerb: 'Reveal',
   shimInstalled,
   shimsDir: `${HOME}/.envrouter/shims`,
+  shimPath: `${HOME}/.envrouter/bin/envrouter-shim`,
   shells,
 })
 
@@ -36,7 +40,6 @@ interface Inputs {
   loadError: ConfigFault | null
   setupError: string | null
   actionError: string | null
-  home: string
   checkedOnce: boolean
   blocked: Blocked | null
   openError: FileError | null
@@ -50,17 +53,16 @@ const health = (changes: Partial<Inputs> = {}): Health => {
     loadError: null,
     setupError: null,
     actionError: null,
-    home: HOME,
     checkedOnce: true,
     blocked: null,
     openError: null,
     saveWarning: null,
     ...changes,
   }
-  return healthOf(i.config, i.setup, i.loadError, i.setupError, i.actionError, i.home, i.checkedOnce, i.blocked, i.openError, i.saveWarning)
+  return healthOf(i.config, i.setup, i.loadError, i.setupError, i.actionError, i.checkedOnce, i.blocked, i.openError, i.saveWarning)
 }
 
-const parseFault: ConfigFault = { kind: 'parse', message: 'bad json' }
+const parseFault: ConfigFault = { kind: 'parse', message: 'bad json', path: `${HOME}/.envrouter/config.json` }
 const blocked: Blocked = { shell: 'zsh', tool: 'claude', headline: 'A zsh alias named claude runs first', folder: `${HOME}/work` }
 
 describe('healthOf', () => {
@@ -84,15 +86,15 @@ describe('healthOf', () => {
     })
   })
 
-  it('offers to open an unreadable config.json only when the home folder is known, and carries a failure to open it', () => {
-    expect(health({ loadError: parseFault, home: '' })).toMatchObject({ canOpen: false })
+  it('offers to open an unreadable config.json only when the fault names the file, and carries a failure to open it', () => {
+    expect(health({ loadError: { ...parseFault, path: null } })).toMatchObject({ canOpen: false })
     const failed: FileError = { action: 'open', message: 'no editor' }
     expect(health({ loadError: parseFault, openError: failed })).toMatchObject({ canOpen: true, openError: failed })
   })
 
   it('offers to start over only from a config.json that will not parse', () => {
     expect(health({ loadError: parseFault })).toMatchObject({ canStartOver: true })
-    expect(health({ loadError: { kind: 'other', message: 'from a newer version' } })).toMatchObject({ canStartOver: false })
+    expect(health({ loadError: { kind: 'other', message: 'from a newer version', path: null } })).toMatchObject({ canStartOver: false })
   })
 
   it('shows what a save left undone below a failure, and above routing that works', () => {
@@ -142,7 +144,10 @@ describe('healthOf', () => {
   })
 
   it('says the shim is missing once a shell is on, over step 3 and a blocked shell', () => {
-    expect(health({ setup: setupOf([zshOn], false), checkedOnce: false, blocked })).toEqual({ kind: 'shim' })
+    expect(health({ setup: setupOf([zshOn], false), checkedOnce: false, blocked })).toEqual({
+      kind: 'shim',
+      path: `${HOME}/.envrouter/bin/envrouter-shim`,
+    })
   })
 
   it('asks for step 2 before the shim, while no shell is on', () => {
@@ -243,7 +248,7 @@ describe('the accent', () => {
     ok: [{ kind: 'ok', on: ['zsh'] }],
     off: [{ kind: 'off', shell: zsh }],
     partial: [{ kind: 'partial', on: ['bash'], shell: zsh }],
-    shim: [{ kind: 'shim' }],
+    shim: [{ kind: 'shim', path: `${HOME}/.envrouter/bin/envrouter-shim` }],
     blocked: [{ kind: 'blocked', ...blocked }],
   }
   const all = Object.values(states).flat()
@@ -301,7 +306,7 @@ describe('the accent', () => {
 
   it('ranks the banner over the check result, and the check result over Check Folder…', () => {
     const who = (h: Health, docketAction: boolean) => Object.entries(filled(h, 'profiles', false, docketAction)).find(([, on]) => on)?.[0]
-    expect(who({ kind: 'shim' }, true)).toBe('banner')
+    expect(who({ kind: 'shim', path: `${HOME}/.envrouter/bin/envrouter-shim` }, true)).toBe('banner')
     expect(who({ kind: 'ok', on: ['zsh'] }, true)).toBe('docket')
     expect(who({ kind: 'ok', on: ['zsh'] }, false)).toBe('titlebar')
     // Check Again is a push button because the fix lives in the check result.

@@ -3,7 +3,18 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ConfigState, EditorStatus, ImportCandidate, McpServer, Pasted, SaveOutcome, SetupStatus, ToolInfo, UninstallReport } from '../lib/types'
+import type {
+  ConfigState,
+  Editor,
+  EditorStatus,
+  ImportCandidate,
+  McpServer,
+  Pasted,
+  SaveOutcome,
+  SetupStatus,
+  ToolInfo,
+  UninstallReport,
+} from '../lib/types'
 
 const boot = async (search: string) => {
   vi.resetModules()
@@ -240,10 +251,17 @@ describe('checks and files', () => {
     })
     expect(rows).toHaveLength(9)
     expect(rows.find((r) => r.editor === 'remoteCode')).toMatchObject({
+      label: 'VS Code Server',
       available: true,
       extensionInstalled: true,
       settingsFile: '/home/sam/.vscode-server/data/Machine/settings.json',
     })
+  })
+
+  it("only takes the backend's editor names, so a typo in an id does not compile", () => {
+    // @ts-expect-error `remoteCod` is not one of `editors::Editor`'s names
+    const typo: Editor = 'remoteCod'
+    expect(typo).toBe('remoteCod')
   })
 })
 
@@ -312,7 +330,7 @@ describe('uninstall', () => {
     expect(done).toMatchObject({ problems: [], secrets: { status: 'unreachable' }, folder: 'deleted' })
     expect(done.removeNext).toEqual([{ what: 'app', command: 'sudo apt remove env-router' }])
 
-    await expect(call('get_config')).rejects.toEqual({ kind: 'other', message: GUARD })
+    await expect(call('get_config')).rejects.toEqual({ kind: 'other', message: GUARD, path: null })
     await expect(call('get_setup_status')).rejects.toBe(GUARD)
     await expect(call('save_config', { payload: {}, secrets: {} })).rejects.toBe(GUARD)
     // The window can still ask to quit, and read pasted text.

@@ -11,7 +11,7 @@ use crate::config::{AgentDef, ConfigState};
 
 const REGISTRY: &str = include_str!("../../../src/lib/agents.json");
 
-/// One registry entry. The window's display fields (`label`, `defaultPath`, `install`, `note`) are
+/// One registry entry. The window's display fields (`label`, `defaultPath`, `install`, `note`, `mark`) are
 /// skipped; Rust needs only what goes into `config.agents`.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]

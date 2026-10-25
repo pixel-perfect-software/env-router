@@ -9,18 +9,6 @@ import type { Editor, EditorStatus, SetupStatus, Shell } from '../lib/types'
 import { AgentMark } from './icons'
 import { Button, Switch, ValueText } from './ui'
 
-const EDITOR_LABEL: Record<Editor, string> = {
-  code: 'VS Code',
-  codeInsiders: 'VS Code Insiders',
-  cursor: 'Cursor',
-  windsurf: 'Windsurf',
-  codium: 'VSCodium',
-  remoteCode: 'VS Code Server',
-  remoteCodeInsiders: 'VS Code Insiders Server',
-  remoteCursor: 'Cursor Server',
-  remoteWindsurf: 'Windsurf Server',
-}
-
 /** The editors the Editors popover lists: ones run on this Mac with the extension, or still routed after it was removed. */
 export const editorsToShow = (editors: EditorStatus[] | null) => editors?.filter((e) => e.available && (e.extensionInstalled || e.installed)) ?? []
 
@@ -210,7 +198,7 @@ export function EditorsPopover({
             <li key={key} className="flex items-center gap-3 rounded-[7px] px-2.5 py-2">
               <div className="min-w-0 flex-1">
                 <p className="flex items-center font-medium">
-                  {EDITOR_LABEL[e.editor]}
+                  {e.label}
                   <span className="ml-2 inline-flex items-center gap-1 text-small font-normal text-ink-2">
                     <AgentMark command={e.command} size={12} />
                     {agent}
@@ -222,7 +210,7 @@ export function EditorsPopover({
                 checked={e.installed}
                 busy={busy !== null}
                 onChange={(next) => run(key, () => onSet(e.editor, e.command, next))}
-                label={`EnvRouter for ${agent} in ${EDITOR_LABEL[e.editor]}`}
+                label={`EnvRouter for ${agent} in ${e.label}`}
               />
             </li>
           )

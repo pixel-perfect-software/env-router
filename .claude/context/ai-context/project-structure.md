@@ -48,7 +48,7 @@ env-router/
 │   ├── components/            # Titlebar, Health (banner and setup steps), Popovers (Shells and Editors), Frame (slots),
 │   │                          # ProfileInspector (slide-in editor), Servers (the MCP Servers view: list beside editor), ServerEditor (with ServerFields and ServerVersion), ServerSources (Catalog and Import), ServerMark (server logos), Welcome (first run),
 │   │                          # Docket (check result), ui (controls, status), icons (Lucide and agent marks)
-│   ├── lib/                   # api.ts (typed commands), types.ts (wire types), agents.json (the agent registry: variables, MCP descriptors, editor hooks; also read by crates/core/src/agents.rs), tools.ts (KNOWN_TOOLS from it, withAgents), platform.ts (usePlatform: shortcuts, store name),
+│   ├── lib/                   # api.ts (typed commands), types.ts (wire types), agents.json (the agent registry: variables, MCP descriptors, editor hooks, logo marks; also read by crates/core/src/agents.rs), tools.ts (KNOWN_TOOLS from it, withAgents), platform.ts (usePlatform: shortcuts, store name),
 │   │                          # mcp.ts (server drafts, rename/remove, secret locking), mcpCatalog.ts (well-known servers), serverLogo.ts (logo matching),
 │   │                          # verdict.ts (check wording, tested in verdict.test.ts), health.ts (the health line and the one-accent rule, tested in health.test.ts), paths.ts, text.ts (plural, listOf), confirm.ts,
 │   │                          # hooks the window composes: useConfigStore.ts (load, save and its merge loop), useFolderCheck.ts, useShortcuts.ts, useFolderDrop.ts

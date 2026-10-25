@@ -4,7 +4,7 @@
 import { tildify } from '../lib/paths'
 import { shortcutLabel, usePlatform } from '../lib/platform'
 import { toolLabel } from '../lib/tools'
-import type { FolderCheck, Preview, Shell, ShellStatus } from '../lib/types'
+import type { FolderCheck, Preview, SetupStatus, Shell } from '../lib/types'
 import { offersFix, ownerOf, type VerdictAction, verdictOf } from '../lib/verdict'
 import { AgentMark } from './icons'
 import { Button, CloseIcon, DropIcon, IconButton, Segmented, StatusTile } from './ui'
@@ -24,10 +24,9 @@ export interface CheckState {
 
 export function Docket({
   check,
-  shells,
+  setup,
   home,
   routedTools,
-  shimsDir,
   primary,
   hovering,
   onRecheck,
@@ -35,11 +34,11 @@ export function Docket({
   onDismiss,
 }: {
   check: CheckState | null
-  shells: ShellStatus[]
+  /** The window's setup status; without it there are no shells to run a check in, so no verdict. */
+  setup: SetupStatus | null
   home: string
   /** Agents some profile sets; the check can switch between them. */
   routedTools: string[]
-  shimsDir: string
   hovering: string | null
   onRecheck: (shell: Shell, tool: string) => void
   onAction: (action: VerdictAction, shell: Shell) => void
@@ -48,6 +47,7 @@ export function Docket({
   onDismiss: () => void
 }) {
   const platform = usePlatform()
+  const shells = setup?.shells ?? []
   // Each state renders the same footer, a polite live region throughout, so a result is announced as it replaces the drop zone.
   const base = 'mx-4 mb-4 flex min-h-[60px] shrink-0 items-center gap-x-4 gap-y-2.5 rounded-card px-4 py-3'
 
@@ -79,8 +79,8 @@ export function Docket({
 
   const shell = shells.find((s) => s.shell === check.shell)
   const verdict =
-    check.result && shell
-      ? verdictOf(check.result, shell, check.tool, routedTools.includes(check.tool), shimsDir, home, check.trigger, ownerOf(check.preview))
+    check.result && setup && shell
+      ? verdictOf(check.result, shell, check.tool, routedTools.includes(check.tool), setup.shimsDir, home, check.trigger, ownerOf(check.preview))
       : null
   const available = shells.filter((s) => s.available)
 

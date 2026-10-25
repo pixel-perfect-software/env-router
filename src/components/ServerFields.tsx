@@ -60,7 +60,7 @@ function ValueField({
 }) {
   const platform = usePlatform()
   if (!isPending(value) && typeof value !== 'string') {
-    const sealed = platform.isMac ? 'In Keychain' : `In the ${platform.secretStore}`
+    const sealed = platform.sealedLabel
     return (
       <span className="flex h-[28px] min-w-0 flex-1 items-center gap-1.5 rounded-control bg-well pr-1 pl-2 text-small text-ink-2">
         <LockIcon />

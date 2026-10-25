@@ -42,7 +42,7 @@ export function useConfigStore(refreshEditors: () => Promise<void>) {
     refreshEditors()
     const seq = configSeq.current
     try {
-      // Home first: if the config can't be read, the banner still needs it to open the file.
+      // Home first: if the config can't be read, the banner shortens the paths in its message with it, and a home that can't be found is the failure to show.
       setHome(
         await homeDir().catch((err) => {
           throw new Error(`Couldn't find your home folder: ${errorMessage(err)}`)
