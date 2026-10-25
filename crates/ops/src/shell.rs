@@ -1188,24 +1188,31 @@ mod tests {
         let home = fs::canonicalize(root.path()).unwrap();
         fs::create_dir_all(home.join("work/app")).unwrap();
         fs::create_dir_all(home.join("bin")).unwrap();
-        // Copied into place by `cp`, so no fork of this process can hold it open for writing
-        // when it runs (Linux refuses that with "Text file busy").
-        let real = home.join("bin/claude");
+        // The fake tool and the shim are copied into place by `cp`, never written by this
+        // process (as `shims::install_binary` does), so no fork of this process can hold them
+        // open for writing when they run (Linux refuses that with "Text file busy").
+        let copy_executable = |from: &Path, to: &Path| {
+            fs::create_dir_all(to.parent().unwrap()).unwrap();
+            let copied = std::process::Command::new("cp")
+                .arg(from)
+                .arg(to)
+                .status()
+                .unwrap();
+            assert!(copied.success());
+            fs::set_permissions(to, fs::Permissions::from_mode(0o755)).unwrap();
+        };
         fs::write(
             home.join("bin/claude.src"),
             "#!/bin/sh\necho REAL CLAUDE RAN\n",
         )
         .unwrap();
-        let copied = std::process::Command::new("cp")
-            .arg(home.join("bin/claude.src"))
-            .arg(&real)
-            .status()
-            .unwrap();
-        assert!(copied.success());
-        fs::set_permissions(&real, fs::Permissions::from_mode(0o755)).unwrap();
+        copy_executable(&home.join("bin/claude.src"), &home.join("bin/claude"));
 
         let config = config();
-        shims::install_binary(&home, Path::new(env!("ENVROUTER_STAGED_SHIM"))).unwrap();
+        copy_executable(
+            Path::new(env!("ENVROUTER_STAGED_SHIM")),
+            &paths::shim_binary(&home),
+        );
         shims::sync(&home, &config).unwrap();
         config::save(&paths::root(&home), &config).unwrap();
         fs::write(
