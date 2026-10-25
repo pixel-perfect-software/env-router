@@ -190,13 +190,25 @@ export default function App() {
   useEffect(() => {
     if (editingId !== null) lastEdited.current = editingId
   }, [editingId])
+  // Whether focus is on a control of the health banner and hasn't gone anywhere else since: when that control goes with its banner,
+  // focus falls to the page, and this is how the layout effect on `health` below knows to hand it on.
+  const onBanner = useRef(false)
   useEffect(() => {
     const onFocus = (event: FocusEvent) => {
       const target = event.target as HTMLElement
       if (!target.closest('[data-inspector]')) lastOutside.current = target
+      onBanner.current = target.closest('[data-health]') !== null
+    }
+    // A press on nothing in particular lets focus go to the page by the user's own hand; that isn't a banner going.
+    const onPress = (event: PointerEvent) => {
+      if (!(event.target as HTMLElement).closest('[data-health]')) onBanner.current = false
     }
     document.addEventListener('focusin', onFocus)
-    return () => document.removeEventListener('focusin', onFocus)
+    document.addEventListener('pointerdown', onPress)
+    return () => {
+      document.removeEventListener('focusin', onFocus)
+      document.removeEventListener('pointerdown', onPress)
+    }
   }, [])
   const wasInspecting = useRef(false)
   // A layout effect, so focus moves in the commit that removes the inspector and the button that held it. A passive effect
@@ -637,12 +649,10 @@ export default function App() {
     }
   }, [])
 
-  // Set when a reveal's Try Again succeeds with focus on it, so Check Folder… takes focus once the banner has gone.
-  const focusAfterRetry = useRef(false)
-
   /**
    * Try Again for a reveal. The banner stays as it was, Try Again busy, until the answer, so focus stays on the button instead of
-   * falling to the page when the banner goes and comes back; a success clears it, another failure is shown as a new one. Only while
+   * falling to the page when the banner goes and comes back; a success clears it (and focus moves on, as it does for any banner
+   * action that removes its banner), another failure is shown as a new one. Only while
    * the banner is still this reveal's own: one that something else replaced or cleared meanwhile (a newer failure, a save) stays as
    * that left it.
    */
@@ -651,10 +661,7 @@ export default function App() {
     setRetrying(true)
     try {
       await work()
-      if (shownError.current === mine) {
-        focusAfterRetry.current = document.activeElement?.id === 'try-again'
-        setActionError(null)
-      }
+      if (shownError.current === mine) setActionError(null)
     } catch (err) {
       if (shownError.current === mine) {
         setActionError(errorMessage(err))
@@ -795,10 +802,13 @@ export default function App() {
     if (focusRetry.current && health.kind === 'error' && !health.busy) {
       focusRetry.current = false
       document.getElementById('try-again')?.focus()
-    } else if (focusAfterRetry.current && health.kind !== 'error') {
-      // The banner that held focus is gone; Check Folder… is where the next thing starts, as after the docket's Dismiss.
-      focusAfterRetry.current = false
-      document.getElementById('check-folder')?.focus()
+    } else if (onBanner.current && (!document.activeElement || document.activeElement === document.body)) {
+      // One rule for every banner action that removes its banner (Try Again, Reinstall Shim, Turn On, Dismiss, a setup step's action): focus
+      // went to the page with the button. Check Folder… is where the next thing starts, as after the docket's Dismiss; with it out of
+      // reach (no config to check against, an uninstall running) the status line takes focus instead.
+      onBanner.current = false
+      const check = document.getElementById('check-folder') as HTMLButtonElement | null
+      ;(check && !check.disabled ? check : document.querySelector<HTMLElement>('[data-health]'))?.focus()
     }
   })
   const accents = accentsOf(health, view, inspecting, docketHasFix(check, setup, routedTools, home))
@@ -843,7 +853,7 @@ export default function App() {
           {/* On Servers, the banner only shows when routing needs attention. */}
           {((view === 'profiles' && !welcome) || !['ok', 'loading', 'setup'].includes(health.kind)) && (
             // One live region for every health state, so a change is announced in place instead of a new region appearing.
-            <div role="status" className="shrink-0 pt-2">
+            <div role="status" data-health tabIndex={-1} className="shrink-0 pt-2">
               <HealthLine
                 health={health}
                 home={home}

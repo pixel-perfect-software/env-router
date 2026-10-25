@@ -753,10 +753,13 @@ for (const type of ['pointermove', 'pointerdown', 'contextmenu'])
     true,
   )
 
+// This stands in for a native menu, and mirrors how one behaves: items as tall as the controls (26px, over WCAG 2.5.8's 24px), arrows, Home
+// and End moving between them, and Tab, Escape or losing focus closing it with focus back on its trigger. The real app's menus are native
+// (Tauri's `Menu`), so their size and keyboard handling come from the OS; keep this honest so a review of the browser mock isn't misled.
 const MENU_STYLE = `
 #mock-menu { position: fixed; z-index: 2147483647; min-width: 200px; padding: 5px; border-radius: 8px; color-scheme: light dark;
   background: Canvas; color: CanvasText; font: menu; font-size: 13px; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.25), 0 8px 24px rgb(0 0 0 / 0.2); }
-#mock-menu button { display: block; width: 100%; padding: 3px 10px; border: 0; border-radius: 4px; background: none; color: inherit; font: inherit; text-align: left; }
+#mock-menu button { display: block; width: 100%; box-sizing: border-box; min-height: 26px; padding: 0 10px; border: 0; border-radius: 4px; background: none; color: inherit; font: inherit; line-height: 26px; text-align: left; }
 #mock-menu button:hover, #mock-menu button:focus-visible { background: Highlight; color: HighlightText; outline: none; }
 #mock-menu button:disabled { opacity: 0.4; }
 #mock-menu [role='separator'] { height: 1px; margin: 5px 10px; background: GrayText; opacity: 0.4; }
@@ -784,7 +787,10 @@ const popupMenu = (entries: MenuEntry[], at: { x: number; y: number } = pointer)
     menu.id = 'mock-menu'
     menu.setAttribute('role', 'menu')
     const items: HTMLButtonElement[] = []
+    let closed = false
     const close = () => {
+      if (closed) return
+      closed = true
       menu.remove()
       document.removeEventListener('pointerdown', outside, true)
       document.removeEventListener('keydown', keys, true)
@@ -795,16 +801,27 @@ const popupMenu = (entries: MenuEntry[], at: { x: number; y: number } = pointer)
     const outside = (event: PointerEvent) => {
       if (!menu.contains(event.target as Node)) close()
     }
+    // Disabled items are skipped, as a native menu skips them.
     const keys = (event: KeyboardEvent) => {
-      const at = items.indexOf(document.activeElement as HTMLButtonElement)
-      if (event.key === 'Escape') {
+      const live = items.filter((item) => !item.disabled)
+      const at = live.indexOf(document.activeElement as HTMLButtonElement)
+      if (event.key === 'Escape' || event.key === 'Tab') {
+        // Tab doesn't walk out of a menu: it closes it, and focus stays on what opened it.
         close()
         giveBack()
-      } else if (event.key === 'ArrowDown') items[(at + 1) % items.length]?.focus()
-      else if (event.key === 'ArrowUp') items[(at - 1 + items.length) % items.length]?.focus()
+      } else if (event.key === 'ArrowDown') live[(at + 1) % live.length]?.focus()
+      else if (event.key === 'ArrowUp') live[(at - 1 + live.length) % live.length]?.focus()
+      else if (event.key === 'Home') live[0]?.focus()
+      else if (event.key === 'End') live[live.length - 1]?.focus()
       else return
       event.preventDefault()
     }
+    // Focus going anywhere else (a script, another window) dismisses it too, and what it held goes back to the trigger.
+    menu.addEventListener('focusout', (event) => {
+      if (event.relatedTarget instanceof Node && menu.contains(event.relatedTarget)) return
+      close()
+      giveBack()
+    })
     for (const entry of entries) {
       if (entry.item === 'Separator') {
         const line = document.createElement('div')

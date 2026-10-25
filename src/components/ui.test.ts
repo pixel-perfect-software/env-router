@@ -90,3 +90,40 @@ describe('the profile colours', () => {
     }
   })
 })
+
+describe('the selected states', () => {
+  /** A `#rrggbb` token's value in one theme's tokens. */
+  const hexToken = (theme: 'light' | 'dark', name: string) => {
+    const found = (theme === 'light' ? lightCss : darkParts.join('')).match(new RegExp(`--er-${name}: (#[0-9a-f]{6});`))?.[1]
+    if (found === undefined) throw new Error(`--er-${name} isn't in the ${theme} tokens of src/index.css`)
+    return rgbOf(found)
+  }
+  /** The segmented track, `rgb(r g b / a)` over a surface: what a chosen segment's ring sits against. */
+  const trackOn = (theme: 'light' | 'dark', surface: Rgb) => {
+    const found = (theme === 'light' ? lightCss : darkParts.join('')).match(/--er-track: rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)\);/)
+    if (!found) throw new Error(`--er-track isn't in the ${theme} tokens of src/index.css`)
+    return mixed([Number(found[1]), Number(found[2]), Number(found[3])], surface, Number(found[4]))
+  }
+
+  it("rings a chosen segment at 3:1 against its track on every surface a segmented control sits on, and against the segment's own fill (WCAG 1.4.11)", () => {
+    for (const theme of ['light', 'dark'] as const) {
+      const edge = hexToken(theme, 'select-edge')
+      expect(contrast(edge, hexToken(theme, 'button')), `the ${theme} ring on the segment`).toBeGreaterThanOrEqual(3)
+      // The titlebar's ground, the editor and catalog's card, and the docket's raised result.
+      for (const surface of ['window', 'card', 'raised']) {
+        expect(contrast(edge, trackOn(theme, hexToken(theme, surface))), `the ${theme} ring on the track over the ${surface}`).toBeGreaterThanOrEqual(
+          3,
+        )
+      }
+    }
+  })
+
+  it('marks the chosen server row with a bar of accent ink at 3:1 against the row and the card around it', () => {
+    for (const theme of ['light', 'dark'] as const) {
+      const { card, 'selected row': row } = surfacesOf(theme)
+      const ink = hexToken(theme, 'accent-ink')
+      expect(contrast(ink, card), `the ${theme} bar on the card`).toBeGreaterThanOrEqual(3)
+      expect(contrast(ink, row as Rgb), `the ${theme} bar on the selected row`).toBeGreaterThanOrEqual(3)
+    }
+  })
+})

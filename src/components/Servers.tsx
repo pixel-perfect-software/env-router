@@ -255,6 +255,13 @@ export function ServersView({
                         : `hover:bg-[color-mix(in_srgb,var(--er-ink)_5%,transparent)] ${menuFor?.name === name ? 'bg-[color-mix(in_srgb,var(--er-ink)_5%,transparent)]' : ''}`
                     }`}
                   >
+                    {/* The chosen row's tint is 1.14:1 on the card, so it also carries a bar of accent ink (4.8:1 on the tint, 5.5:1 on the card). */}
+                    {isSelected && (
+                      <span
+                        aria-hidden="true"
+                        className="absolute inset-y-2 left-0.5 w-[3px] rounded-full bg-accent-ink forced-colors:bg-[Highlight] forced-colors:forced-color-adjust-none"
+                      />
+                    )}
                     <button
                       type="button"
                       data-server={name}
@@ -275,7 +282,9 @@ export function ServersView({
                     >
                       <ServerMark name={name} server={server} size={28} />
                       <span className="min-w-0 flex-1">
-                        <span className={`block truncate font-mono text-small ${isSelected ? 'text-accent-ink' : 'text-ink'}`}>{name}</span>
+                        <span className={`block truncate font-mono text-small ${isSelected ? 'font-semibold text-accent-ink' : 'text-ink'}`}>
+                          {name}
+                        </span>
                         <span className="flex items-center gap-1 text-caption text-ink-2">
                           <TransportIcon transport={server.transport} size={11} />
                           {TRANSPORTS.find(([t]) => t === server.transport)?.[1]}
