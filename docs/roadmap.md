@@ -14,22 +14,22 @@ later findings at the end of their milestone, such as #107); M4 to M7 keep their
 until each is next. A new finding goes into its milestone here first, then into an issue. PRs
 are assigned to the milestone they advance.
 
-**Status (2026-10-24):** M0, M1 and M2 are done. M0's 12 issues were merged in PRs #55 to #66 and
+**Status (2026-10-25):** M0 to M3 are done. M0's 12 issues were merged in PRs #55 to #66 and
 M1's 13 in PRs #72 to #90; both shipped in 0.7.1 except M1's last four PRs (#87 to #90), which
 change only CI, the Homebrew templates and docs. M2's 15 issues were fixed in PRs #92 to #108,
-except #49, closed as accepted, and shipped in 0.7.2. M3 is next: its 16 issues were checked
-against `main` at 0.7.2 and filed on 2026-10-24.
+except #49, closed as accepted, and shipped in 0.7.2. M3's 16 issues were fixed in PRs #127 to
+#148, with #149 to #151 closing what its final checks found, and ship in 0.8.0. M4 is next.
 
 Order: M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7. The first three are small and make the next
 release trustworthy. M4 (agents) is what brings users and can start as soon as M0 lands, since
-it's mostly data and one new dialect. M7 can start after M3, which carries the Windows prep.
+it's mostly data and one new dialect. M7 can start now that M3, which carries the Windows prep, is done.
 
 | Milestone | Goal | Size |
 |---|---|---|
 | M0: Correctness floor (done) | Fix every verified bug that loses data, crosses profiles or blocks the tool | small |
 | M1: Release integrity (done) | A release can only ship what CI tested, and every shipped target is checked for advisories | small |
 | M2: Lean and fast (done) | Ship only what each platform needs, and keep the shim's overhead flat as configs grow | small |
-| M3: Every state has a way out | No dead ends in the window, no silent losses, and the files the app touches are one click away | medium |
+| M3: Every state has a way out (done) | No dead ends in the window, no silent losses, and the files the app touches are one click away | medium |
 | M4: More agents, moving ecosystem | Add agents as data, starting with Codex, and keep the MCP side current with the spec and the registry | medium |
 | M5: Headless parity | Everything the window does, the CLI and rpc do too, with tests | medium |
 | M6: Update and reach | Users get new versions without a manual reinstall, on every Mac and Linux channel we ship | medium |
@@ -329,6 +329,30 @@ Measured on v0.6.0 (M-series Mac, 2026-10-23):
 ---
 
 ## M3: Every state has a way out
+
+**Status:** done 2026-10-25. All 16 issues below were fixed and merged: #111 (#127), #112 (#128),
+#114 (#129), #113 (#130), #118 (#131), #123 (#132), #124 (#133), #115 (#134), #117 (#135),
+#116 (#137), #119 (#139), #122 (#140), #107 (#142), #125 (#145), #121 (#146) and #120 (#148).
+Against the Done when: the health state machine and the one-accent rule are in `lib/health.ts`
+with tests, and the window is tested as a user drives it in happy-dom (#111, #112); every
+verdict, banner and error has an action besides Dismiss (#115); `envrouter uninstall` and
+**Uninstall EnvRouter…** turn off shells and editors, delete the secret item and `~/.envrouter`,
+and the app's own data folders (#117, #143); Reveal for `config.json`, `~/.envrouter`, the MCP
+folders and trigger folders is reachable by keyboard, through the backend, with no opener
+permission left in the window (#116, #120); the browser mock covers each new state; and a
+whole-app accessibility pass on the mock, against WCAG 2.2 AA, found no failures once its
+findings were fixed (#151). Issue 15 changed in the doing: the help links open from Rust by
+name, so no `opener:allow-open-url` grant was needed.
+
+Work beyond the issues: two test races, a lock held across a fork (#136) and a shim installed
+in-process then run (#138), and a focus effect that ran a task late (#144); the app writing
+executables through a child process, so no fork can make them "Text file busy" (#141); the
+uninstall removing the app's own data folders (#143); the bundle identifier changed to
+`ca.pixel-perfect.envrouter`, with the old one's data cleared on first launch (#147); and macOS
+`/bin/bash` (3.2) answering the installed-agents probe (#149), and the cask's `zap` list in the
+order `brew style` wants (#150). Not verified on a real
+machine: the built app's native menus and menu bar items, an upgrade from 0.7.2 under the new
+identifier, Windows outside Wine, and a real screen reader.
 
 **Goal:** no dead ends in the window, no silent losses, and the files the app touches are one
 click away. **Size:** medium.

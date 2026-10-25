@@ -20,7 +20,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/check-dark.png" />
-    <img src="docs/images/check-light.png" width="860" alt="The Profiles view: one card per profile with its folders filed inside. A folder check at the bottom says ~/dev/work/api is routed to the Work profile, which sets CLAUDE_CONFIG_DIR to ~/.claude-work and adds the github, linear, postgres and sentry MCP servers." />
+    <img src="docs/images/check-light.png" width="860" alt="The Profiles view: one card per profile with its folders filed inside. A folder check at the bottom says ~/dev/work/api is routed to the Work profile, which sets CLAUDE_CONFIG_DIR to ~/.claude-work and adds the github, linear, postgres and sentry MCP servers, and the Work card highlights the folder under ~/dev/work." />
   </picture>
 </p>
 
@@ -70,7 +70,7 @@ selection of MCP servers from a library you keep in the app:
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/servers-dark.png" />
-    <img src="docs/images/servers-light.png" width="860" alt="The MCP Servers view: a list of five MCP servers (github, linear, playwright, postgres, sentry) beside the editor for github, whose Used by toggles show it loads in the Work profile." />
+    <img src="docs/images/servers-light.png" width="860" alt="The MCP Servers view: a list of six MCP servers (github, linear, playwright, postgres, sentry, slow) under a filter field, beside the editor for github, whose Used by toggles show it loads in the Work profile, above its name, command and arguments." />
   </picture>
 </p>
 
