@@ -398,6 +398,7 @@ fn uninstall(cli: &Cli, home: &Path, yes: bool, dry_run: bool) -> Result<ExitCod
         print_lines(cli, &plan, &uninstall_lines(&plan, home));
         if !cli.json {
             eprint_problems(&plan);
+            eprint_app_data_left(&plan);
         }
         return Ok(ExitCode::SUCCESS);
     }
@@ -409,6 +410,7 @@ fn uninstall(cli: &Cli, home: &Path, yes: bool, dry_run: bool) -> Result<ExitCod
         let plan = commands::uninstall(home, true, &caller)?;
         eprintln!("{}", uninstall_lines(&plan, home).join("\n"));
         eprint_problems(&plan);
+        eprint_app_data_left(&plan);
         eprint!("Uninstall EnvRouter? [y/N] ");
         let _ = io::stderr().flush();
         let mut answer = String::new();
@@ -430,6 +432,7 @@ fn uninstall(cli: &Cli, home: &Path, yes: bool, dry_run: bool) -> Result<ExitCod
     print_lines(cli, &report, &lines);
     if !cli.json {
         eprint_problems(&report);
+        eprint_app_data_left(&report);
     }
     if report.finished() {
         return Ok(ExitCode::SUCCESS);
@@ -462,6 +465,7 @@ fn uninstall_lines(report: &UninstallReport, home: &Path) -> Vec<String> {
     if report.shell_files.is_empty()
         && report.editor_files.is_empty()
         && report.folder == FolderStep::Absent
+        && report.app_data.is_empty()
     {
         lines.push(format!(
             "Nothing to turn off or delete: no shell block, no editor wrapper and no {}.",
@@ -498,11 +502,22 @@ fn uninstall_lines(report: &UninstallReport, home: &Path) -> Vec<String> {
     if matches!(report.folder, FolderStep::Deleted | FolderStep::WouldDelete) {
         lines.push(format!("{deleted} {}", tilde(&paths::root(home), home)));
     }
-    for target in &report.left {
+    if !report.app_data.is_empty() {
+        let folders: Vec<String> = report
+            .app_data
+            .iter()
+            .map(|folder| tilde(Path::new(folder), home))
+            .collect();
+        lines.push(format!(
+            "{deleted} EnvRouter's app data: {}",
+            folders.join(", ")
+        ));
+    }
+    for left in &report.left {
         lines.push(format!(
             "Left {} alone: {} pointed there",
-            tilde(Path::new(target), home),
-            tilde(&paths::root(home), home)
+            tilde(Path::new(&left.target), home),
+            tilde(Path::new(&left.link), home)
         ));
     }
     lines
@@ -514,6 +529,25 @@ fn eprint_problems(report: &UninstallReport) {
     }
     if report.dry_run && !report.problems.is_empty() {
         eprintln!("A real run would stop there.");
+    }
+}
+
+/// The webview folders it couldn't delete or wouldn't touch. They don't fail the uninstall, so
+/// they are told apart from its problems.
+fn eprint_app_data_left(report: &UninstallReport) {
+    if report.app_data_left.is_empty() {
+        return;
+    }
+    eprintln!(
+        "{}",
+        if report.dry_run {
+            "A real run would leave this behind:"
+        } else {
+            "Uninstalled, but this is left behind:"
+        }
+    );
+    for sentence in &report.app_data_left {
+        eprintln!("envrouter: {sentence}");
     }
 }
 
@@ -890,6 +924,8 @@ mod tests {
             editor_files: Vec::new(),
             secrets: SecretsStep::WouldDelete,
             folder,
+            app_data: Vec::new(),
+            app_data_left: Vec::new(),
             left: Vec::new(),
             problems: Vec::new(),
             remove_next: Vec::new(),
@@ -909,6 +945,22 @@ mod tests {
         assert!(
             empty[1].starts_with("Would delete any MCP secrets EnvRouter kept"),
             "{empty:?}"
+        );
+
+        // A folder the webview left is something to delete even when nothing else is set up.
+        let mut left_over = plan(&[], FolderStep::Absent);
+        left_over.app_data = vec!["/home/sam/.local/share/com.tylerrobertson.envrouter".into()];
+        let lines = uninstall_lines(&left_over, home);
+        assert!(
+            lines.contains(
+                &"Would delete EnvRouter's app data: ~/.local/share/com.tylerrobertson.envrouter"
+                    .into()
+            ),
+            "{lines:?}"
+        );
+        assert!(
+            lines.iter().all(|line| !line.starts_with("Nothing")),
+            "{lines:?}"
         );
 
         let set_up = uninstall_lines(&plan(&["/home/sam/.zshrc"], FolderStep::WouldDelete), home);

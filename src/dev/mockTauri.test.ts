@@ -329,6 +329,8 @@ describe('uninstall', () => {
     const done = await call<UninstallReport>('uninstall', { dryRun: false })
     expect(done).toMatchObject({ problems: [], secrets: { status: 'unreachable' }, folder: 'deleted' })
     expect(done.removeNext).toEqual([{ what: 'app', command: 'sudo apt remove env-router' }])
+    // The window's own run leaves its webview's folders for the app to delete as it exits.
+    expect(done.appData).toEqual([])
 
     await expect(call('get_config')).rejects.toEqual({ kind: 'other', message: GUARD, path: null })
     await expect(call('get_setup_status')).rejects.toBe(GUARD)

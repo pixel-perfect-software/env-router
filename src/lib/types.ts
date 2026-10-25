@@ -190,8 +190,12 @@ export interface UninstallReport {
   /** `unreachable`: the store can't be used from here, so any secrets EnvRouter kept in it are still there. `notReached`: an earlier step stopped the run. */
   secrets: { status: 'deleted' | 'wouldDelete' | 'notReached' } | { status: 'unreachable'; reason: string }
   folder: 'deleted' | 'wouldDelete' | 'absent' | 'notReached'
-  /** Things found and left alone, such as where a linked `~/.envrouter` pointed. */
-  left: string[]
+  /** The webview's own folders (macOS: under ~/Library; Linux: ~/.local/share/<identifier>) that it deleted, or would. None from the window's own run: its webview holds them, so the app deletes them as it exits. */
+  appData: string[]
+  /** Webview folders it couldn't delete or wouldn't touch (one outside the home folder), one sentence each, worded like `problems`. They don't stop the run: the setup is gone either way. */
+  appDataLeft: string[]
+  /** Links it deleted whose targets it left alone, such as where a linked `~/.envrouter` pointed. */
+  left: { link: string; target: string }[]
   /** Why it stopped, one sentence each, worded to show as it is, with paths and setting names in backticks. Empty when it went through. */
   problems: string[]
   /** The commands that remove what EnvRouter can't remove from itself, once it has finished. */

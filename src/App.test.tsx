@@ -917,7 +917,7 @@ describe('Uninstall EnvRouter…', () => {
     const note = confirm.mock.calls.map(([text]) => String(text)).find((text) => text.includes('EnvRouter is uninstalled'))
     expect(note).toContain('To remove the app: brew uninstall --zap --cask envrouter')
     expect(note).toContain('To remove the envrouter CLI: brew uninstall envrouter-cli')
-    expect(note).toContain('EnvRouter quits now.')
+    expect(note).toContain('EnvRouter quits now, and deletes its own saved data as it goes.')
   })
 
   it('stays open when it stops, with the reason and Try Again, and finishes when asked again', async () => {

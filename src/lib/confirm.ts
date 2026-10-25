@@ -89,19 +89,23 @@ export const confirmUninstall = (store: string, unsaved: boolean) =>
 /** What the store's one item is called in its own tools (`uninstall::SECRETS_ITEM`). */
 const SECRETS_ITEM = 'EnvRouter MCP secrets'
 
+const REMOVE_LABEL = { app: 'To remove the app', cli: 'To remove the envrouter CLI' } as const
+
 /**
  * The native note after a finished uninstall: what is left for the user to remove (the app and the CLI can't remove themselves),
  * anything it couldn't do, and that the app quits now.
  */
 export const tellUninstalled = (report: UninstallReport, store: string, home: string) => {
-  const removals = report.removeNext.map((next) => `${next.what === 'app' ? 'To remove the app' : 'To remove the envrouter CLI'}: ${next.command}`)
+  const removals = report.removeNext.map((next) => `${REMOVE_LABEL[next.what]}: ${next.command}`)
   if (report.removeNext.some((next) => next.what === 'app')) removals.push('Opening the app again sets EnvRouter up again.')
   const paragraphs = removals.length > 0 ? [removals.join('\n')] : []
   if (report.secrets.status === 'unreachable')
     paragraphs.push(
       `Couldn't reach the ${store} (${report.secrets.reason}), so any MCP secrets EnvRouter kept there are still in it, as "${SECRETS_ITEM}".`,
     )
-  for (const target of report.left) paragraphs.push(`Left ${tildify(target, home)} alone: ~/.envrouter pointed there.`)
-  paragraphs.push('EnvRouter quits now.')
+  for (const { link, target } of report.left) paragraphs.push(`Left ${tildify(target, home)} alone: ${tildify(link, home)} pointed there.`)
+  // Folders it wouldn't touch (outside the home folder); the sentences set paths in backticks for the banner, which a native note can't.
+  for (const sentence of report.appDataLeft) paragraphs.push(sentence.replace(/`/g, ''))
+  paragraphs.push('EnvRouter quits now, and deletes its own saved data as it goes.')
   return message(paragraphs.join('\n\n'), { title: 'EnvRouter is uninstalled', kind: 'info' })
 }

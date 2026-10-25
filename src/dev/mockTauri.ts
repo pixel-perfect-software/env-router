@@ -859,7 +859,7 @@ const uninstall = (dryRun: boolean): UninstallReport => {
     }
   }
   if (!dryRun) for (const s of setup.shells) s.installed = false
-  const report = { dryRun, shellFiles, editorFiles, left: [], problems, removeNext: removeNext() }
+  const report = { dryRun, shellFiles, editorFiles, appData: [], appDataLeft: [], left: [], problems, removeNext: removeNext() }
   if (problems.length > 0) return { ...report, secrets: { status: 'notReached' }, folder: 'notReached' }
 
   // Off macOS `store::usable` says so before anything is deleted; the Keychain can't tell until it's asked, and refuses the delete.

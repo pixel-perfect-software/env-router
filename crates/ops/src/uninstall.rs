@@ -7,6 +7,13 @@
 //! 2. Turn off every editor wrapper, in user settings and in remote servers' machine settings.
 //! 3. Delete the secret store item, with all its parts.
 //! 4. Delete `~/.envrouter`.
+//! 5. Delete the folders the app's webview and the system keep for it (`platform::app_data_dirs`),
+//!    unless the app is the one uninstalling: its webview still holds them and writes them until
+//!    it quits, so it deletes them itself as it exits ([`remove_app_data`]).
+//!
+//! Step 5 is housekeeping after the setup is gone, so a folder it can't delete never undoes the
+//! run: the report is still [`finished`](UninstallReport::finished) and says what is left in
+//! `app_data_left`.
 //!
 //! A problem in 1 or 2 stops the run before 3, so no wrapper is ever left pointing at a deleted
 //! shim and no secret is lost while the setup still works. A store that can't be reached at all
@@ -38,8 +45,13 @@ pub struct UninstallReport {
     pub editor_files: Vec<EditorFile>,
     pub secrets: SecretsStep,
     pub folder: FolderStep,
-    /// Things the uninstall found and didn't touch, such as where a linked `~/.envrouter` points.
-    pub left: Vec<String>,
+    /// The app's webview folders it deleted (or would), the ones that were there.
+    pub app_data: Vec<String>,
+    /// The app's webview folders it couldn't delete or wouldn't touch, one sentence each, worded
+    /// like `problems`. They don't stop the run: the setup is gone either way.
+    pub app_data_left: Vec<String>,
+    /// Links it deleted whose targets it left alone, such as where a linked `~/.envrouter` points.
+    pub left: Vec<Left>,
     /// Why it stopped, one sentence each, worded to show as it is, with the paths and setting names in
     /// backticks (the window sets those in mono; the CLI prints them as they are). Empty when it went through.
     pub problems: Vec<String>,
@@ -53,6 +65,13 @@ impl UninstallReport {
             && self.problems.is_empty()
             && matches!(self.folder, FolderStep::Deleted | FolderStep::Absent)
     }
+}
+
+/// A link that was deleted without its target.
+#[derive(Debug, PartialEq, Serialize)]
+pub struct Left {
+    pub link: String,
+    pub target: String,
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -125,6 +144,9 @@ pub(crate) trait Store {
     /// Why the store can't be used, or `None`.
     fn problem(&self, home: &Path) -> Option<String>;
     fn delete(&self, home: &Path) -> Result<()>;
+    /// Asks the system to forget the preferences `domain` (macOS's `cfprefsd` caches them, and
+    /// can write a deleted plist back). Best effort: the plist is deleted too.
+    fn forget_preferences(&self, domain: &str);
 }
 
 pub(crate) struct Keychain;
@@ -150,6 +172,14 @@ impl Store for Keychain {
 
     fn delete(&self, home: &Path) -> Result<()> {
         envrouter_keychain::delete(home)
+    }
+
+    /// `defaults delete`, which says "does not exist" for a domain nothing wrote: that is as good
+    /// as forgotten, like any other failure, since the plist file is deleted next.
+    fn forget_preferences(&self, domain: &str) {
+        let _ = std::process::Command::new("/usr/bin/defaults")
+            .args(["delete", domain])
+            .output();
     }
 }
 
@@ -222,9 +252,15 @@ pub fn refuse_while_app_runs(home: &Path, caller: &Caller) -> Result<()> {
     Ok(())
 }
 
-/// Runs the four steps, or with `dry_run` reports what they would do, changing nothing.
-/// `remove_next` is left for the caller to fill.
-pub(crate) fn run(home: &Path, dry_run: bool, store: &dyn Store) -> Result<UninstallReport> {
+/// Runs the steps, or with `dry_run` reports what they would do, changing nothing. `app_data`
+/// is what step 5 deletes: nothing when the app is the caller. `remove_next` is left for the
+/// caller to fill.
+pub(crate) fn run(
+    home: &Path,
+    dry_run: bool,
+    store: &dyn Store,
+    app_data: &AppData,
+) -> Result<UninstallReport> {
     let root = paths::root(home);
     // The lock creates its file, and the folder if it's missing: a plan changes nothing, so it
     // takes none, and a real run locks only a folder that's there.
@@ -248,6 +284,8 @@ pub(crate) fn run(home: &Path, dry_run: bool, store: &dyn Store) -> Result<Unins
         editor_files,
         secrets: SecretsStep::NotReached,
         folder: FolderStep::NotReached,
+        app_data: Vec::new(),
+        app_data_left: Vec::new(),
         left: Vec::new(),
         problems,
         remove_next: Vec::new(),
@@ -266,9 +304,58 @@ pub(crate) fn run(home: &Path, dry_run: bool, store: &dyn Store) -> Result<Unins
     }
     match folder_step(home, dry_run, &mut report.left) {
         Ok(step) => report.folder = step,
-        Err(problem) => report.problems.push(problem),
+        Err(problem) => {
+            report.problems.push(problem);
+            return Ok(report);
+        }
     }
+    (report.app_data, report.app_data_left) =
+        app_data_step(app_data, dry_run, store, &mut report.left);
     Ok(report)
+}
+
+/// What step 5 is asked to do.
+#[derive(Debug, Default)]
+pub struct AppData {
+    /// The folders and files to delete.
+    pub delete: Vec<PathBuf>,
+    /// Folders that would be the app's if they exist but lie outside the home folder, which an
+    /// environment variable pointed at: named, never deleted.
+    pub outside: Vec<PathBuf>,
+    /// The preferences domain the system caches (see [`Store::forget_preferences`]).
+    pub preferences: Option<&'static str>,
+}
+
+impl AppData {
+    /// What `platform` keeps for the app under `home`. `xdg_data_home` is the caller's
+    /// `$XDG_DATA_HOME`, which the platform code only trusts inside `home`.
+    pub fn of(platform: Platform, home: &Path, xdg_data_home: Option<&Path>) -> Self {
+        Self {
+            delete: platform::app_data_dirs(platform, home),
+            outside: platform::app_data_dir_outside_home(platform, home, xdg_data_home)
+                .into_iter()
+                .collect(),
+            preferences: platform::preferences_domain(platform),
+        }
+    }
+
+    /// The same, for a caller that can't delete these itself: it still says which are outside.
+    pub fn named_only(self) -> Self {
+        Self {
+            delete: Vec::new(),
+            preferences: None,
+            ..self
+        }
+    }
+}
+
+/// What the app deletes of its own as it exits after a finished uninstall, when its webview
+/// has let go. Returns a sentence for each folder it couldn't delete.
+pub fn remove_app_data(home: &Path, xdg_data_home: Option<&Path>) -> Vec<String> {
+    let mut app_data = AppData::of(Platform::current(), home, xdg_data_home);
+    // The uninstall's report already named these.
+    app_data.outside.clear();
+    app_data_step(&app_data, false, &Keychain, &mut Vec::new()).1
 }
 
 /// Every editor, for every setting an agent's hook names: the registry's, and those of a saved
@@ -352,36 +439,101 @@ fn secrets_step(
     }
 }
 
-/// Step 4. A `~/.envrouter` that is a link goes alone, and its target is left and reported.
+/// Step 4.
 fn folder_step(
     home: &Path,
     dry_run: bool,
-    left: &mut Vec<String>,
+    left: &mut Vec<Left>,
 ) -> std::result::Result<FolderStep, String> {
     let root = paths::root(home);
-    let meta = match fs::symlink_metadata(&root) {
+    match remove_entry(&root, dry_run, left) {
+        Ok(Entry::Absent) => Ok(FolderStep::Absent),
+        Ok(Entry::Found) if dry_run => Ok(FolderStep::WouldDelete),
+        Ok(Entry::Found) => Ok(FolderStep::Deleted),
+        Err(why) => Err(cant_delete(&root, &why)),
+    }
+}
+
+/// Step 5. Every folder is tried; what couldn't be deleted is a sentence in the second list, not
+/// a problem. Returns the folders that were there. The preferences are forgotten before their
+/// plist is looked at, so the plist counts as there even if the system removed it meanwhile.
+fn app_data_step(
+    app_data: &AppData,
+    dry_run: bool,
+    store: &dyn Store,
+    left: &mut Vec<Left>,
+) -> (Vec<String>, Vec<String>) {
+    let mut found = Vec::new();
+    let mut sentences = Vec::new();
+    let plist = app_data.preferences.map(|domain| format!("{domain}.plist"));
+    for folder in &app_data.delete {
+        let is_plist = plist
+            .as_deref()
+            .is_some_and(|name| folder.file_name().is_some_and(|file| file == name));
+        let was_there = is_plist && fs::symlink_metadata(folder).is_ok();
+        if let Some(domain) = app_data.preferences.filter(|_| is_plist && !dry_run) {
+            store.forget_preferences(domain);
+        }
+        match remove_entry(folder, dry_run, left) {
+            Ok(Entry::Found) => found.push(folder.display().to_string()),
+            Ok(Entry::Absent) if was_there => found.push(folder.display().to_string()),
+            Ok(Entry::Absent) => {}
+            Err(why) => sentences.push(format!(
+                "Couldn't delete `{}`: {why}. Delete it yourself.",
+                folder.display()
+            )),
+        }
+    }
+    for folder in &app_data.outside {
+        if fs::symlink_metadata(folder).is_ok() {
+            sentences.push(format!(
+                "Didn't delete `{}`: it's outside your home folder. Delete it yourself.",
+                folder.display()
+            ));
+        }
+    }
+    (found, sentences)
+}
+
+/// What [`remove_entry`] found.
+enum Entry {
+    Absent,
+    /// There, and gone unless it was a dry run.
+    Found,
+}
+
+/// Deletes `path`, a folder with everything in it, a file, or a link on its own (its target is
+/// recorded in `left` and stays). Missing is fine. `Err` is why it couldn't be, worded to follow
+/// "Couldn't delete `path`:".
+fn remove_entry(
+    path: &Path,
+    dry_run: bool,
+    left: &mut Vec<Left>,
+) -> std::result::Result<Entry, String> {
+    let meta = match fs::symlink_metadata(path) {
         Ok(meta) => meta,
-        Err(err) if err.kind() == ErrorKind::NotFound => return Ok(FolderStep::Absent),
-        Err(err) => return Err(cant_delete(&root, &err.to_string())),
+        Err(err) if err.kind() == ErrorKind::NotFound => return Ok(Entry::Absent),
+        Err(err) => return Err(err.to_string()),
     };
-    let linked = meta.is_symlink();
-    if linked {
-        if let Ok(target) = fs::canonicalize(&root) {
-            left.push(target.display().to_string());
+    if meta.is_symlink() {
+        if let Ok(target) = fs::canonicalize(path) {
+            left.push(Left {
+                link: path.display().to_string(),
+                target: target.display().to_string(),
+            });
         }
     }
     if dry_run {
-        return Ok(FolderStep::WouldDelete);
+        return Ok(Entry::Found);
     }
-    let removed = if linked {
-        fs::remove_file(&root)
+    let removed = if meta.is_dir() {
+        fs::remove_dir_all(path)
     } else {
-        fs::remove_dir_all(&root)
+        fs::remove_file(path)
     };
     match removed {
-        Ok(()) => Ok(FolderStep::Deleted),
-        Err(err) if err.kind() == ErrorKind::NotFound => Ok(FolderStep::Deleted),
-        Err(err) => Err(cant_delete(&root, &err.to_string())),
+        Err(err) if err.kind() != ErrorKind::NotFound => Err(err.to_string()),
+        _ => Ok(Entry::Found),
     }
 }
 
@@ -566,6 +718,8 @@ pub(crate) mod fake {
         pub(crate) refuses: bool,
         pub(crate) deletes: Cell<u32>,
         pub(crate) prepared: RefCell<u32>,
+        /// The preferences domains it was asked to forget.
+        pub(crate) forgotten: RefCell<Vec<String>>,
     }
 
     impl Store for FakeStore {
@@ -593,6 +747,10 @@ pub(crate) mod fake {
                 ));
             }
             Ok(())
+        }
+
+        fn forget_preferences(&self, domain: &str) {
+            self.forgotten.borrow_mut().push(domain.to_string());
         }
     }
 }
@@ -646,7 +804,7 @@ mod tests {
         fs::write(&code, &broken).unwrap();
         let store = FakeStore::default();
 
-        let stopped = run(h, false, &store).unwrap();
+        let stopped = run(h, false, &store, &AppData::default()).unwrap();
 
         assert_eq!(stopped.problems.len(), 1, "{:?}", stopped.problems);
         assert!(stopped.problems[0].contains("VS Code"), "{stopped:?}");
@@ -664,7 +822,7 @@ mod tests {
 
         // Fixed, the same command finishes the job.
         fs::write(&code, "{}").unwrap();
-        let done = run(h, false, &store).unwrap();
+        let done = run(h, false, &store, &AppData::default()).unwrap();
         assert!(done.finished(), "{done:?}");
         assert_eq!(done.secrets, SecretsStep::Deleted);
         assert!(!paths::root(h).exists());
@@ -679,7 +837,7 @@ mod tests {
             unreachable: Some("there's no Secret Service".into()),
             ..FakeStore::default()
         };
-        let report = run(h, false, &gone).unwrap();
+        let report = run(h, false, &gone, &AppData::default()).unwrap();
         assert!(report.finished(), "{report:?}");
         assert_eq!(
             report.secrets,
@@ -696,7 +854,7 @@ mod tests {
             refuses: true,
             ..FakeStore::default()
         };
-        let report = run(h, false, &locked).unwrap();
+        let report = run(h, false, &locked, &AppData::default()).unwrap();
         assert!(!report.finished());
         assert_eq!(report.folder, FolderStep::NotReached);
         assert!(
@@ -717,7 +875,7 @@ mod tests {
         let before = snapshot(h);
         let store = FakeStore::default();
 
-        let plan = run(h, true, &store).unwrap();
+        let plan = run(h, true, &store, &AppData::default()).unwrap();
 
         assert_eq!(snapshot(h), before);
         assert_eq!(store.deletes.get(), 0);
@@ -742,11 +900,11 @@ mod tests {
             ..FakeStore::default()
         };
 
-        let plan = run(h, true, &store).unwrap();
+        let plan = run(h, true, &store, &AppData::default()).unwrap();
 
         assert_eq!(plan.secrets, SecretsStep::WouldDelete);
         assert_eq!(*store.prepared.borrow(), 0);
-        let done = run(h, false, &store).unwrap();
+        let done = run(h, false, &store, &AppData::default()).unwrap();
         assert_eq!(done.secrets, SecretsStep::Deleted);
         assert_eq!(store.deletes.get(), 1);
     }
@@ -783,7 +941,7 @@ mod tests {
         // A real run is refused before it touches anything.
         fs::write(h.join(".zshrc"), BLOCK).unwrap();
         let store = FakeStore::default();
-        crate::commands::uninstall_with(h, false, &cli, &store).unwrap_err();
+        crate::commands::uninstall_with(h, false, &cli, &store, None).unwrap_err();
         assert_eq!(fs::read_to_string(h.join(".zshrc")).unwrap(), BLOCK);
         assert_eq!(store.deletes.get(), 0);
 
@@ -811,7 +969,7 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let h = home.path();
 
-        let report = run(h, false, &FakeStore::default()).unwrap();
+        let report = run(h, false, &FakeStore::default(), &AppData::default()).unwrap();
 
         assert_eq!(report.folder, FolderStep::Absent);
         assert!(report.finished(), "{report:?}");
@@ -828,15 +986,201 @@ mod tests {
         fs::write(target.join("config.json"), "{}").unwrap();
         symlink(&target, paths::root(h)).unwrap();
 
-        let report = run(h, false, &FakeStore::default()).unwrap();
+        let report = run(h, false, &FakeStore::default(), &AppData::default()).unwrap();
 
         assert_eq!(report.folder, FolderStep::Deleted);
         assert!(fs::symlink_metadata(paths::root(h)).is_err());
         assert!(target.join("config.json").is_file());
         assert_eq!(
             report.left,
-            [fs::canonicalize(&target).unwrap().display().to_string()]
+            [Left {
+                link: paths::root(h).display().to_string(),
+                target: fs::canonicalize(&target).unwrap().display().to_string()
+            }]
         );
+    }
+
+    /// The webview's folders as the app's data lives on macOS: a folder with files in it, a
+    /// file, and three that aren't there. Made in a scratch home so that nothing real is named.
+    fn app_data(home: &Path) -> AppData {
+        let app_data = AppData::of(Platform::MacOs, home, None);
+        let folders = &app_data.delete;
+        fs::create_dir_all(folders[0].join("WebsiteData")).unwrap();
+        fs::write(folders[0].join("WebsiteData/db"), "x").unwrap();
+        fs::create_dir_all(folders[4].parent().unwrap()).unwrap();
+        fs::write(&folders[4], "plist").unwrap();
+        app_data
+    }
+
+    #[test]
+    fn the_webviews_folders_go_with_the_rest_and_a_missing_one_is_fine() {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path();
+        let app_data = app_data(h);
+        let folders = &app_data.delete;
+        // A link goes alone, and its target is reported like a linked `~/.envrouter`'s.
+        let moved = h.join("elsewhere");
+        fs::create_dir_all(&moved).unwrap();
+        fs::write(moved.join("kept"), "x").unwrap();
+        fs::create_dir_all(folders[1].parent().unwrap()).unwrap();
+        symlink(&moved, &folders[1]).unwrap();
+        let store = FakeStore::default();
+
+        let report = run(h, false, &store, &app_data).unwrap();
+
+        assert!(report.finished(), "{report:?}");
+        let went = |i: usize| folders[i].display().to_string();
+        assert_eq!(report.app_data, [went(0), went(1), went(4)]);
+        assert!(folders
+            .iter()
+            .all(|folder| fs::symlink_metadata(folder).is_err()));
+        assert!(moved.join("kept").is_file());
+        assert_eq!(
+            report.left,
+            [Left {
+                link: went(1),
+                target: fs::canonicalize(&moved).unwrap().display().to_string()
+            }]
+        );
+        // The system's copy of the preferences is told to forget them, not just the plist deleted.
+        assert_eq!(*store.forgotten.borrow(), [platform::APP_IDENTIFIER]);
+
+        // Run again: nothing left to find, and nothing wrong with that.
+        let again = run(h, false, &FakeStore::default(), &app_data).unwrap();
+        assert!(again.finished(), "{again:?}");
+        assert!(again.app_data.is_empty() && again.app_data_left.is_empty());
+    }
+
+    /// The preferences plist counts as there if the system removed it when it was asked to forget
+    /// the domain, so the report doesn't lose it.
+    #[test]
+    fn a_plist_the_system_removes_itself_is_still_reported() {
+        struct Removes(PathBuf);
+        impl Store for Removes {
+            fn prepare(&self, _: &Path) {}
+            fn prepare_would_help(&self, _: &Path) -> bool {
+                false
+            }
+            fn problem(&self, _: &Path) -> Option<String> {
+                None
+            }
+            fn delete(&self, _: &Path) -> Result<()> {
+                Ok(())
+            }
+            fn forget_preferences(&self, _: &str) {
+                fs::remove_file(&self.0).unwrap();
+            }
+        }
+        let home = tempfile::tempdir().unwrap();
+        let app_data = app_data(home.path());
+        let plist = app_data.delete[4].clone();
+
+        let report = run(home.path(), false, &Removes(plist.clone()), &app_data).unwrap();
+
+        assert!(
+            report.app_data.contains(&plist.display().to_string()),
+            "{report:?}"
+        );
+    }
+
+    #[test]
+    fn a_plan_lists_the_webviews_folders_and_deletes_none() {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path();
+        let app_data = app_data(h);
+        let before = snapshot(h);
+        let store = FakeStore::default();
+
+        let plan = run(h, true, &store, &app_data).unwrap();
+
+        assert_eq!(snapshot(h), before);
+        assert_eq!(plan.app_data.len(), 2, "{plan:?}");
+        assert!(app_data.delete[0].is_dir());
+        assert!(store.forgotten.borrow().is_empty());
+    }
+
+    /// One that can't be reached is told in `app_data_left`, not a problem: the setup is gone, so
+    /// the run is finished and nothing else is held back. The rest are still deleted.
+    #[test]
+    fn a_webview_folder_that_cant_be_deleted_is_told_without_failing_the_run() {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path();
+        let mut app_data = app_data(h);
+        // Its parent is a file, so it can neither be found nor told apart from a folder that's gone.
+        fs::write(h.join("blocker"), "x").unwrap();
+        let blocked = h.join("blocker/data");
+        let first = app_data.delete[0].clone();
+        app_data.delete = vec![blocked.clone(), first.clone()];
+
+        let report = run(h, false, &FakeStore::default(), &app_data).unwrap();
+
+        assert!(report.finished(), "{report:?}");
+        assert!(report.problems.is_empty());
+        assert_eq!(report.app_data_left.len(), 1, "{report:?}");
+        assert!(
+            report.app_data_left[0].contains(&blocked.display().to_string()),
+            "{report:?}"
+        );
+        assert!(!first.exists());
+        assert_eq!(report.folder, FolderStep::Absent);
+    }
+
+    /// A `$XDG_DATA_HOME` outside the home folder is never deleted, but it is named when it holds
+    /// the app's folder, whoever runs the uninstall.
+    #[test]
+    fn an_outside_data_home_is_named_and_left() {
+        let home = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let theirs = outside.path().join(platform::APP_IDENTIFIER);
+        fs::create_dir_all(&theirs).unwrap();
+        let named = AppData::of(Platform::Linux, home.path(), Some(outside.path()));
+        assert_eq!(named.outside, std::slice::from_ref(&theirs));
+
+        for app_data in [
+            named,
+            AppData::of(Platform::Linux, home.path(), Some(outside.path())).named_only(),
+        ] {
+            let report = run(home.path(), false, &FakeStore::default(), &app_data).unwrap();
+            assert!(report.finished(), "{report:?}");
+            assert_eq!(report.app_data_left.len(), 1, "{report:?}");
+            assert!(
+                report.app_data_left[0].contains(&theirs.display().to_string()),
+                "{report:?}"
+            );
+            assert!(theirs.is_dir());
+        }
+    }
+
+    /// The app can't delete what its own webview is using, so it only names what is outside; the
+    /// CLI, which only runs while the window is closed, deletes the rest.
+    #[test]
+    fn the_app_leaves_the_webviews_folders_and_the_cli_deletes_them() {
+        let platform = Platform::current();
+        let app = Caller::App {
+            exe: PathBuf::from("/x/app"),
+            appimage: None,
+        };
+        let cli = Caller::Cli {
+            exe: PathBuf::from("/x/envrouter"),
+        };
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path();
+        let folders = platform::app_data_dirs(platform, h);
+        for folder in &folders {
+            fs::create_dir_all(folder).unwrap();
+        }
+        let uninstall = |caller| {
+            crate::commands::uninstall_with(h, false, caller, &FakeStore::default(), None).unwrap()
+        };
+
+        let left = uninstall(&app);
+        assert!(left.finished() && left.app_data.is_empty(), "{left:?}");
+        assert!(folders.iter().all(|folder| folder.is_dir()));
+
+        let gone = uninstall(&cli);
+        assert!(gone.finished(), "{gone:?}");
+        assert_eq!(gone.app_data.len(), folders.len());
+        assert!(folders.iter().all(|folder| !folder.exists()));
     }
 
     #[test]
@@ -946,7 +1290,12 @@ mod tests {
                 reason: "no keyring".into(),
             },
             folder: FolderStep::WouldDelete,
-            left: vec!["/dotfiles".into()],
+            app_data: vec!["/h/.local/share/com.tylerrobertson.envrouter".into()],
+            app_data_left: vec!["Couldn't delete `/h/x`: busy. Delete it yourself.".into()],
+            left: vec![Left {
+                link: "/h/.envrouter".into(),
+                target: "/dotfiles".into(),
+            }],
             problems: vec!["Stopped.".into()],
             remove_next: vec![RemoveNext {
                 what: Removable::Cli,
@@ -956,7 +1305,7 @@ mod tests {
         assert_eq!(SECRETS_ITEM, "EnvRouter MCP secrets");
         assert_eq!(
             serde_json::to_string(&report).unwrap(),
-            r#"{"dryRun":false,"shellFiles":["/h/.zshrc"],"editorFiles":[{"editor":"codeInsiders","settingsFile":"/s.json","setting":"claudeCode.claudeProcessWrapper"}],"secrets":{"status":"unreachable","reason":"no keyring"},"folder":"wouldDelete","left":["/dotfiles"],"problems":["Stopped."],"removeNext":[{"what":"cli","command":"brew uninstall envrouter-cli"}]}"#
+            r#"{"dryRun":false,"shellFiles":["/h/.zshrc"],"editorFiles":[{"editor":"codeInsiders","settingsFile":"/s.json","setting":"claudeCode.claudeProcessWrapper"}],"secrets":{"status":"unreachable","reason":"no keyring"},"folder":"wouldDelete","appData":["/h/.local/share/com.tylerrobertson.envrouter"],"appDataLeft":["Couldn't delete `/h/x`: busy. Delete it yourself."],"left":[{"link":"/h/.envrouter","target":"/dotfiles"}],"problems":["Stopped."],"removeNext":[{"what":"cli","command":"brew uninstall envrouter-cli"}]}"#
         );
         for (step, json) in [
             (SecretsStep::Deleted, r#"{"status":"deleted"}"#),
