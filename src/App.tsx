@@ -17,6 +17,7 @@ import {
   errorMessage,
   getEditorStatus,
   getMcpTools,
+  openHelp,
   openInEditor,
   previewFolder,
   quitApp,
@@ -39,11 +40,12 @@ import {
   tellUninstalled,
 } from './lib/confirm'
 import { accentsOf, docketHasFix, type Health, healthOf } from './lib/health'
+import helpLinks from './lib/helpLinks.json'
 import { hasMcpFiles, profilesUsing, withoutServer, withServer, withUsedBy } from './lib/mcp'
 import { tildify } from './lib/paths'
 import { guessPlatform, PlatformContext, platformInfo } from './lib/platform'
 import { ideHooks, KNOWN_TOOLS, toolByCommand } from './lib/tools'
-import type { ConfigState, Editor, EditorStatus, Place, Profile, RevealFailed, Shell, ToolInfo } from './lib/types'
+import type { ConfigState, Editor, EditorStatus, HelpLink, Place, Profile, RevealFailed, Shell, ToolInfo } from './lib/types'
 import { hasUnsaved } from './lib/unsaved'
 import { useConfigStore } from './lib/useConfigStore'
 import { useFolderCheck } from './lib/useFolderCheck'
@@ -62,6 +64,7 @@ type Retry =
   | { kind: 'verdict'; action: VerdictAction; shell: Shell }
   | { kind: 'reveal'; path: string }
   | { kind: 'place'; place: Place }
+  | { kind: 'help'; link: HelpLink }
   | { kind: 'deleteProfile'; profileId: string }
   | { kind: 'deleteServer'; name: string }
   | { kind: 'uninstall' }
@@ -70,6 +73,28 @@ type Retry =
 /** The error banner's title when showing one of EnvRouter's places failed. */
 const placeTitle = (place: Place) =>
   place.kind === 'config' ? "Couldn't show config.json" : place.kind === 'root' ? "Couldn't open ~/.envrouter" : "Couldn't show the MCP folder"
+
+/** The same when opening a help link failed. */
+const helpTitle = (link: HelpLink) => `Couldn't open ${helpLinks[link].label}`
+
+/** The error banner's title for what a failed action was doing, when the banner says which it was; otherwise it has the generic one. */
+const bannerTitle = (retry: Retry | null): string | undefined => {
+  switch (retry?.kind) {
+    case 'uninstall':
+      return STOPPED
+    case 'quit':
+      return UNINSTALLED
+    case 'place':
+      return placeTitle(retry.place)
+    case 'help':
+      return helpTitle(retry.link)
+    default:
+      return undefined
+  }
+}
+
+/** The failures whose Try Again keeps its banner up, busy, until the answer, rather than clearing it (`startUninstall`, `retryReveal`). */
+const KEEPS_BANNER: ReadonlySet<Retry['kind']> = new Set(['uninstall', 'reveal', 'place', 'help'])
 
 export default function App() {
   const [editing, setEditing] = useState<string | 'new' | null>(null)
@@ -245,6 +270,14 @@ export default function App() {
       if (!config) return
       setView('profiles')
       setEditing((e) => e ?? 'new')
+    },
+    // Settings is the Shells popover, which opens (never toggles, as the menu's item and the key can both arrive) and takes focus as its
+    // button does. It stands down wherever the button does: with the inspector open, as the other shortcuts do, while an uninstall runs
+    // (its switches would be live), and with no shell to show, which leaves the popover no button to hang from or give focus back to.
+    settings: () => {
+      if (inspecting || running || uninstalling.current || !setup?.shells.some((s) => s.available)) return
+      setEditorsOpen(false)
+      setShellsOpen(true)
     },
     view: (next: 'profiles' | 'servers') => {
       if (!inspecting) setView(next)
@@ -476,18 +509,20 @@ export default function App() {
     }
   }, [])
 
-  // The menu bar reveals without the window; when that fails it comes forward and says why, with Try Again. Only where the banner
-  // can show it: a load or status error outranks an action's, and an uninstall owns the banner (a stopped one's Try Again must stay).
+  // The menu bar reveals a place, and opens a help link, without the window; when that fails it comes forward and says why, with Try
+  // Again. Only where the banner can show it: a load or status error outranks an action's, and an uninstall owns the banner (a
+  // stopped one's Try Again must stay).
   const revealFailed = useRef((_: RevealFailed) => {})
-  revealFailed.current = ({ place, message }) => {
+  revealFailed.current = ({ what, message }) => {
     if (uninstalling.current || (actionError !== null && (retry?.kind === 'uninstall' || retry?.kind === 'quit'))) return
     // The unreadable-config banner has a slot for config.json's Reveal alone; every other place has nowhere in it. The status error's
     // banner has no slot, and the open inspector keeps the banner behind its scrim, out of reach, so those are told natively.
-    if (loadError && place.kind === 'config') setOpenError({ action: 'reveal', message })
-    else if (loadError || setupError || inspecting) tellRevealFailed(placeTitle(place), message).catch(() => {})
+    if (loadError && what.kind === 'config') setOpenError({ action: 'reveal', message })
+    else if (loadError || setupError || inspecting)
+      tellRevealFailed(what.kind === 'help' ? helpTitle(what.link) : placeTitle(what), message).catch(() => {})
     else {
       focusRetry.current = true
-      fail(message, { kind: 'place', place })
+      fail(message, what.kind === 'help' ? { kind: 'help', link: what.link } : { kind: 'place', place: what })
     }
   }
   useEffect(() => {
@@ -532,11 +567,11 @@ export default function App() {
     } else if (health.kind === 'error' && !health.dismissible) {
       refreshSetup()
     } else if (retry) {
-      // An uninstall's banner stays up while it runs again (`startUninstall`), and so does a reveal's (`retryReveal`).
-      if (retry.kind !== 'uninstall' && retry.kind !== 'reveal' && retry.kind !== 'place') setActionError(null)
+      if (!KEEPS_BANNER.has(retry.kind)) setActionError(null)
       if (retry.kind === 'verdict') runAction(retry.action, retry.shell)
       else if (retry.kind === 'reveal') retryReveal(() => revealItemInDir(retry.path))
       else if (retry.kind === 'place') retryReveal(() => revealPlace(retry.place))
+      else if (retry.kind === 'help') retryReveal(() => openHelp(retry.link))
       else if (retry.kind === 'uninstall') startUninstall()
       else if (retry.kind === 'quit') quit()
       else if (retry.kind === 'deleteServer') confirmAndDeleteServer(retry.name)
@@ -639,11 +674,9 @@ export default function App() {
     ? actionError
       ? { kind: 'error', message: actionError, dismissible: true, busy: true, title: STOPPED }
       : { kind: 'uninstalling' }
-    : reported.kind === 'error' && reported.dismissible && (retry?.kind === 'uninstall' || retry?.kind === 'quit')
-      ? { ...reported, title: retry.kind === 'quit' ? UNINSTALLED : STOPPED }
-      : reported.kind === 'error' && reported.dismissible && retry?.kind === 'place'
-        ? { ...reported, title: placeTitle(retry.place) }
-        : reported
+    : reported.kind === 'error' && reported.dismissible && bannerTitle(retry)
+      ? { ...reported, title: bannerTitle(retry) }
+      : reported
   const health: Health = titled.kind === 'error' ? { ...titled, busy: titled.busy || retrying, attempt } : titled
   // In the commit that changes the banner, as the inspector's close does, so focus never sits on the body after its button goes.
   useLayoutEffect(() => {
@@ -735,6 +768,7 @@ export default function App() {
               onSet={setShell}
               onRevealConfig={() => revealPlace({ kind: 'config' })}
               onOpenRoot={() => revealPlace({ kind: 'root' })}
+              onHelp={openHelp}
               onUninstall={startUninstall}
               onClose={closeShells}
             />

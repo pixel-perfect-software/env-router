@@ -36,6 +36,8 @@ env-router/
 │   ├── build.rs               # stages the shim and helper for bundle.externalBin
 │   ├── src/lib.rs             # Tauri commands (wrappers over ops::commands), app setup, and the `Gate` every home() call goes through (it counts commands in flight, so an uninstall can wait for them, then turn the rest away) and the app's `app.lock`
 │   ├── src/tray.rs            # menu bar icon and menu; on macOS close-to-hide and the Dock icon only while open
+│   ├── src/menu.rs            # macOS menu bar: Settings… after About, EnvRouter's own Quit, the Help menu's links
+│   ├── src/help.rs            # the two help links (docs, report an issue) as a fixed list under the repository; the only addresses EnvRouter opens
 │   ├── capabilities/default.json  # core, plus the three dialog/opener calls the window makes; no fs
 │   ├── tauri.conf.json        # id com.tylerrobertson.envrouter, CSP, externalBin, an .app bundle signed ad hoc
 │   ├── tauri.linux.conf.json  # Linux: binary envrouter-app, native decorations, opaque window, .deb and AppImage

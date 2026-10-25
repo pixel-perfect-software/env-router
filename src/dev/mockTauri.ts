@@ -24,8 +24,8 @@
 // - `&fail=home|status|shell|editor|reveal|uninstall`: the home folder can't be found (the unloaded banner, with no file to open),
 //   the setup status can't be read (the error banner), turning a shell on fails (an error
 //   banner with Dismiss), or no editor opens a file (use it with `?scenario=broken`: the unloaded
-//   banner's Open config.json fails and Reveal takes the accent; `reveal` makes every reveal fail: the banner's, a folder's, the menu bar's and
-//   the Shells popover's), or
+//   banner's Open config.json fails and Reveal takes the accent; `reveal` makes every reveal fail (and every help link, as with no
+//   launcher to start): the banner's, a folder's, the menu bar's and the Shells popover's), or
 //   Uninstall EnvRouter… stops (VS Code's and Cursor's settings can't be read and name the shim: the banner
 //   shows why, a line each, with Try Again, and the shells are already off). It keeps failing until `window.__mockFix()` is called, the way a
 //   permission or a missing file keeps failing until the user fixes it.
@@ -39,11 +39,14 @@
 // ahead logs "quit" to the console. npm knows
 // every package (at 1.4.0, `next` at 2.0.0-beta.2) except one whose name ends in `-nope`.
 // The profile card's context menu and a folder row's "…" menu pop up as a DOM stand-in, at the position `popup(at)` names or else at the
-// pointer (where it last was: a menu opened from the keyboard on Linux opens there too), and give focus back to where it was when closed by Escape or a choice, as a native menu leaves it. `window.__mockMenuReveal(place)`
-// reveals as the menu bar's items do, without the window, and emits `reveal-failed` when that fails (not once an uninstall has begun, as the tray drops it).
+// pointer (where it last was: a menu opened from the keyboard on Linux opens there too), and give focus back to where it was when closed
+// by Escape or a choice, as a native menu leaves it. `window.__mockMenuReveal(place)` reveals as the menu bar's items do, without the
+// window, and emits `reveal-failed` when that fails (not once an uninstall has begun, as the tray drops it). `window.__mockMenuHelp(link)`
+// is the Help menu's item, opening the link and telling a failure the same way.
 
 import { emit } from '@tauri-apps/api/event'
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
+import helpLinks from '../lib/helpLinks.json'
 import { isSecret } from '../lib/mcp'
 import platformWords from '../lib/platformWords.json'
 import { ideHooks, withAgents } from '../lib/tools'
@@ -54,6 +57,7 @@ import type {
   Editor,
   EditorStatus,
   FolderCheck,
+  HelpLink,
   IdeHook,
   ImportCandidate,
   McpDialect,
@@ -825,7 +829,7 @@ const failed = (status: ServerCheck['status'], message: string, log: string | nu
 const UNINSTALLED = 'EnvRouter is uninstalled. Quit it to finish.'
 
 /** The commands that never ask for the home folder, so the guard in `home()` doesn't stop them. */
-const UNGUARDED = ['set_unsaved_edits', 'quit_app', 'parse_mcp_json']
+const UNGUARDED = ['set_unsaved_edits', 'quit_app', 'parse_mcp_json', 'open_help']
 
 /** `uninstall::remove_next`, as an app installed the usual way would hear it. */
 const removeNext = (): UninstallReport['removeNext'] =>
@@ -1076,6 +1080,17 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       if (failing === 'reveal') throw `Couldn't show \`${path}\`: No file manager could show it.`
       return null
     }
+    case 'open_help': {
+      // `help::open`: a launcher that can't start, as in a WSL distro with none installed, says why and where the page is.
+      // A name that isn't a link never reaches the command: Tauri's argument parsing refuses it first.
+      if (typeof a.link !== 'string' || !Object.keys(helpLinks).includes(a.link))
+        throw `invalid args \`link\` for command \`open_help\`: unknown variant \`${String(a.link)}\`, expected ${Object.keys(helpLinks)
+          .map((name) => `\`${name}\``)
+          .join(' or ')}`
+      const page = helpLinks[a.link as HelpLink]
+      if (failing === 'reveal') throw `No such file or directory (os error 2). It's at ${page.url}.`
+      return null
+    }
     case 'open_in_editor': {
       const path = String(a.path)
       if (!path.startsWith(`${HOME}/`)) throw `${path} isn't a file in your home folder.`
@@ -1205,6 +1220,7 @@ declare global {
     __mockQuit: () => Promise<void>
     __mockFix: () => void
     __mockMenuReveal: (place: Place) => Promise<void>
+    __mockMenuHelp: (link: HelpLink) => Promise<void>
   }
 }
 
@@ -1222,7 +1238,17 @@ window.__mockMenuReveal = async (place) => {
     await respond('reveal_place', { place })
   } catch (message) {
     if (uninstalled) return
-    await emit('reveal-failed', { place, message: String(message) } satisfies RevealFailed)
+    await emit('reveal-failed', { what: place, message: String(message) } satisfies RevealFailed)
+  }
+}
+
+// `tray::help_in_background`: the Help menu's items, told the same way.
+window.__mockMenuHelp = async (link) => {
+  try {
+    await respond('open_help', { link })
+  } catch (message) {
+    if (uninstalled) return
+    await emit('reveal-failed', { what: { kind: 'help', link }, message: String(message) } satisfies RevealFailed)
   }
 }
 

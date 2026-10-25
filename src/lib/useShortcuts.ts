@@ -5,12 +5,15 @@ import { isShortcut, type PlatformInfo } from './platform'
 export interface Shortcuts {
   checkFolder: () => void
   newProfile: () => void
+  /** Settings…: there's no Preferences window, so it opens the Shells popover. */
+  settings: () => void
   view: (next: 'profiles' | 'servers') => void
 }
 
 /**
- * The menu bar's "Check Folder…" and the keyboard shortcuts (⌘ or Ctrl + N, O, 1, 2). They reach
- * the latest `shortcuts` and `platform` through a ref, so the listeners are added once.
+ * The menu bar's "Check Folder…" and "Settings…" and the keyboard shortcuts (⌘ or Ctrl + N, O, comma, 1, 2). On macOS the menu's
+ * Settings… takes ⌘, itself and sends the event; elsewhere there's no menu, so the key does. They reach the latest `shortcuts` and
+ * `platform` through a ref, so the listeners are added once.
  */
 export function useShortcuts(platform: PlatformInfo, shortcuts: Shortcuts) {
   const actions = useRef(shortcuts)
@@ -19,7 +22,8 @@ export function useShortcuts(platform: PlatformInfo, shortcuts: Shortcuts) {
   platformRef.current = platform
 
   useEffect(() => {
-    const unlisten = listen('check-folder', () => actions.current.checkFolder())
+    // Each listener is released on its own, so one that failed to attach can't leave the other attached.
+    const unlisten = [listen('check-folder', () => actions.current.checkFolder()), listen('open-settings', () => actions.current.settings())]
     const onKey = (e: KeyboardEvent) => {
       if (!isShortcut(e, platformRef.current)) return
       if (e.key === 'n') {
@@ -28,6 +32,9 @@ export function useShortcuts(platform: PlatformInfo, shortcuts: Shortcuts) {
       } else if (e.key === 'o') {
         e.preventDefault()
         actions.current.checkFolder()
+      } else if (e.key === ',') {
+        e.preventDefault()
+        actions.current.settings()
       } else if (e.key === '1' || e.key === '2') {
         e.preventDefault()
         actions.current.view(e.key === '1' ? 'profiles' : 'servers')
@@ -35,7 +42,7 @@ export function useShortcuts(platform: PlatformInfo, shortcuts: Shortcuts) {
     }
     window.addEventListener('keydown', onKey)
     return () => {
-      unlisten.then((stop) => stop())
+      for (const attached of unlisten) attached.then((stop) => stop())
       window.removeEventListener('keydown', onKey)
     }
   }, [])

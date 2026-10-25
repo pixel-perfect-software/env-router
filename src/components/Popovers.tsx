@@ -4,8 +4,8 @@ import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useSta
 import { errorMessage } from '../lib/api'
 import { tildify } from '../lib/paths'
 import { usePlatform } from '../lib/platform'
-import { toolLabel } from '../lib/tools'
-import type { Editor, EditorStatus, SetupStatus, Shell } from '../lib/types'
+import { editorNote, toolLabel } from '../lib/tools'
+import type { Editor, EditorStatus, HelpLink, SetupStatus, Shell } from '../lib/types'
 import { AgentMark } from './icons'
 import { Button, Switch, ValueText } from './ui'
 
@@ -108,6 +108,7 @@ export function ShellsPopover({
   onSet,
   onRevealConfig,
   onOpenRoot,
+  onHelp,
   onUninstall,
   onClose,
 }: {
@@ -117,10 +118,12 @@ export function ShellsPopover({
   /** Show config.json, and open ~/.envrouter, in the file manager. A rejection's message replaces the note, as a switch's does. */
   onRevealConfig: () => Promise<void>
   onOpenRoot: () => Promise<void>
+  /** Open a page of the project's repository in the browser. A rejection's message replaces the note, as a reveal's does. */
+  onHelp: (link: HelpLink) => Promise<void>
   onUninstall: () => void
   onClose: () => void
 }) {
-  const { busy, error, run } = useSwitches<Shell | 'config' | 'root'>()
+  const { busy, error, run } = useSwitches<Shell | 'config' | 'root' | HelpLink>()
   const { revealLabelOf } = usePlatform()
   return (
     <TitlePopover id="shells-panel" label="Shell setup" onClose={onClose}>
@@ -156,8 +159,8 @@ export function ShellsPopover({
         Adds a marked block to the end of each file; turning a shell off removes it.
       </Note>
       {/* The files EnvRouter edits live here too, so the way to them does, and so does taking it all away. Push buttons: the window's one
-          accent is elsewhere. Two rows on purpose, since the three never fit one at the popover's width: the ways to the files, then Uninstall alone
-          at the right. */}
+          accent is elsewhere. Two rows on purpose, since the three never fit one at the popover's width: the ways to the files, then the help links
+          at the left (plain, as links are) and Uninstall at the right. */}
       {/* The note's 6px and this 8px collapse to 8 between them; 12 below with the panel's own padding. */}
       <div className="mt-2 flex flex-wrap items-center gap-2 px-2.5">
         <Button busy={busy !== null} onClick={() => run('config', onRevealConfig)}>
@@ -167,8 +170,14 @@ export function ShellsPopover({
           Open ~/.envrouter
         </Button>
       </div>
-      <div className="mt-2 flex justify-end px-2.5 pb-1.5">
-        <Button busy={busy !== null} onClick={onUninstall}>
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 px-2.5 pb-1.5">
+        <Button kind="plain" busy={busy !== null} onClick={() => run('docs', () => onHelp('docs'))}>
+          Documentation
+        </Button>
+        <Button kind="plain" busy={busy !== null} onClick={() => run('reportIssue', () => onHelp('reportIssue'))}>
+          Report an Issue
+        </Button>
+        <Button className="ml-auto" busy={busy !== null} onClick={onUninstall}>
           Uninstall EnvRouter…
         </Button>
       </div>
@@ -188,10 +197,16 @@ export function EditorsPopover({
   onClose: () => void
 }) {
   const { busy, error, run } = useSwitches<string>()
+  // What each agent shown does that routing its extension wouldn't suggest (`ide.note` in agents.json), once per agent, not per editor.
+  const shown = editorsToShow(editors)
+  const notes = [...new Set(shown.map((e) => e.command))].flatMap((command) => {
+    const note = editorNote(command)
+    return note ? [[command, note] as const] : []
+  })
   return (
     <TitlePopover id="editors-panel" label="Editor setup" onClose={onClose}>
       <ul>
-        {editorsToShow(editors).map((e) => {
+        {shown.map((e) => {
           const key = `${e.editor}:${e.command}`
           const agent = toolLabel(e.command)
           return (
@@ -218,6 +233,12 @@ export function EditorsPopover({
       </ul>
       <Note error={error} home={home}>
         Extensions run their own copy of the agent; this sets their process wrapper to EnvRouter. New sessions pick it up.
+        {notes.map(([command, note]) => (
+          <span key={command}>
+            {' '}
+            {toolLabel(command)}: {note}
+          </span>
+        ))}
       </Note>
     </TitlePopover>
   )

@@ -1020,6 +1020,10 @@ describe('Uninstall EnvRouter…', () => {
     expect(reachableAccents()).toEqual([])
     expect(screen.getByRole('button', { name: /Shells/ }).getAttribute('aria-disabled')).toBe('true')
     expect(screen.getByRole('button', { name: 'Check Folder…' }).hasAttribute('disabled')).toBe(true)
+    // Settings… would open the switches the titlebar's control holds still.
+    fireEvent.keyDown(window, { key: ',', metaKey: true })
+    await emit('open-settings')
+    expect(screen.queryByRole('dialog', { name: 'Shell setup' })).toBeNull()
 
     // The first try left every shell off, which on its own would read "Routing is off" with a Turn On.
     await user.click(await screen.findByRole('button', { name: 'Try Again' }))
@@ -1030,5 +1034,64 @@ describe('Uninstall EnvRouter…', () => {
     expect(reachableAccents()).toEqual([])
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Try Again' }).getAttribute('aria-disabled')).toBeNull())
+  })
+})
+
+describe('settings and help', () => {
+  const shellsPanel = () => screen.queryByRole('dialog', { name: 'Shell setup' })
+
+  it("opens the Shells popover on ⌘, and on the menu bar's Settings…, takes focus into it, and leaves it open when both arrive", async () => {
+    await open('?scenario=populated')
+    await screen.findByText(/Routing is on in zsh/)
+    expect(shellsPanel()).toBeNull()
+
+    fireEvent.keyDown(window, { key: ',', metaKey: true })
+    const panel = await screen.findByRole('dialog', { name: 'Shell setup' })
+    expect(panel.contains(document.activeElement)).toBe(true)
+
+    // macOS takes ⌘, for the menu's item, which sends this event; the key may arrive as well. Neither toggles.
+    await emit('open-settings')
+    fireEvent.keyDown(window, { key: ',', metaKey: true })
+    expect(shellsPanel()).toBe(panel)
+  })
+
+  it('swaps the Editors popover for it, and stands down while the profile inspector is open', async () => {
+    const user = await open('?scenario=populated')
+    await user.click(await screen.findByRole('button', { name: 'Editors…' }))
+    fireEvent.keyDown(window, { key: ',', metaKey: true })
+    await screen.findByRole('dialog', { name: 'Shell setup' })
+    expect(screen.queryByRole('dialog', { name: 'Editor setup' })).toBeNull()
+
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: 'Edit Personal' }))
+    fireEvent.keyDown(window, { key: ',', metaKey: true })
+    expect(shellsPanel()).toBeNull()
+  })
+
+  it('says in Editors… what the process wrapper does to the permission mode', async () => {
+    const user = await open('?scenario=populated')
+    await user.click(await screen.findByRole('button', { name: 'Editors…' }))
+    const editors = within(screen.getByRole('dialog', { name: 'Editor setup' }))
+    expect(editors.getByText(/doesn't pick a permission mode starts in “default”/)).toBeTruthy()
+  })
+
+  it('opens the docs and the issue tracker from the Shells popover, and shows why when no browser does', async () => {
+    const user = await open('?scenario=populated&fail=reveal')
+    await user.click(await screen.findByRole('button', { name: /Shells/ }))
+    await user.click(screen.getByRole('button', { name: 'Report an Issue' }))
+    expect(await screen.findByText(/It's at .*\/issues\/new\./)).toBeTruthy()
+  })
+
+  it("tells a Help menu item's failure in the banner, as a menu bar reveal's, and tries again", async () => {
+    const user = await open('?scenario=populated&fail=reveal')
+    await screen.findByText(/Routing is on in zsh/)
+    await window.__mockMenuHelp('reportIssue')
+    expect(await screen.findByText("Couldn't open Report an Issue")).toBeTruthy()
+    const tryAgain = screen.getByRole('button', { name: 'Try Again' })
+    await waitFor(() => expect(document.activeElement).toBe(tryAgain))
+
+    window.__mockFix()
+    await user.click(tryAgain)
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Try Again' })).toBeNull())
   })
 })

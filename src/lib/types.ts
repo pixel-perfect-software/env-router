@@ -1,6 +1,8 @@
 // Wire types for the Tauri commands. Each one mirrors a Rust type, named in its comment;
 // change both sides together. Rust `Option` arrives as `null`.
 
+import type helpLinks from './helpLinks.json'
+
 /** `envrouter_core::config::ToolConfig`. An empty `path` means the profile leaves the tool alone. */
 export interface ToolConfig {
   envVar: string
@@ -275,9 +277,18 @@ export interface ConfigFault {
 /** `commands::Place`: one of EnvRouter's own places to show in the file manager. `mcpFiles`: the folder a profile's MCP files are rendered into. */
 export type Place = { kind: 'config' } | { kind: 'root' } | { kind: 'mcpFiles'; profileId: string }
 
-/** `tray::RevealFailed`, the payload of the `reveal-failed` event: the menu bar's reveal couldn't show `place`. */
+/**
+ * `help::Link`: a page of the project's repository on GitHub, named by its key in `helpLinks.json`. The window names it; the backend
+ * holds the address, so the window can't open any other.
+ */
+export type HelpLink = keyof typeof helpLinks
+
+/** `tray::Failed`: what the menu bar tried to show. */
+export type Failed = Place | { kind: 'help'; link: HelpLink }
+
+/** `tray::RevealFailed`, the payload of the `reveal-failed` event: the menu bar's reveal, or its Help item, couldn't show `what`. */
 export interface RevealFailed {
-  place: Place
+  what: Failed
   message: string
 }
 

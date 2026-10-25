@@ -12,7 +12,9 @@ use crate::config::{AgentDef, ConfigState};
 const REGISTRY: &str = include_str!("../../../src/lib/agents.json");
 
 /// One registry entry. The window's display fields (`label`, `defaultPath`, `install`, `note`, `mark`) are
-/// skipped; Rust needs only what goes into `config.agents`.
+/// skipped; Rust needs only what goes into `config.agents`. The same goes inside `ide`: its `note` is the
+/// window's own line for the Editors popover, which `IdeHook` ignores, so never put
+/// `deny_unknown_fields` on `IdeHook` (the CLI would fail to read this registry) and don't save the note.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KnownAgent {
@@ -87,6 +89,27 @@ mod tests {
             Some(McpDialect::Claude)
         );
         assert!(claude.def.ide.is_some());
+    }
+
+    /// The registry's `ide.note` is for the window alone: it must stay in the file and out of what
+    /// Rust reads, so an `IdeHook` that refuses unknown fields fails here, not in the CLI.
+    #[test]
+    fn the_windows_note_on_an_editor_hook_is_ignored() {
+        let raw: serde_json::Value = serde_json::from_str(REGISTRY).unwrap();
+        let claude = raw
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|agent| agent["command"] == "claude")
+            .unwrap();
+        assert!(claude["ide"]["note"].is_string());
+
+        let registry = known();
+        let claude = registry.iter().find(|a| a.command == "claude").unwrap();
+        assert_eq!(
+            claude.def.ide.as_ref().map(|ide| ide.setting.as_str()),
+            Some("claudeCode.claudeProcessWrapper")
+        );
     }
 
     /// A machine with no window keeps the agents its config names, so a skip rule a release

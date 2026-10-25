@@ -15,7 +15,11 @@
       "skipIfPresent": ["/Library/Application Support/ClaudeCode/managed-mcp.json", "/etc/claude-code/managed-mcp.json"]
     },
     "mcpFiles": { "userFile": ".claude.json", "defaultDir": "~", "projectFile": ".mcp.json" },
-    "ide": { "setting": "claudeCode.claudeProcessWrapper", "extension": "anthropic.claude-code" }
+    "ide": {
+      "setting": "claudeCode.claudeProcessWrapper",
+      "extension": "anthropic.claude-code",
+      "note": "With the wrapper set, a tab that doesn't pick a permission mode starts in “default”, not your configured one."
+    }
   },
   {
     "command": "copilot",

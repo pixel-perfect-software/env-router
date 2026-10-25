@@ -140,7 +140,8 @@ pub struct AgentDef {
 }
 
 /// An editor extension that runs its own copy of the agent but takes a process-wrapper
-/// setting: the editor then runs `<wrapper> <its binary> <args>`.
+/// setting: the editor then runs `<wrapper> <its binary> <args>`. It must keep ignoring unknown
+/// fields: the registry's `ide` also holds the window's own `note`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IdeHook {
