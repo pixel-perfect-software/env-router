@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::editors::{self, Editor, EditorStatus};
 use crate::shell::{self, FolderCheck, Preview, Shell, ShellStatus};
 use crate::uninstall::{self, AppData, Caller, UninstallReport};
-use crate::{installed, mcp_import, mcp_probe, npm, shims};
+use crate::{checked_once, installed, mcp_import, mcp_probe, npm, shims};
 
 pub fn get_config(home: &Path) -> Result<ConfigState> {
     config::load_or_init(&paths::root(home))
@@ -408,6 +408,9 @@ pub struct SetupStatus {
     /// carries, or that a terminal runs an alias or a function for, isn't listed: this is the one
     /// answer for the window, the CLI and rpc.
     pub missing_agents: Option<Vec<String>>,
+    /// A folder check came back routed at some time (`checked_once`), which first-run's last step
+    /// waits for.
+    pub checked_before: bool,
 }
 
 /// Longest the window's (and rpc's) status waits for the agents: the answer is a few `stat`s while the terminal's
@@ -544,6 +547,7 @@ fn status_of(
         shim_path: paths::shim_binary(home).display().to_string(),
         shells: Shell::ALL.iter().map(|&s| shell::status(s, home)).collect(),
         missing_agents,
+        checked_before: checked_once::is_recorded(home),
     })
 }
 
@@ -626,8 +630,20 @@ pub(crate) fn uninstall_with(
 
 /// Opens `shell` the way a new terminal window would, in `folder`, and reports what running
 /// `tool` there would do. Never runs the tool itself.
+/// A check that finds the tool routed is also noted as done ([`checked_once`]), for first-run.
 pub fn check_folder(home: &Path, shell: Shell, folder: &Path, tool: &str) -> Result<FolderCheck> {
-    shell::check_folder(shell, home, folder, tool)
+    let check = shell::check_folder(shell, home, folder, tool)?;
+    note_if_routed(home, &check);
+    Ok(check)
+}
+
+/// A convenience, like the last folder: a failure to keep it is told, not raised.
+fn note_if_routed(home: &Path, check: &FolderCheck) {
+    if matches!(check, FolderCheck::Routed { .. }) {
+        if let Err(err) = checked_once::record(home) {
+            eprintln!("envrouter: couldn't note that a folder was checked: {err}");
+        }
+    }
 }
 
 /// What the given, possibly unsaved, config would route for `tool` in `folder`.
@@ -1382,11 +1398,33 @@ mod tests {
             shim_path: paths::shim_binary(Path::new("/h")).display().to_string(),
             shells: Vec::new(),
             missing_agents: Some(vec!["copilot".into()]),
+            checked_before: true,
         };
         assert_eq!(
             serde_json::to_string(&setup).unwrap(),
-            r#"{"platform":"macos","secretStore":"Keychain","sealedLabel":"In Keychain","secretStoreProblem":null,"fileManager":"Finder","revealVerb":"Reveal","shimInstalled":true,"shimsDir":"/h/.envrouter/shims","shimPath":"/h/.envrouter/bin/envrouter-shim","shells":[],"missingAgents":["copilot"]}"#
+            r#"{"platform":"macos","secretStore":"Keychain","sealedLabel":"In Keychain","secretStoreProblem":null,"fileManager":"Finder","revealVerb":"Reveal","shimInstalled":true,"shimsDir":"/h/.envrouter/shims","shimPath":"/h/.envrouter/bin/envrouter-shim","shells":[],"missingAgents":["copilot"],"checkedBefore":true}"#
         );
+    }
+
+    /// Only a check that finds the tool routed counts for first-run's last step.
+    #[test]
+    fn only_a_routed_check_is_noted_as_done() {
+        let home = tempfile::tempdir().unwrap();
+        note_if_routed(home.path(), &FolderCheck::NotFound);
+        assert!(!checked_once::is_recorded(home.path()));
+
+        let routed = FolderCheck::Routed {
+            profile: None,
+            profile_id: None,
+            env_var: None,
+            value: None,
+            mcp: Vec::new(),
+            mcp_managed_by: None,
+            via_alias: None,
+            real: "/bin/t".into(),
+        };
+        note_if_routed(home.path(), &routed);
+        assert!(checked_once::is_recorded(home.path()));
     }
 
     /// A secret store check that panics is a problem told, not the absence of one.

@@ -144,6 +144,8 @@ export interface SetupStatus {
    * config names), or null when that couldn't be asked or hasn't been yet: nothing is marked then, since an agent not known to be missing isn't.
    */
   missingAgents: string[] | null
+  /** First-run's folder check counts as done although this window's storage doesn't say so: the storage of an older bundle identifier held that answer (`paths::checked_once`). */
+  checkedBefore: boolean
 }
 
 /**

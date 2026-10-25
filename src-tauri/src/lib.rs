@@ -15,14 +15,15 @@ use std::time::Duration;
 use envrouter_core::config::{self, ConfigState, IdeHook, McpServer};
 use envrouter_core::platform::XdgHomes;
 use envrouter_core::{paths, Error, Result};
-use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+use tauri::plugin::{Builder as PluginBuilder, TauriPlugin};
+use tauri::{AppHandle, Emitter, Manager, WindowEvent, Wry};
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
 use envrouter_ops::commands::{self, ConfigFault, Located, Place, SaveOutcome, SetupStatus};
 use envrouter_ops::editors::{Editor, EditorStatus};
 use envrouter_ops::shell::{self, FolderCheck, Preview, Shell, ShellStatus};
 use envrouter_ops::uninstall::{Caller, UninstallReport};
-use envrouter_ops::{last_folder, mcp_import, mcp_probe, shims};
+use envrouter_ops::{last_folder, legacy_identifier, mcp_import, mcp_probe, shims};
 
 // Each command is a wrapper over `envrouter_ops::commands`, which the CLI's `rpc` mode calls by
 // the same names. Only the window's own concerns live here: the tray and the async runtime.
@@ -497,10 +498,49 @@ const WINDOW_STATE: StateFlags = StateFlags::SIZE
     .union(StateFlags::POSITION)
     .union(StateFlags::MAXIMIZED);
 
+/// Clears away what the bundle identifier before this one left (`platform::LEGACY_APP_IDENTIFIERS`),
+/// when the app starts. It is a plugin so that it is set up before the window-state plugin
+/// (plugins start in the order they were added), which reads its file while it starts: the old
+/// frame has to be in the new identifier's config folder by then. Copying it only reads the old
+/// folder, so it always happens, and so does carrying first-run's answer over (file reads, before
+/// the window can ask for its status). Deleting the rest goes on a thread of its own, so the
+/// launch doesn't wait for it, and waits for any older copy of the app to quit; what it leaves is
+/// logged, since there is no window to tell yet.
+fn leave_legacy_identifier() -> TauriPlugin<Wry> {
+    PluginBuilder::new("legacy-identifier")
+        .setup(|app, _| {
+            let Ok(config_dir) = app.path().app_config_dir() else {
+                return Ok(());
+            };
+            if let Err(err) = legacy_identifier::carry_window_state(
+                &config_dir,
+                tauri_plugin_window_state::DEFAULT_FILENAME,
+            ) {
+                eprintln!("envrouter: couldn't carry the window's size over: {err}");
+            }
+            if let Ok(home) = app.path().home_dir() {
+                if let Err(err) = legacy_identifier::carry_checked_once(&home) {
+                    eprintln!("envrouter: couldn't carry the folder check over: {err}");
+                }
+                std::thread::spawn(move || {
+                    let xdg = XdgHomes::from_env();
+                    for sentence in
+                        legacy_identifier::clean_up_old_identifier(&home, &config_dir, &xdg)
+                    {
+                        eprintln!("envrouter: {sentence}");
+                    }
+                });
+            }
+            Ok(())
+        })
+        .build()
+}
+
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(leave_legacy_identifier())
         // The window's own Rust hooks do all of it, so the window is granted none of the plugin's commands.
         .plugin(
             tauri_plugin_window_state::Builder::default()

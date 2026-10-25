@@ -419,7 +419,8 @@ after resolving symlinks and letter case, and a trigger covers its whole subtree
 | `~/.envrouter/mcp/` | Rendered MCP server files per profile and agent (readable only by you) |
 | `~/.envrouter/mcp-tools.json` | Tool lists from server checks |
 | `~/.envrouter/last-folder.json` | The folder you last checked, for the menu bar's **Check Last Folder** |
-| `~/Library/Application Support/com.tylerrobertson.envrouter/.window-state.json` (macOS), `~/.config/com.tylerrobertson.envrouter/.window-state.json` (Linux) | The window's size and position, written when the app quits. The view it was left on is kept in the window's own web storage |
+| `~/.envrouter/checked-once` | Made the first time a folder check finds an agent routed, so first-run's last step is not shown again. Also made when you update from a release up to 0.7.2 that was already set up (a profile, a shell turned on) |
+| `~/Library/Application Support/ca.pixel-perfect.envrouter/.window-state.json` (macOS), `~/.config/ca.pixel-perfect.envrouter/.window-state.json` (Linux) | The window's size and position, written when the app quits. The view it was left on is kept in the window's own web storage. Releases up to 0.7.2 kept these under another bundle identifier; the first launch copies the window's size and position over and deletes that identifier's folders (the window's storage and caches, which can't move: the system keys them by identifier). The view you left on is reset once. If an older copy of the app is still running, the folders are cleared at a later launch, after it quits |
 | "EnvRouter MCP secrets" in the system's store | Secret values you've entered, once there are any: in the login Keychain on macOS, the keyring on Linux, the Windows Credential Manager from WSL |
 | Shell startup files | A block between `# >>> envrouter >>>` and `# <<< envrouter <<<` in `~/.zshrc` (or `$ZDOTDIR/.zshrc`); for bash, `~/.bashrc` on a Linux desktop, or the login file (and `~/.bashrc`) on macOS and in WSL; or fish's `config.fish` |
 | An editor's settings | `claudeCode.claudeProcessWrapper`, once you turn the editor on in **Editors…** |
@@ -482,13 +483,15 @@ It does five things, in this order:
 4. Deletes `~/.envrouter`, with your profiles and MCP servers. If it is a link, only the link goes
    and the folder it points at is named and left.
 5. Deletes the folders the window's webview keeps for itself (page data and caches). On macOS:
-   `~/Library/WebKit/com.tylerrobertson.envrouter`, `~/Library/Caches/com.tylerrobertson.envrouter` and
-   `~/Library/Application Support/com.tylerrobertson.envrouter` (where the window's size and position
-   are kept) and `~/Library/Preferences/com.tylerrobertson.envrouter.plist` (asking the system to forget those
+   `~/Library/WebKit/ca.pixel-perfect.envrouter`, `~/Library/Caches/ca.pixel-perfect.envrouter` and
+   `~/Library/Application Support/ca.pixel-perfect.envrouter` (where the window's size and position
+   are kept) and `~/Library/Preferences/ca.pixel-perfect.envrouter.plist` (asking the system to forget those
    preferences first, with `defaults delete`, so it can't write them back), plus `HTTPStorages` and
    `Saved Application State` entries of that name, if the system made any. On Linux:
-   `~/.local/share/com.tylerrobertson.envrouter` (Tauri's local data folder, which holds the webview's
-   storage and cache both) and `~/.config/com.tylerrobertson.envrouter` (the window's size and position). The command does this itself, since it only runs while the window is
+   `~/.local/share/ca.pixel-perfect.envrouter` (Tauri's local data folder, which holds the webview's
+   storage and cache both) and `~/.config/ca.pixel-perfect.envrouter` (the window's size and position).
+   It clears the same folders under the bundle identifier of releases up to 0.7.2 too, should any
+   remain (the app deletes them itself at its first launch after updating). The command does this itself, since it only runs while the window is
    closed. The window's own uninstall can't while its webview is using them, so it deletes them as it
    quits, once everything else has finished. This step never fails the uninstall: a folder it can't
    delete is named ("Uninstalled, but this is left behind"), and so is one outside your home folder,
