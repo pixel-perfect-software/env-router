@@ -1,4 +1,6 @@
 mod quit;
+#[cfg(target_os = "macos")]
+mod traffic_lights;
 mod tray;
 
 use std::collections::{BTreeMap, HashMap};
@@ -474,6 +476,10 @@ pub fn run() {
                 }
             }
             tray::create(app.handle())?;
+            #[cfg(target_os = "macos")]
+            if let Some(window) = app.get_webview_window("main") {
+                traffic_lights::centre(&window.as_ref().window());
+            }
             Ok(())
         })
         // ⌘Q quits through `AppHandle::exit`, so it asks first with unsaved edits (see `quit`).
@@ -487,6 +493,18 @@ pub fn run() {
         // default), and a hidden window would leave no way back. So there it asks first, as
         // quitting does, when the window holds unsaved edits.
         .on_window_event(|window, event| match event {
+            // The events after which AppKit may lay the titlebar out again and put the buttons back
+            // where it likes: a resize (leaving full screen is one), the window coming forward or
+            // going back, a change of appearance, and a move, which may be to another display. The
+            // app never sets the window's title, which is the other thing that does it.
+            #[cfg(target_os = "macos")]
+            WindowEvent::Resized(_)
+            | WindowEvent::Moved(_)
+            | WindowEvent::Focused(_)
+            | WindowEvent::ThemeChanged(_)
+            | WindowEvent::ScaleFactorChanged { .. } => {
+                traffic_lights::centre(window);
+            }
             WindowEvent::CloseRequested { api, .. } if cfg!(target_os = "macos") => {
                 api.prevent_close();
                 tray::hide_window(window.app_handle());

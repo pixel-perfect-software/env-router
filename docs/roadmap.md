@@ -413,9 +413,11 @@ reports no WCAG 2.2 AA failures.
     "default" permission mode on tabs that don't pick one (anthropics/claude-code#99263).
 16. **The traffic lights sit about 4 pt above the titlebar's centre line** (#107, found while
     verifying M2's #41 and #42). `trafficLightPosition` y 24 centred them at 26.5 pt on
-    2026-10-20 (1e7f731); the same y now centres them at 21.75 pt, in 0.7.1 too, with tao
-    unchanged. Cause not yet traced. Fix: find what moves them, then place them by their centre
-    rather than by an offset AppKit's layout can change.
+    2026-10-20 (1e7f731); the same y now centres them at 22 pt, in 0.7.1 too, with tao
+    unchanged. Cause: tao's inset sets the titlebar container's height to a button plus y, but
+    AppKit keeps each button 9 pt above the container's bottom edge (and resets the container to
+    32 pt on a resize), so y doesn't place them. Fix: `src-tauri/src/traffic_lights.rs` places
+    them by their centre, on launch and after a resize, activation or density change.
 
 ---
 
