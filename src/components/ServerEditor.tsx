@@ -3,7 +3,6 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { errorMessage } from '../lib/api'
-import { confirmDeleteServer } from '../lib/confirm'
 import {
   draftOf,
   initSlot,
@@ -24,7 +23,7 @@ import { setUnsaved } from '../lib/unsaved'
 import { TransportIcon } from './icons'
 import { Caution, LockLegend, PairList, ValueList } from './ServerFields'
 import { ServerMark } from './ServerMark'
-import { CheckSection } from './ServerTools'
+import { type CheckRequest, CheckSection } from './ServerTools'
 import { VersionRow } from './ServerVersion'
 import { Button, Footer, ProfileDot, Segmented, TextField } from './ui'
 
@@ -43,6 +42,8 @@ export function ServerEditor({
   onDelete,
   onDuplicate,
   pinOnOpen = false,
+  checkRequest = null,
+  onCheckTaken,
   changedOutside = null,
 }: {
   /** null for a new server. */
@@ -66,6 +67,9 @@ export function ServerEditor({
   onDuplicate?: () => void
   /** Pin an unpinned npm package as soon as the editor opens: a server just picked from the catalog. */
   pinOnOpen?: boolean
+  /** The server list's Check Server for this server (`CheckSection`), and the call that says it was taken. */
+  checkRequest?: CheckRequest | null
+  onCheckTaken?: () => void
   /** config.json changed or dropped this server (the CLI, a hand edit) while this editor held unsaved edits. */
   changedOutside?: 'changed' | 'deleted' | null
 }) {
@@ -91,6 +95,8 @@ export function ServerEditor({
     setError(null)
   }
   useEffect(() => onDirty(dirty), [dirty, onDirty])
+  // Gone, it holds nothing: however it closed (Cancel, a delete from the list's menu, another server picked).
+  useEffect(() => () => onDirty(false), [onDirty])
   useEffect(() => {
     setUnsaved('server', dirty)
     return () => setUnsaved('server', false)
@@ -138,20 +144,13 @@ export function ServerEditor({
     }
   }
 
+  /** The window asks, deletes and shows a failure in its banner, the one place the list's menu can reach too. */
   const remove = async () => {
-    if (!onDelete || !name) return
-    if (
-      !(await confirmDeleteServer(
-        name,
-        profiles.filter((p) => initialUsedBy.includes(p.id)).map((p) => p.name),
-      ))
-    )
-      return
+    if (!onDelete) return
     setSaving(true)
     try {
       await onDelete()
-    } catch (err) {
-      setError(errorMessage(err))
+    } finally {
       setSaving(false)
     }
   }
@@ -332,7 +331,14 @@ export function ServerEditor({
             />
           </>
         )}
-        <CheckSection name={draft.name.trim()} draft={draft} cached={cachedTools} toolsOff={toolsOff} />
+        <CheckSection
+          name={draft.name.trim()}
+          draft={draft}
+          cached={cachedTools}
+          toolsOff={toolsOff}
+          request={checkRequest}
+          onRequestTaken={onCheckTaken ?? (() => {})}
+        />
       </div>
 
       <Footer

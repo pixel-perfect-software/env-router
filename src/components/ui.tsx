@@ -4,6 +4,7 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
 import { forwardRef, useLayoutEffect, useRef, useState } from 'react'
 import { tildify } from '../lib/paths'
+import { SearchIcon } from './icons'
 
 type ButtonKind = 'push' | 'primary' | 'plain'
 type ButtonSize = 'regular' | 'large' | 'toolbar'
@@ -259,6 +260,39 @@ export const TextField = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLIn
       } ${className}`}
       {...props}
     />
+  )
+})
+
+/**
+ * A search or filter field: the search icon inset, `role="searchbox"`, and Escape clears what's typed before it does anything else
+ * (the Catalog's own Escape closes the view, so the key stops here while there's something to clear).
+ */
+export const SearchField = forwardRef<
+  HTMLInputElement,
+  { label: string; placeholder: string; value: string; onChange: (value: string) => void; className?: string }
+>(function SearchField({ label, placeholder, value, onChange, className = '' }, ref) {
+  return (
+    <span className={`relative flex ${className}`}>
+      <span className="pointer-events-none absolute top-[7px] left-2 text-ink-2">
+        <SearchIcon />
+      </span>
+      <TextField
+        ref={ref}
+        type="text"
+        role="searchbox"
+        aria-label={label}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' && value) {
+            e.stopPropagation()
+            onChange('')
+          }
+        }}
+        className="w-full pl-7"
+      />
+    </span>
   )
 })
 

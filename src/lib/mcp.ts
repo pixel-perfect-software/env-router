@@ -2,7 +2,7 @@
 // server, and the config changes that rename or remove one everywhere it's used.
 
 import type { PlatformInfo } from './platform'
-import { listOf } from './text'
+import { listOf, matchesWords } from './text'
 import { KNOWN_TOOLS, toolLabel } from './tools'
 import type { ConfigState, McpServer, McpValue, Profile } from './types'
 
@@ -24,6 +24,12 @@ const shown = (value: McpValue) => (isSecret(value) ? '•••' : /\s/.test(va
 /** What the server runs or connects to, on one line: `npx -y @playwright/mcp` or the URL. */
 export const serverSummary = (server: McpServer) =>
   server.transport === 'stdio' ? [server.command, ...server.args.map(shown)].join(' ') : server.url
+
+/**
+ * Whether a library server answers the server list's filter: every one of the query's `words` (`queryWords`) is in its name or in what it runs (the command
+ * with its arguments, which is where an `npx` package or a container image is, or the URL), whatever the case. A secret is `•••`.
+ */
+export const serverMatches = (name: string, server: McpServer, words: string[]): boolean => matchesWords(`${name} ${serverSummary(server)}`, words)
 
 /** The agents that load a profile's servers, by label, for the line under the checklist. */
 export const mcpAgentLabels = () => KNOWN_TOOLS.filter((t) => t.mcp).map((t) => toolLabel(t.command))

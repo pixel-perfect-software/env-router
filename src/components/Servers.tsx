@@ -2,19 +2,24 @@
 // Catalog and Import open in the same place as the editor, so nothing drills more than one level
 // deep. Which profiles load a server is set here (Used by) or in a profile's own editor.
 
-import { type ReactNode, type RefObject, useCallback, useEffect, useState } from 'react'
+import type { MenuOptions } from '@tauri-apps/api/menu'
+import { type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from 'react'
 // The mark's folder handing its tracks to three servers: an empty library's hero.
 import libraryArt from '../assets/servers-library.svg'
 import { getMcpTools } from '../lib/api'
 import { confirmDiscardServer } from '../lib/confirm'
-import { duplicateDraft, type ProfileChip, profilesUsing, type ServerDraft, TRANSPORTS } from '../lib/mcp'
-import { plural } from '../lib/text'
+import { duplicateDraft, type ProfileChip, profilesUsing, type ServerDraft, serverMatches, TRANSPORTS } from '../lib/mcp'
+import { plural, queryWords } from '../lib/text'
 import type { ConfigState, McpServer, ToolInfo } from '../lib/types'
-import { CatalogIcon, ImportIcon, PasteIcon, TransportIcon } from './icons'
+import { CatalogIcon, ImportIcon, MoreIcon, PasteIcon, TransportIcon } from './icons'
 import { ServerEditor } from './ServerEditor'
 import { ServerMark } from './ServerMark'
 import { CatalogView, ImportView, type PastedServers, PasteView } from './ServerSources'
-import { ChevronIcon, IconButton, PlugIcon, PlusIcon, ProfileDot } from './ui'
+import type { CheckRequest } from './ServerTools'
+import { Button, ChevronIcon, IconButton, PlugIcon, PlusIcon, ProfileDot, SearchField } from './ui'
+
+/** The filter field shows once the library has more servers than this: a handful reads at a glance. */
+const FILTER_FROM = 5
 
 /** What the detail side shows. `name` null: a new server, blank or from `template`. */
 export type Detail =
@@ -33,7 +38,8 @@ export function ServersView({
   onDetail,
   onSave,
   onImport,
-  onDelete,
+  onConfirmDelete,
+  onMenu,
   dirty,
 }: {
   config: ConfigState
@@ -44,7 +50,10 @@ export function ServersView({
   onDetail: (detail: Detail) => void
   onSave: (previous: string | null, name: string, server: McpServer, secrets: Record<string, string>, usedBy: string[]) => Promise<void>
   onImport: (servers: [string, McpServer][], secrets: Record<string, string>) => Promise<void>
-  onDelete: (name: string) => Promise<void>
+  /** Delete…, from the editor or a row's menu: asks first, deletes, and answers whether the server went. A failure is the window's banner to show. */
+  onConfirmDelete: (name: string) => Promise<boolean>
+  /** Pops a native menu at the pointer, or under `below` (the window's `popupMenu`). */
+  onMenu: (items: MenuOptions['items'], below?: HTMLElement) => Promise<void>
   /** Unsaved edits in the editor; switching to another server asks before dropping them. The window's, so a card's server link asks too. */
   dirty: RefObject<boolean>
 }) {
@@ -80,12 +89,78 @@ export function ServersView({
   const names = Object.keys(config.mcpServers).sort((a, b) => a.localeCompare(b))
   const profiles: ProfileChip[] = config.profiles.map((p) => ({ id: p.id, name: p.name, color: colors.get(p.id) ?? '' }))
 
+  /** Moves the detail side to `next`, asking before it drops unsaved edits. Answers whether it moved. */
   const go = async (next: Detail) => {
-    if (dirty.current && !(await confirmDiscardServer(detail.kind === 'edit' ? detail.name : null))) return
+    if (dirty.current && !(await confirmDiscardServer(detail.kind === 'edit' ? detail.name : null))) return false
     dirty.current = false
     onDetail(next)
+    return true
   }
   const selected = detail.kind === 'edit' ? detail.name : null
+
+  // The list's filter lives as long as the window, not in config.json. The view stays mounted while Profiles shows, so it holds across a trip there.
+  const [query, setQuery] = useState('')
+  const search = useRef<HTMLInputElement>(null)
+  const filtering = query.trim() !== ''
+  // Typed words keep the field on screen even when deleting servers brings the library back under the threshold.
+  const showFilter = names.length > FILTER_FROM || query !== ''
+  const words = queryWords(query)
+  const shown = names.filter((name) => serverMatches(name, config.mcpServers[name], words))
+  const clearFilter = () => {
+    setQuery('')
+    search.current?.focus()
+  }
+
+  const duplicate = (name: string) => go({ kind: 'edit', name: null, template: duplicateDraft(name, config.mcpServers[name], new Set(names)) })
+  // A click on a row's Check Server, until that server's editor takes it (once: a later remount mustn't check again, since a check is a click's).
+  const [checkRequest, setCheckRequest] = useState<CheckRequest | null>(null)
+  /** Checks in the editor, where the result files. The open server is checked as its form stands (edits too); another one opens first, asking about edits. */
+  const check = async (name: string) => {
+    if ((detail.kind === 'edit' && detail.name === name) || (await go({ kind: 'edit', name }))) setCheckRequest({ name })
+  }
+  /** The row that takes a deleted server's place, for focus: the next one in the library that the filter shows, else the one before it. */
+  const neighbourOf = (name: string) => {
+    const at = names.indexOf(name)
+    return (
+      names.slice(at + 1).find((n) => shown.includes(n)) ??
+      names
+        .slice(0, at)
+        .reverse()
+        .find((n) => shown.includes(n))
+    )
+  }
+  /** Focus after a server left the list: the row that took its place, or the + button. */
+  const focusRow = (name: string | undefined) =>
+    requestAnimationFrame(() => {
+      const row = name ? document.querySelector<HTMLElement>(`[data-server="${CSS.escape(name)}"]`) : null
+      if (document.activeElement === document.body) (row ?? document.getElementById('add-server'))?.focus()
+    })
+  const remove = async (name: string) => {
+    const next = neighbourOf(name)
+    if (await onConfirmDelete(name)) focusRow(next)
+  }
+
+  // The server whose menu is open, which keeps its "…" in view and its row washed: `popup` answers when the menu is dismissed.
+  const [menuFor, setMenuFor] = useState<string | null>(null)
+  /** A row's menu, from a right-click (at the pointer) or its "…" (under the button), so the keyboard reaches what the pointer does. */
+  const showMenu = async (name: string, below?: HTMLElement) => {
+    setMenuFor(name)
+    try {
+      await onMenu(
+        [
+          { id: 'duplicate', text: 'Duplicate…', action: () => duplicate(name) },
+          { id: 'check', text: 'Check Server', action: () => check(name) },
+          { item: 'Separator' as const },
+          { id: 'delete', text: 'Delete…', action: () => remove(name) },
+        ],
+        below,
+      )
+    } catch {
+      // No native menu (the browser preview): the editor carries the same three.
+    } finally {
+      setMenuFor(null)
+    }
+  }
   /** Leaves Catalog, Paste or Import with focus on the header button that opens it, rather than on the page. */
   const back = (opener: string) => {
     onDetail({ kind: 'none' })
@@ -99,7 +174,7 @@ export function ServersView({
       <aside aria-label="MCP servers" className="flex w-[232px] shrink-0 flex-col rounded-card bg-card shadow-card min-[820px]:w-[264px]">
         <header className="flex items-center gap-1 py-2 pr-2 pl-3.5 hair-b">
           <h2 className="min-w-0 flex-1 truncate text-title font-semibold">
-            Servers <span className="font-normal text-ink-2">{names.length}</span>
+            Servers <span className="font-normal text-ink-2">{filtering ? `${shown.length}/${names.length}` : names.length}</span>
           </h2>
           <IconButton id="add-server" label="Add by Hand" onClick={() => go({ kind: 'edit', name: null })}>
             <PlusIcon />
@@ -127,25 +202,54 @@ export function ServersView({
             <PasteIcon />
           </IconButton>
         </header>
+        {showFilter && (
+          <div className="px-1.5 pt-1.5">
+            <SearchField ref={search} label="Filter servers" placeholder="Filter servers" value={query} onChange={setQuery} />
+            {/* The count, for a screen reader, as the filter narrows the list. */}
+            <p role="status" className="sr-only">
+              {filtering ? `${plural(shown.length, 'server', 'servers')} shown` : ''}
+            </p>
+          </div>
+        )}
         <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
           {names.length === 0 ? (
             <p className="px-2 py-2 text-small text-ink-2 italic">No servers yet</p>
+          ) : shown.length === 0 ? (
+            // Stacked, not side by side as in the Catalog: the list is 232px wide at the minimum window.
+            <div className="rounded-[8px] bg-well px-3 py-2">
+              <p className="text-small text-ink-2 italic">No servers match</p>
+              <Button kind="plain" onClick={clearFilter}>
+                Clear Filter
+              </Button>
+            </div>
           ) : (
             <ul className="space-y-px">
-              {names.map((name) => {
+              {shown.map((name) => {
                 const server = config.mcpServers[name]
                 const users = profilesUsing(config, name)
                 const isSelected = name === selected
                 return (
-                  <li key={name}>
+                  <li
+                    key={name}
+                    className={`group/row relative rounded-[7px] ${
+                      isSelected
+                        ? 'bg-tint'
+                        : `hover:bg-[color-mix(in_srgb,var(--er-ink)_5%,transparent)] ${menuFor === name ? 'bg-[color-mix(in_srgb,var(--er-ink)_5%,transparent)]' : ''}`
+                    }`}
+                  >
                     <button
                       type="button"
                       data-server={name}
                       aria-current={isSelected ? 'true' : undefined}
                       onClick={() => go({ kind: 'edit', name })}
-                      className={`flex w-full items-center gap-2.5 rounded-[7px] px-2 py-1.5 text-left ${
-                        isSelected ? 'bg-tint' : 'hover:bg-[color-mix(in_srgb,var(--er-ink)_5%,transparent)]'
-                      }`}
+                      onContextMenu={(event) => {
+                        event.preventDefault()
+                        // The context-menu key (or Shift+F10) sends a `contextmenu` with no right button: it opens under the row, not at a pointer that's elsewhere.
+                        // Ctrl-click on a Mac is a pointer's.
+                        const fromKeyboard = event.button === 0 && !event.ctrlKey
+                        void showMenu(name, fromKeyboard ? event.currentTarget : undefined)
+                      }}
+                      className="flex w-full items-center gap-2.5 rounded-[7px] px-2 py-1.5 text-left"
                     >
                       <ServerMark name={name} server={server} size={28} />
                       <span className="min-w-0 flex-1">
@@ -156,15 +260,29 @@ export function ServersView({
                           {tools[name] && ` · ${plural(tools[name].length, 'tool', 'tools')}`}
                         </span>
                       </span>
-                      {users.length > 0 && (
-                        <span className="flex shrink-0 items-center gap-0.5" title={`Used by ${users.map((p) => p.name).join(', ')}`}>
-                          {users.slice(0, 4).map((p) => (
-                            <ProfileDot key={p.id} color={colors.get(p.id) ?? ''} size={2} />
-                          ))}
-                          <span className="sr-only">Used by {users.map((p) => p.name).join(', ')}</span>
-                        </span>
-                      )}
+                      {/* The right edge is the dots' place, 26px wide at least: the "…" sits over it, so no row's text runs under that button.
+                          The dots give way while the row is hovered or the button focused or open. */}
+                      <span
+                        className="flex min-w-[26px] shrink-0 items-center justify-end gap-0.5 group-hover/row:opacity-0 group-has-[[aria-haspopup]:focus-visible]/row:opacity-0 group-has-[[aria-expanded=true]]/row:opacity-0"
+                        title={users.length > 0 ? `Used by ${users.map((p) => p.name).join(', ')}` : undefined}
+                      >
+                        {users.slice(0, 4).map((p) => (
+                          <ProfileDot key={p.id} color={colors.get(p.id) ?? ''} size={2} />
+                        ))}
+                        {users.length > 0 && <span className="sr-only">Used by {users.map((p) => p.name).join(', ')}</span>}
+                      </span>
                     </button>
+                    {/* The right-click menu for the keyboard, as a folder row has: quiet until the row is hovered or the button focused, and held in
+                        view, pressed, while its menu is open. A sibling of the row's button, since a button can't hold one. */}
+                    <IconButton
+                      label={`Actions for ${name}`}
+                      aria-haspopup="menu"
+                      aria-expanded={menuFor === name}
+                      className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100"
+                      onClick={(event) => void showMenu(name, event.currentTarget)}
+                    >
+                      <MoreIcon />
+                    </IconButton>
                   </li>
                 )
               })}
@@ -203,6 +321,8 @@ export function ServersView({
             onElsewhere={(where) => onDetail({ kind: where })}
             onImport={async (servers, secrets) => {
               await onImport(servers, secrets)
+              // What came in shows, whatever the filter was.
+              setQuery('')
               onDetail(servers.length === 1 ? { kind: 'edit', name: servers[0][0] } : { kind: 'none' })
             }}
           />
@@ -216,6 +336,8 @@ export function ServersView({
             server={detail.name ? config.mcpServers[detail.name] : undefined}
             template={detail.template}
             pinOnOpen={detail.pin}
+            checkRequest={checkRequest?.name === detail.name ? checkRequest : null}
+            onCheckTaken={() => setCheckRequest(null)}
             taken={names.filter((n) => n !== detail.name)}
             profiles={profiles}
             initialUsedBy={detail.name ? profilesUsing(config, detail.name).map((p) => p.id) : []}
@@ -237,39 +359,16 @@ export function ServersView({
                 throw err
               }
               dirty.current = false
+              // A server the filter would hide (new, or renamed or edited out of it) shows in the list all the same, and takes focus.
+              if (!serverMatches(name, server, words)) setQuery('')
               onDetail({ kind: 'edit', name })
               // The editor reopens from what was saved, so focus goes to the server's row rather than the page.
               requestAnimationFrame(() => {
                 if (document.activeElement === document.body) document.querySelector<HTMLElement>(`[data-server="${CSS.escape(name)}"]`)?.focus()
               })
             }}
-            onDelete={
-              detail.name
-                ? async () => {
-                    if (!detail.name) return
-                    // The editor closes with the server, so focus goes to the row that takes its place, or the + button.
-                    const at = names.indexOf(detail.name)
-                    const next = names[at + 1] ?? names[at - 1]
-                    await onDelete(detail.name)
-                    dirty.current = false
-                    onDetail({ kind: 'none' })
-                    requestAnimationFrame(() => {
-                      const row = next ? document.querySelector<HTMLElement>(`[data-server="${CSS.escape(next)}"]`) : null
-                      if (document.activeElement === document.body) (row ?? document.getElementById('add-server'))?.focus()
-                    })
-                  }
-                : undefined
-            }
-            onDuplicate={
-              detail.name && config.mcpServers[detail.name]
-                ? () =>
-                    go({
-                      kind: 'edit',
-                      name: null,
-                      template: duplicateDraft(detail.name ?? '', config.mcpServers[detail.name ?? ''], new Set(names)),
-                    })
-                : undefined
-            }
+            onDelete={selected ? () => remove(selected) : undefined}
+            onDuplicate={selected && config.mcpServers[selected] ? () => duplicate(selected) : undefined}
           />
         )}
       </section>

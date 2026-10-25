@@ -1,6 +1,6 @@
 // The Tools section of the server editor: Check Server, its status, and the tool list.
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { checkMcpServer, errorMessage } from '../lib/api'
 import { type ProfileChip, type ServerDraft, serverOf } from '../lib/mcp'
 import { usePlatform } from '../lib/platform'
@@ -17,6 +17,11 @@ const CHECK_TONE: Record<ServerCheck['status'], Tone> = {
   unsupported: 'neutral',
 }
 
+/** A click on a server list row's Check Server, handed to that server's editor. Each click is a new object, taken once (`CheckSection`). */
+export interface CheckRequest {
+  readonly name: string
+}
+
 /**
  * Check Server: starts the server as the form describes it, unsaved edits and typed secrets
  * included, and shows what it offers or why it didn't answer. Editing the form clears the result.
@@ -26,6 +31,8 @@ export function CheckSection({
   draft,
   cached,
   toolsOff,
+  request,
+  onRequestTaken,
 }: {
   name: string
   draft: ServerDraft
@@ -33,6 +40,10 @@ export function CheckSection({
   cached: ToolInfo[] | undefined
   /** Per tool, the profiles that turn it off, so the list says where each one is off. */
   toolsOff: Record<string, ProfileChip[]>
+  /** The server list's Check Server, for this server: starts a check as the form stands, unless one is already running. */
+  request: CheckRequest | null
+  /** Called as the request is taken, so it is asked for once and a remounted editor can't replay it: a check runs only on a click. */
+  onRequestTaken: () => void
 }) {
   const { canLock } = usePlatform()
   const [state, setState] = useState<{ key: string; result: ServerCheck | 'running' | { error: string } } | null>(null)
@@ -60,6 +71,13 @@ export function CheckSection({
   }
 
   const running = current === 'running'
+  const taken = useRef<CheckRequest | null>(null)
+  useEffect(() => {
+    if (!request || request === taken.current) return
+    taken.current = request
+    onRequestTaken()
+    if (!running) void run()
+  })
   const result = current && current !== 'running' && 'status' in current ? current : null
   const problem = current && current !== 'running' && 'error' in current ? current.error : null
   // A fresh answer wins; otherwise the last good check's list, said to be from then.

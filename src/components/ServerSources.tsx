@@ -28,9 +28,9 @@ import { usePlatform } from '../lib/platform'
 import { plural } from '../lib/text'
 import { withAgents } from '../lib/tools'
 import type { ConfigState, ImportCandidate, McpServer } from '../lib/types'
-import { LocalIcon, OpenIcon, RemoteIcon, SearchIcon, SignInIcon } from './icons'
+import { LocalIcon, OpenIcon, RemoteIcon, SignInIcon } from './icons'
 import { ServerMark } from './ServerMark'
-import { Button, CheckBox, ChevronIcon, CloseIcon, Footer, IconButton, LockIcon, Mark, Segmented, StatusTile, TextField } from './ui'
+import { Button, CheckBox, ChevronIcon, CloseIcon, Footer, IconButton, LockIcon, Mark, SearchField, Segmented, StatusTile } from './ui'
 
 /**
  * The view's title bar. Its close button takes focus when the view opens: the button that
@@ -112,28 +112,13 @@ export function CatalogView({
         {plural(entries.length, 'server', 'servers')}
       </p>
       <div className="flex flex-col gap-2 px-5 pb-3">
-        <span className="relative flex">
-          <span className="pointer-events-none absolute top-[7px] left-2 text-ink-2">
-            <SearchIcon />
-          </span>
-          <TextField
-            ref={search}
-            type="text"
-            role="searchbox"
-            aria-label="Search the catalog"
-            placeholder="Search by name or what it does"
-            value={filter.query}
-            onChange={(e) => set('query', e.target.value)}
-            onKeyDown={(e) => {
-              // Escape clears a search before it closes the catalog.
-              if (e.key === 'Escape' && filter.query) {
-                e.stopPropagation()
-                set('query', '')
-              }
-            }}
-            className="w-full pl-7"
-          />
-        </span>
+        <SearchField
+          ref={search}
+          label="Search the catalog"
+          placeholder="Search by name or what it does"
+          value={filter.query}
+          onChange={(query) => set('query', query)}
+        />
         <div className="flex flex-wrap gap-2">
           <Segmented
             label="Where it runs"
