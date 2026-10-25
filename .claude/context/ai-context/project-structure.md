@@ -18,7 +18,7 @@ env-router/
 │   │   ├── src/rpc.rs         # those commands by name as JSON lines: `envrouter rpc`
 │   │   ├── src/shell.rs       # startup-file blocks for zsh/bash/fish, check_folder, preview, login_path
 │   │   ├── src/shims.rs       # installs the shim and helpers; syncs one symlink per tool
-│   │   ├── src/uninstall.rs   # uninstall: shell blocks, editor wrappers, the secret item, ~/.envrouter, in that order (a problem before the secrets stops the run), the commands that remove the app and CLI, and the app's lock the CLI's uninstall checks
+│   │   ├── src/uninstall.rs   # uninstall: shell blocks, editor wrappers, the secret item, ~/.envrouter, the app's webview folders (the app deletes its own as it exits, `finish_uninstall`), in that order (a problem before the secrets stops the run), the commands that remove the app and CLI, and the app's lock the CLI's uninstall checks
 │   │   ├── src/editors.rs     # points an agent extension's process-wrapper setting at the shim (desktop editors and remote servers)
 │   │   ├── src/mcp_import.rs  # reads the agents' own MCP files (by their mcpFiles descriptor) for import, and pasted JSON
 │   │   ├── src/mcp_probe.rs   # MCP server check (rmcp): tools, needs-login, stderr tail; tool-list cache
@@ -105,7 +105,7 @@ command of the same name and arguments.
 | `import_candidates(payload)` | MCP servers the agents already define in their own files, merged when identical; read only |
 | `parse_mcp_json(text)` | Reads MCP servers from pasted JSON (JSONC, `mcpServers`, VS Code's `servers`, a bare table or one server) the way import reads a file; read only |
 | `get_mcp_tools` | Each library server's cached tool list, while its definition is unchanged |
-| `uninstall(dry_run)` | Turns every shell block and editor wrapper off, deletes the stored MCP secrets and `~/.envrouter`, and reports (`UninstallReport`) what it did and the commands that remove the app and CLI; a problem in the first two steps stops before the secrets. `dry_run` is required over rpc and changes nothing. The window quits after a finished run |
+| `uninstall(dry_run)` | Turns every shell block and editor wrapper off, deletes the stored MCP secrets, `~/.envrouter` and the webview folders (the window's, as it exits), and reports (`UninstallReport`) what it did and the commands that remove the app and CLI; a problem in the first two steps stops before the secrets. `dry_run` is required over rpc and changes nothing. The window quits after a finished run |
 | `open_in_editor(path)` | Opens an existing file inside the home folder in the default text editor (`open -t`, `xdg-open`) |
 
 ## Tech stack

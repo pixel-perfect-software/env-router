@@ -301,7 +301,7 @@ folder its MCP files are written to.
 | `envrouter apply` | Validates `~/.envrouter/config.json` after you edit it by hand, and renders its MCP files and shims |
 | `envrouter secret set <ID>` | Stores the value of a server's secret in the system's store: piped in, or typed without echo; never on the command line |
 | `envrouter secret list` | Each secret the config refers to, the servers that use it, and whether it's stored (`unknown` when the store can't be read) |
-| `envrouter uninstall [--yes] [--dry-run]` | Turns routing off everywhere, deletes the stored MCP secrets and `~/.envrouter`, and names the commands that remove the app and the CLI (see Uninstall below) |
+| `envrouter uninstall [--yes] [--dry-run]` | Turns routing off everywhere, deletes the stored MCP secrets, `~/.envrouter` and the window's own data, and names the commands that remove the app and the CLI (see Uninstall below) |
 | `envrouter rpc` | Answers the window's commands as JSON lines, one per line each way, so another program (later, a window managing a WSL distro) can drive this machine |
 
 `--tool` defaults to `claude`; pass `--tool copilot` for Copilot CLI. `--shell` defaults to your
@@ -461,7 +461,7 @@ envrouter uninstall --dry-run  # shows it and changes nothing
 envrouter uninstall --yes      # doesn't ask; required without a terminal
 ```
 
-It does four things, in this order:
+It does five things, in this order:
 
 1. Turns routing off in every shell: it removes the marked block from every startup file that has
    one, whether or not that shell is on now.
@@ -471,6 +471,17 @@ It does four things, in this order:
 3. Deletes any MCP secrets EnvRouter kept in the system's store (the "EnvRouter MCP secrets" item).
 4. Deletes `~/.envrouter`, with your profiles and MCP servers. If it is a link, only the link goes
    and the folder it points at is named and left.
+5. Deletes the folders the window's webview keeps for itself (page data and caches). On macOS:
+   `~/Library/WebKit/com.tylerrobertson.envrouter`, `~/Library/Caches/com.tylerrobertson.envrouter` and
+   `~/Library/Preferences/com.tylerrobertson.envrouter.plist` (asking the system to forget those
+   preferences first, with `defaults delete`, so it can't write them back), plus `HTTPStorages` and
+   `Saved Application State` entries of that name, if the system made any. On Linux:
+   `~/.local/share/com.tylerrobertson.envrouter` (Tauri's local data folder, which holds the webview's
+   storage and cache both). The command does this itself, since it only runs while the window is
+   closed. The window's own uninstall can't while its webview is using them, so it deletes them as it
+   quits, once everything else has finished. This step never fails the uninstall: a folder it can't
+   delete is named ("Uninstalled, but this is left behind"), and so is one outside your home folder,
+   which it won't touch (`XDG_DATA_HOME` pointing elsewhere on Linux).
 
 If anything in steps 1 and 2 can't be done (a settings file you can't write, or one it can't read
 that names the shim), it does the rest of those two steps and stops before step 3, so no editor is
@@ -489,7 +500,7 @@ the app again sets EnvRouter up again, so remove the app next:
 
 | Installed with | Remove it with |
 |---|---|
-| The macOS cask | `brew uninstall --zap --cask envrouter` (the `--zap` also clears its caches and preferences), or quit the app and delete `/Applications/EnvRouter.app` |
+| The macOS cask | `brew uninstall --zap --cask envrouter` (the `--zap` also clears the window's data, caches and preferences, should any come back), or quit the app and delete `/Applications/EnvRouter.app` |
 | The Linux `.deb` | `sudo apt remove env-router` |
 | The AppImage | Delete the file |
 | The CLI from Homebrew | `brew uninstall envrouter-cli` |
@@ -510,7 +521,7 @@ Your agents' config folders are left alone.
    - Linux: `secret-tool clear service "EnvRouter MCP secrets"`
    - WSL: in Windows, the "EnvRouter MCP secrets:wsl:…" entries under Windows Credentials in
      Credential Manager (`cmdkey /list` shows them; `cmdkey /delete:<name>` removes one)
-4. Delete `~/.envrouter`.
+4. Delete `~/.envrouter`, and the window's data folders from step 5 above.
 5. Remove the app and the CLI as in the table above (on macOS, `brew uninstall --zap --cask
    envrouter` also does step 4).
 

@@ -4,6 +4,7 @@ mod tray;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::Duration;
 
@@ -155,6 +156,9 @@ fn home(app: &AppHandle) -> Result<Home> {
         _lease: lease,
     })
 }
+
+/// An uninstall has finished, so the app deletes its webview's folders as it exits ([`finish_uninstall`]).
+static UNINSTALL_FINISHED: AtomicBool = AtomicBool::new(false);
 
 /// Held for as long as the app runs, so `envrouter uninstall` can tell the window is open.
 static APP_LOCK: OnceLock<envrouter_ops::uninstall::AppLock> = OnceLock::new();
@@ -382,6 +386,9 @@ async fn uninstall(app: AppHandle, dry_run: bool) -> Result<UninstallReport> {
         let report = GATE.uninstall(dry_run, DRAIN, || {
             commands::uninstall(&home, dry_run, &caller)
         })?;
+        if !dry_run && report.finished() {
+            UNINSTALL_FINISHED.store(true, Ordering::SeqCst);
+        }
         tray::refresh(&app);
         Ok(report)
     })
@@ -508,8 +515,25 @@ pub fn run() {
         // Clicking the Dock icon while the window is hidden.
         #[cfg(target_os = "macos")]
         tauri::RunEvent::Reopen { .. } => tray::show_window(app),
+        tauri::RunEvent::Exit => finish_uninstall(app),
         _ => {}
     });
+}
+
+/// After a finished uninstall, deletes the webview's own folders as the app exits: until it quits
+/// the webview holds them and writes them, so the uninstall itself leaves them. Nobody is left
+/// to tell about a folder it can't delete, so that goes to stderr.
+fn finish_uninstall(app: &AppHandle) {
+    if !UNINSTALL_FINISHED.load(Ordering::SeqCst) {
+        return;
+    }
+    let Ok(home) = app.path().home_dir() else {
+        return;
+    };
+    let xdg_data_home = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from);
+    for sentence in envrouter_ops::uninstall::remove_app_data(&home, xdg_data_home.as_deref()) {
+        eprintln!("envrouter: {sentence}");
+    }
 }
 
 #[cfg(test)]
@@ -550,6 +574,8 @@ mod tests {
             } else {
                 FolderStep::NotReached
             },
+            app_data: Vec::new(),
+            app_data_left: Vec::new(),
             left: Vec::new(),
             problems: problems.iter().map(|p| (*p).to_string()).collect(),
             remove_next: Vec::new(),

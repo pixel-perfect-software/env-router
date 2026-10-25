@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::editors::{self, Editor, EditorStatus};
 use crate::shell::{self, FolderCheck, Preview, Shell, ShellStatus};
-use crate::uninstall::{self, Caller, UninstallReport};
+use crate::uninstall::{self, AppData, Caller, UninstallReport};
 use crate::{mcp_import, mcp_probe, npm, shims};
 
 pub fn get_config(home: &Path) -> Result<ConfigState> {
@@ -462,25 +462,41 @@ pub fn set_editor_integration(
     editors::set_integration(editor, home, command, hook, enabled)
 }
 
-/// Turns routing off everywhere, deletes the stored MCP secrets and then `~/.envrouter`, and
-/// names the commands that remove the app and the CLI (see [`uninstall`]). With `dry_run` it
-/// only reports what it would do. A stop comes back as a report with `problems`, not an error;
+/// Turns routing off everywhere, deletes the stored MCP secrets, `~/.envrouter` and the app's
+/// webview folders, and names the commands that remove the app and the CLI (see [`uninstall`]);
+/// the window's own run leaves those folders for a command it names, since its webview is
+/// still using them. With `dry_run` it only reports what it would do. A stop comes back as a report with `problems`, not an error;
 /// a real run for the CLI while the window is open is refused before it changes anything.
 pub fn uninstall(home: &Path, dry_run: bool, caller: &Caller) -> Result<UninstallReport> {
-    uninstall_with(home, dry_run, caller, &uninstall::Keychain)
+    let xdg_data_home = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from);
+    uninstall_with(
+        home,
+        dry_run,
+        caller,
+        &uninstall::Keychain,
+        xdg_data_home.as_deref(),
+    )
 }
 
-/// [`uninstall`] against any secret store, so a test never reaches the machine's real one.
+/// [`uninstall`] against any secret store, so a test never reaches the machine's real one, and
+/// with the `$XDG_DATA_HOME` the caller read.
 pub(crate) fn uninstall_with(
     home: &Path,
     dry_run: bool,
     caller: &Caller,
     store: &dyn uninstall::Store,
+    xdg_data_home: Option<&Path>,
 ) -> Result<UninstallReport> {
     if !dry_run {
         uninstall::refuse_while_app_runs(home, caller)?;
     }
-    let mut report = uninstall::run(home, dry_run, store)?;
+    // The window can't delete what its own webview is using: it does that as it exits.
+    let app_data = AppData::of(Platform::current(), home, xdg_data_home);
+    let app_data = match caller {
+        Caller::App { .. } => app_data.named_only(),
+        Caller::Cli { .. } => app_data,
+    };
+    let mut report = uninstall::run(home, dry_run, store, &app_data)?;
     report.remove_next = uninstall::remove_next(Platform::current(), home, caller);
     Ok(report)
 }

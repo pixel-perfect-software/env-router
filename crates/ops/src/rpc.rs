@@ -145,8 +145,14 @@ impl<'a> Session<'a> {
     fn uninstall(&mut self, args: Value) -> Result<Value> {
         let UninstallArgs { dry_run } = parse(args)?;
         let exe = shims::current_exe()?;
-        let report =
-            commands::uninstall_with(self.home, dry_run, &Caller::Cli { exe }, self.store)?;
+        let xdg_data_home = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from);
+        let report = commands::uninstall_with(
+            self.home,
+            dry_run,
+            &Caller::Cli { exe },
+            self.store,
+            xdg_data_home.as_deref(),
+        )?;
         self.uninstalled = report.finished();
         to_value(report)
     }

@@ -171,10 +171,89 @@ pub fn app_config_dir(platform: Platform, home: &Path) -> PathBuf {
 
 /// `$XDG_CONFIG_HOME` when it's an absolute path inside `home`, otherwise `~/.config`.
 pub fn xdg_config_home(home: &Path) -> PathBuf {
-    std::env::var_os("XDG_CONFIG_HOME")
+    xdg_dir(home, "XDG_CONFIG_HOME", &[".config"])
+}
+
+/// The XDG variable `var` when it's an absolute path inside `home`, otherwise `home/default`.
+fn xdg_dir(home: &Path, var: &str, default: &[&str]) -> PathBuf {
+    std::env::var_os(var)
         .map(PathBuf::from)
         .filter(|dir| dir.is_absolute() && dir.starts_with(home))
-        .unwrap_or_else(|| home.join(".config"))
+        .unwrap_or_else(|| home.join(default.iter().collect::<PathBuf>()))
+}
+
+/// The bundle identifier in `src-tauri/tauri.conf.json`. macOS names the folders the webview and
+/// the system keep for the app after it.
+pub const APP_IDENTIFIER: &str = "com.tylerrobertson.envrouter";
+
+/// The folders the desktop app's webview and the system keep for it under `home`, whether or not
+/// they exist now. Tauri's `app_data_dir`, `app_config_dir`, `app_cache_dir` and `app_log_dir`
+/// are never made: the app asks for none of them.
+///
+/// - macOS: WKWebView's default store keeps its data in `~/Library/WebKit/<identifier>` and its
+///   caches in `~/Library/Caches/<identifier>`, and the open panel leaves `NSNavLastRootDirectory`
+///   and the like in `~/Library/Preferences/<identifier>.plist` (these three were made by the
+///   built app). `HTTPStorages` and `Saved Application State` are the other places the system
+///   names after an identifier. The cask's `zap` stanza lists the same five.
+/// - Linux and WSL, Windows: Tauri gives the webview `app_local_data_dir` as its data folder
+///   (`manager/webview.rs`: "in `windows`, we need to force a data_directory", on Linux too), which
+///   is `<local data dir>/<identifier>`, and wry points WebKitGTK's data and cache at it, so
+///   everything is in that one folder (a run of the built app made `CacheStorage`,
+///   `WebKitCache`, `hsts-storage.sqlite`, `mediakeys` and `storage` there and nothing else).
+///   The local data dir is `$XDG_DATA_HOME` or `~/.local/share` on Linux, read from the
+///   environment the app started in, which this one may not share, so the default under `home`
+///   counts too; and `~/AppData/Local` on Windows.
+pub fn app_data_dirs(platform: Platform, home: &Path) -> Vec<PathBuf> {
+    let mut dirs = match platform {
+        Platform::MacOs => {
+            let library = home.join("Library");
+            vec![
+                library.join("WebKit").join(APP_IDENTIFIER),
+                library.join("Caches").join(APP_IDENTIFIER),
+                library.join("HTTPStorages").join(APP_IDENTIFIER),
+                library
+                    .join("Saved Application State")
+                    .join(format!("{APP_IDENTIFIER}.savedState")),
+                library
+                    .join("Preferences")
+                    .join(format!("{APP_IDENTIFIER}.plist")),
+            ]
+        }
+        Platform::Linux | Platform::Wsl => vec![
+            xdg_dir(home, "XDG_DATA_HOME", &LINUX_DATA_DIR).join(APP_IDENTIFIER),
+            home.join(LINUX_DATA_DIR.iter().collect::<PathBuf>())
+                .join(APP_IDENTIFIER),
+        ],
+        Platform::Windows => vec![home.join("AppData").join("Local").join(APP_IDENTIFIER)],
+    };
+    dirs.dedup();
+    dirs
+}
+
+/// `~/.local/share`, as path components.
+const LINUX_DATA_DIR: [&str; 2] = [".local", "share"];
+
+/// The folder Linux's webview data would be in if `xdg_data_home` (the caller's `$XDG_DATA_HOME`,
+/// read at the edge) pointed outside `home`: [`app_data_dirs`] leaves such a folder alone, since
+/// a path from the environment doesn't get to name what is deleted, but an uninstall can say it
+/// is there. `None` when it's unset, relative (glib ignores those too) or inside `home`.
+pub fn app_data_dir_outside_home(
+    platform: Platform,
+    home: &Path,
+    xdg_data_home: Option<&Path>,
+) -> Option<PathBuf> {
+    match platform {
+        Platform::Linux | Platform::Wsl => xdg_data_home
+            .filter(|dir| dir.is_absolute() && !dir.starts_with(home))
+            .map(|dir| dir.join(APP_IDENTIFIER)),
+        Platform::MacOs | Platform::Windows => None,
+    }
+}
+
+/// The preferences domain whose cached copy the system keeps, so that deleting its plist isn't
+/// enough: `cfprefsd` can write it back. Only macOS has one.
+pub fn preferences_domain(platform: Platform) -> Option<&'static str> {
+    (platform == Platform::MacOs).then_some(APP_IDENTIFIER)
 }
 
 /// The command that opens a text file in the user's editor, followed by the file.
@@ -337,6 +416,77 @@ mod tests {
         );
         // Whatever XDG_CONFIG_HOME this test runs with, it isn't inside the scratch home.
         assert_eq!(app_config_dir(Platform::Linux, home), home.join(".config"));
+    }
+
+    #[test]
+    fn the_apps_folders_are_named_under_the_given_home() {
+        let home = Path::new("/scratch/home");
+        let id = APP_IDENTIFIER;
+        let library = home.join("Library");
+        assert_eq!(
+            app_data_dirs(Platform::MacOs, home),
+            [
+                library.join("WebKit").join(id),
+                library.join("Caches").join(id),
+                library.join("HTTPStorages").join(id),
+                library
+                    .join("Saved Application State")
+                    .join(format!("{id}.savedState")),
+                library.join("Preferences").join(format!("{id}.plist")),
+            ]
+        );
+        // Whatever XDG_DATA_HOME this test runs with, it isn't inside the scratch home, so it
+        // counts for nothing and the default isn't listed twice.
+        let linux = [home.join(".local").join("share").join(id)];
+        assert_eq!(app_data_dirs(Platform::Linux, home), linux);
+        assert_eq!(app_data_dirs(Platform::Wsl, home), linux);
+        assert_eq!(
+            app_data_dirs(Platform::Windows, home),
+            [home.join("AppData").join("Local").join(id)]
+        );
+    }
+
+    #[test]
+    fn a_data_home_outside_the_home_is_named_but_never_listed_for_deletion() {
+        let home = Path::new("/scratch/home");
+        let id = APP_IDENTIFIER;
+        let outside = |platform, xdg: Option<&str>| {
+            app_data_dir_outside_home(platform, home, xdg.map(Path::new))
+        };
+        assert_eq!(
+            outside(Platform::Linux, Some("/data")),
+            Some(Path::new("/data").join(id))
+        );
+        assert!(outside(Platform::Wsl, Some("/data")).is_some());
+        assert_eq!(outside(Platform::Linux, Some("/scratch/home/data")), None);
+        assert_eq!(outside(Platform::Linux, Some("data")), None);
+        assert_eq!(outside(Platform::Linux, None), None);
+        assert_eq!(outside(Platform::MacOs, Some("/data")), None);
+    }
+
+    /// The names come from the app's config and the cask; this is what keeps them in step.
+    #[test]
+    fn the_names_and_the_casks_zap_list_match_the_apps_config() {
+        let config = |text: &str| serde_json::from_str::<serde_json::Value>(text).unwrap();
+        let tauri = config(include_str!("../../../src-tauri/tauri.conf.json"));
+        assert_eq!(tauri["identifier"], APP_IDENTIFIER);
+
+        let cask = include_str!("../../../packaging/homebrew/envrouter.rb.in");
+        let zap = cask.split("zap trash: [").nth(1).unwrap();
+        let mut zapped: Vec<&str> = zap
+            .split(']')
+            .next()
+            .unwrap()
+            .split('"')
+            .filter(|entry| entry.starts_with("~/Library/"))
+            .collect();
+        let mut removed: Vec<String> = app_data_dirs(Platform::MacOs, Path::new("~"))
+            .iter()
+            .map(|dir| dir.display().to_string())
+            .collect();
+        zapped.sort_unstable();
+        removed.sort_unstable();
+        assert_eq!(zapped, removed);
     }
 
     #[test]
