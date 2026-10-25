@@ -159,13 +159,25 @@ fn helper_missing(home: &Path) -> bool {
         && !paths::windows_keychain_helper(home).exists()
 }
 
-/// Holds the lock that tells `envrouter uninstall` the window is open, until the returned file
+/// The window's hold on `app.lock`. Dropping it unlocks rather than leaving that to the close:
+/// a process forked meanwhile shares the open file until it execs, and the lock with it, so a
+/// close alone can leave the lock held for a moment after the window let go.
+#[derive(Debug)]
+pub struct AppLock(File);
+
+impl Drop for AppLock {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
+
+/// Holds the lock that tells `envrouter uninstall` the window is open, until the returned lock
 /// is dropped or the process ends (the system releases it, so a crash leaves nothing stale).
 /// `None` when another window already holds it. The desktop app calls this at launch; its own
 /// uninstall doesn't check it, which is why only [`Caller::Cli`] is refused.
 ///
 /// Deleting `~/.envrouter` while it is held is fine: the lock belongs to the open file.
-pub fn hold_app_lock(home: &Path) -> Result<Option<File>> {
+pub fn hold_app_lock(home: &Path) -> Result<Option<AppLock>> {
     let path = paths::app_lock(home);
     let io_err = |source| Error::Io {
         path: path.clone(),
@@ -179,7 +191,7 @@ pub fn hold_app_lock(home: &Path) -> Result<Option<File>> {
         .open(&path)
         .map_err(io_err)?;
     match file.try_lock() {
-        Ok(()) => Ok(Some(file)),
+        Ok(()) => Ok(Some(AppLock(file))),
         Err(TryLockError::WouldBlock) => Ok(None),
         Err(TryLockError::Error(source)) => Err(io_err(source)),
     }

@@ -2,7 +2,6 @@ mod quit;
 mod tray;
 
 use std::collections::{BTreeMap, HashMap};
-use std::fs::File;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
@@ -152,7 +151,7 @@ fn home(app: &AppHandle) -> Result<Home> {
 }
 
 /// Held for as long as the app runs, so `envrouter uninstall` can tell the window is open.
-static APP_LOCK: OnceLock<File> = OnceLock::new();
+static APP_LOCK: OnceLock<envrouter_ops::uninstall::AppLock> = OnceLock::new();
 
 /// Runs blocking work (file I/O, spawning shells) off the async runtime's worker threads.
 async fn blocking<T: Send + 'static>(
