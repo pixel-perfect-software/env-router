@@ -29,6 +29,7 @@ import {
 } from './lib/api'
 import {
   confirmDelete,
+  confirmDeleteServer,
   confirmDiscardServer,
   confirmQuit,
   confirmStartOver,
@@ -38,7 +39,7 @@ import {
   tellUninstalled,
 } from './lib/confirm'
 import { accentsOf, docketHasFix, type Health, healthOf } from './lib/health'
-import { hasMcpFiles, withoutServer, withServer, withUsedBy } from './lib/mcp'
+import { hasMcpFiles, profilesUsing, withoutServer, withServer, withUsedBy } from './lib/mcp'
 import { tildify } from './lib/paths'
 import { guessPlatform, PlatformContext, platformInfo } from './lib/platform'
 import { ideHooks, KNOWN_TOOLS, toolByCommand } from './lib/tools'
@@ -62,6 +63,7 @@ type Retry =
   | { kind: 'reveal'; path: string }
   | { kind: 'place'; place: Place }
   | { kind: 'deleteProfile'; profileId: string }
+  | { kind: 'deleteServer'; name: string }
   | { kind: 'uninstall' }
   | { kind: 'quit' }
 
@@ -370,6 +372,31 @@ export default function App() {
       })
       .catch((err) => fail(err, { kind: 'deleteProfile', profileId: profile.id }))
 
+  /**
+   * Every server's Delete…, the editor's and a list row's menu's: asks, deletes, and closes the editor if it shows that server (its edits go
+   * with it). Answers whether the server went. A failure is the banner's, with Try Again: the one surface both places reach (the editor's
+   * inline error is no use to a menu on another row, and the banner's Try Again is a way out the inline text isn't).
+   */
+  const confirmAndDeleteServer = async (name: string) => {
+    if (!config) return false
+    try {
+      if (
+        !(await confirmDeleteServer(
+          name,
+          profilesUsing(config, name).map((p) => p.name),
+        ))
+      )
+        return false
+      await commit(withoutServer(config, name))
+      // The editor closing with its server drops what it held (it reports clean as it goes).
+      if (serverDetail.kind === 'edit' && serverDetail.name === name) setServerDetail({ kind: 'none' })
+      return true
+    } catch (err) {
+      fail(err, { kind: 'deleteServer', name })
+      return false
+    }
+  }
+
   /** The unreadable banner's Back Up and Start Over…: after the user agrees, the file is copied aside and replaced, then read again. */
   const startOver = () =>
     confirmStartOver()
@@ -510,6 +537,7 @@ export default function App() {
       else if (retry.kind === 'place') retryReveal(() => revealPlace(retry.place))
       else if (retry.kind === 'uninstall') startUninstall()
       else if (retry.kind === 'quit') quit()
+      else if (retry.kind === 'deleteServer') confirmAndDeleteServer(retry.name)
       else {
         const profile = config?.profiles.find((p) => p.id === retry.profileId)
         if (profile) confirmAndDelete(profile)
@@ -544,8 +572,8 @@ export default function App() {
     },
     [],
   )
-  /** Pops a native menu: at `at` in the window, or at the pointer. The latest ask wins. */
-  const popupMenu = async (items: MenuOptions['items'], at?: LogicalPosition) => {
+  /** Pops a native menu at the pointer, or, from a button's "…" or the keyboard, under `below`. The latest ask wins. */
+  const popupMenu = async (items: MenuOptions['items'], below?: HTMLElement) => {
     const ask = ++menuAsk.current
     const previous = shownMenu.current
     shownMenu.current = null
@@ -557,7 +585,9 @@ export default function App() {
       return
     }
     shownMenu.current = menu
-    await menu.popup(at)
+    // Under `below` where a position is the webview's own (`anchorsMenus`); elsewhere the pointer, as the right-click menu opens.
+    const box = below?.getBoundingClientRect()
+    await menu.popup(box && platform.anchorsMenus ? new LogicalPosition(box.left, box.bottom) : undefined)
   }
 
   const showSlotMenu = async (profile: Profile, folder: string | null, event: MouseEvent) => {
@@ -589,10 +619,8 @@ export default function App() {
   /** A folder row's "…": the folder's own menu, under the button, so the keyboard reaches what the right-click offers. */
   const showFolderMenu = async (folder: string, anchor: HTMLElement) => {
     try {
-      // Under the button where a position is the webview's own (`anchorsMenus`); elsewhere the pointer, as the right-click menu opens.
-      const box = anchor.getBoundingClientRect()
       setMenuFolder(folder)
-      await popupMenu(folderItems(folder), platform.anchorsMenus ? new LogicalPosition(box.left, box.bottom) : undefined)
+      await popupMenu(folderItems(folder), anchor)
     } catch {
       // No native menu (the browser preview): the right-click menu carries the same items.
     } finally {
@@ -727,7 +755,8 @@ export default function App() {
                     secrets,
                   )
                 }
-                onDelete={(name) => commit(withoutServer(config, name))}
+                onConfirmDelete={confirmAndDeleteServer}
+                onMenu={popupMenu}
                 dirty={serverDirty}
               />
             </div>

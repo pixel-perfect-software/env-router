@@ -211,7 +211,10 @@ folders, since a folder belongs to one profile.
 
 Switch to **MCP Servers** (⌘2; Ctrl+2). The list on the left is your server library; the editor
 beside it changes one server at a time. A server reaches an agent only in the folders of the
-profiles that use it.
+profiles that use it. Once the library grows past a handful, a **Filter servers** field appears
+above the list: it matches the name, the command or URL, and the arguments (so an `npx` package
+or a Docker image), and Escape clears it. Right-click a server, or use the **…** that appears on
+its row, for **Duplicate…**, **Check Server** and **Delete…**.
 
 ### ➕ Add a server
 

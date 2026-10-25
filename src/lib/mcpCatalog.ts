@@ -4,6 +4,7 @@
 // agent signs in itself with /mcp. Secrets sit only in env or headers, never args or URLs, and
 // containers run under --init so they stop with the agent. Sorted by label.
 
+import { matchesWords, queryWords } from './text'
 import type { McpServer } from './types'
 
 export interface CatalogEntry {
@@ -35,17 +36,14 @@ export interface CatalogFilter {
 
 /** The entries matching `filter`, by label. The query matches the label, name and description, word by word. */
 export function filterCatalog(entries: CatalogEntry[], { query, where, access }: CatalogFilter): CatalogEntry[] {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const words = queryWords(query)
   return entries
     .filter((entry) => where === 'all' || isLocal(entry.server) === (where === 'local'))
     .filter((entry) => {
       const needs = accessOf(entry)
       return access === 'all' || needs === access || (access === 'sign-in' && (needs === 'mcp' || needs === 'own'))
     })
-    .filter((entry) => {
-      const text = `${entry.label} ${entry.name} ${entry.description}`.toLowerCase()
-      return words.every((word) => text.includes(word))
-    })
+    .filter((entry) => matchesWords(`${entry.label} ${entry.name} ${entry.description}`, words))
     .sort((a, b) => a.label.localeCompare(b.label))
 }
 

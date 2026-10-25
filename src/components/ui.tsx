@@ -4,6 +4,7 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
 import { forwardRef, useLayoutEffect, useRef, useState } from 'react'
 import { tildify } from '../lib/paths'
+import { SearchIcon } from './icons'
 
 type ButtonKind = 'push' | 'primary' | 'plain'
 type ButtonSize = 'regular' | 'large' | 'toolbar'
@@ -254,11 +255,44 @@ export const TextField = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLIn
       spellCheck={false}
       autoCorrect="off"
       autoCapitalize="off"
-      className={`h-[28px] min-w-0 text-ellipsis rounded-control bg-field px-2 text-ink select-text shadow-[inset_0_0_0_1px_var(--er-field-edge)] placeholder:text-ink-2 placeholder:italic focus:shadow-[inset_0_0_0_1.5px_var(--er-accent-ink)] focus:outline-none forced-colors:border forced-colors:border-[ButtonText] ${
+      className={`h-[28px] min-w-0 text-ellipsis rounded-control bg-field px-2 text-ink select-text shadow-[inset_0_0_0_1px_var(--er-field-edge)] placeholder:text-ink-2 placeholder:italic focus:shadow-[inset_0_0_0_1.5px_var(--er-accent-ink)] focus:outline-transparent forced-colors:border forced-colors:border-[ButtonText] ${
         mono ? 'font-mono text-small' : 'text-body'
       } ${className}`}
       {...props}
     />
+  )
+})
+
+/**
+ * A search or filter field: the search icon inset, `role="searchbox"`, and Escape clears what's typed before it does anything else
+ * (the Catalog's own Escape closes the view, so the key stops here while there's something to clear).
+ */
+export const SearchField = forwardRef<
+  HTMLInputElement,
+  { label: string; placeholder: string; value: string; onChange: (value: string) => void; className?: string }
+>(function SearchField({ label, placeholder, value, onChange, className = '' }, ref) {
+  return (
+    <span className={`relative flex ${className}`}>
+      <span className="pointer-events-none absolute top-[7px] left-2 text-ink-2">
+        <SearchIcon />
+      </span>
+      <TextField
+        ref={ref}
+        type="text"
+        role="searchbox"
+        aria-label={label}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' && value) {
+            e.stopPropagation()
+            onChange('')
+          }
+        }}
+        className="w-full pl-7"
+      />
+    </span>
   )
 })
 
