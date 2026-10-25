@@ -2,9 +2,9 @@
 // store) and the cautions tucked under a field.
 
 import type { ReactNode } from 'react'
-import { type DraftValue, isPending, newSecretId, type Pair, SECRET_NAME } from '../lib/mcp'
+import { type DraftValue, fieldId, isPending, newSecretId, type Pair, SECRET_NAME, type ServerField, type ServerList } from '../lib/mcp'
 import { usePlatform } from '../lib/platform'
-import { Button, CloseIcon, IconButton, LockIcon, PlusIcon, StatusTile, TextField } from './ui'
+import { Button, CloseIcon, IconButton, invalidProps, LockIcon, PlusIcon, StatusTile, TextField } from './ui'
 
 /** A warning tucked under the field it's about (or, `tucked={false}`, about the whole server): a well with the amber tile, one line, and maybe a fix. */
 export function Caution({ children, action, tucked = true }: { children: ReactNode; action?: ReactNode; tucked?: boolean }) {
@@ -45,12 +45,19 @@ export function LockLegend() {
  * secret never comes back to the window.
  */
 function ValueField({
+  id,
+  invalid,
+  errorId,
   value,
   onChange,
   label,
   placeholder,
   hint,
 }: {
+  id: string
+  /** This is the field a failed save found wrong: marked invalid and described by the footer's error `errorId`. */
+  invalid: boolean
+  errorId: string
   value: DraftValue
   onChange: (value: DraftValue) => void
   label: string
@@ -85,8 +92,10 @@ function ValueField({
     <span className="relative flex min-w-0 flex-1">
       <TextField
         mono
+        id={id}
         type={pending ? 'password' : 'text'}
         aria-label={label}
+        {...invalidProps(invalid, errorId)}
         value={marked ? value.value : value}
         onChange={(e) => onChange(marked ? { ...value, value: e.target.value } : e.target.value)}
         placeholder={hint ?? (pending ? `Saved to the ${platform.secretStore}` : placeholder)}
@@ -106,14 +115,22 @@ function ValueField({
   )
 }
 
+/** Whether `invalid` is the `part` of row `row` in `list`. */
+const isInvalid = (invalid: ServerField | null, list: ServerList, row: number, part: 'key' | 'value') =>
+  typeof invalid === 'object' && invalid !== null && invalid.list === list && invalid.row === row && invalid.part === part
+
 export function ValueList({
+  list,
   label,
   add,
   placeholder,
   values,
   onChange,
   note,
+  invalid,
+  errorId,
 }: {
+  list: ServerList
   label: string
   add: string
   placeholder: string
@@ -121,6 +138,9 @@ export function ValueList({
   onChange: (values: DraftValue[]) => void
   /** A line under the label, before the rows. */
   note?: ReactNode
+  /** The field a failed save found wrong, and the id of the footer error that says why. */
+  invalid: ServerField | null
+  errorId: string
 }) {
   return (
     <fieldset className="min-w-0">
@@ -133,6 +153,9 @@ export function ValueList({
             // biome-ignore lint/suspicious/noArrayIndexKey: see above
             <li key={i} className="flex items-center gap-1.5">
               <ValueField
+                id={fieldId({ list, row: i, part: 'value' })}
+                invalid={isInvalid(invalid, list, i, 'value')}
+                errorId={errorId}
                 label={`${label.toLowerCase()} ${i + 1}`}
                 value={value}
                 onChange={(next) => onChange(values.map((v, j) => (j === i ? next : v)))}
@@ -162,13 +185,17 @@ const followName = (key: string, value: DraftValue): DraftValue => {
 }
 
 export function PairList({
+  list,
   label,
   add,
   keyPlaceholder,
   rows,
   onChange,
   note,
+  invalid,
+  errorId,
 }: {
+  list: ServerList
   label: string
   add: string
   keyPlaceholder: string
@@ -176,6 +203,9 @@ export function PairList({
   onChange: (rows: Pair[]) => void
   /** A line under the label, before the rows. */
   note?: ReactNode
+  /** The field a failed save found wrong, and the id of the footer error that says why. */
+  invalid: ServerField | null
+  errorId: string
 }) {
   const update = (i: number, row: Pair) => onChange(rows.map((r, j) => (j === i ? row : r)))
   return (
@@ -189,6 +219,8 @@ export function PairList({
             <li key={i} className="flex items-center gap-1.5">
               <TextField
                 mono
+                id={fieldId({ list, row: i, part: 'key' })}
+                {...invalidProps(isInvalid(invalid, list, i, 'key'), errorId)}
                 aria-label={`${label} name ${i + 1}`}
                 value={row.key}
                 onChange={(e) => update(i, { key: e.target.value, value: followName(e.target.value, row.value) })}
@@ -196,6 +228,9 @@ export function PairList({
                 className="w-[46%]"
               />
               <ValueField
+                id={fieldId({ list, row: i, part: 'value' })}
+                invalid={isInvalid(invalid, list, i, 'value')}
+                errorId={errorId}
                 label={`${row.key || `${label.toLowerCase()} ${i + 1}`} value`}
                 value={row.value}
                 onChange={(value) => update(i, { ...row, value })}

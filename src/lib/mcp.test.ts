@@ -49,28 +49,32 @@ describe('serverOf', () => {
 
   it('asks for a value before saving an empty secret, and skips blank rows', () => {
     const empty = { ...draftOf('github', github), env: [{ key: 'GITHUB_TOKEN', value: { secret: 'BB22', value: '' } }] }
-    expect(serverOf(empty, true)).toEqual({ error: 'Enter a value for GITHUB_TOKEN, or remove it.' })
+    expect(serverOf(empty, true)).toMatchObject({ error: 'Enter a value for GITHUB_TOKEN, or remove it.' })
     const blank = { ...draftOf('github', github), args: ['-y', ''], env: [{ key: '', value: '' }] }
     expect(serverOf(blank, true)).toEqual({ server: { ...github, args: ['-y'], env: {} }, secrets: {} })
   })
 
   it('refuses an empty value under a credential-looking name, even unlocked', () => {
     const unlocked = { ...draftOf('github', github), env: [{ key: 'GITHUB_PERSONAL_ACCESS_TOKEN', value: '' }] }
-    expect(serverOf(unlocked, true)).toEqual({ error: 'Enter a value for GITHUB_PERSONAL_ACCESS_TOKEN, or remove it.' })
+    expect(serverOf(unlocked, true)).toMatchObject({ error: 'Enter a value for GITHUB_PERSONAL_ACCESS_TOKEN, or remove it.' })
     const header = {
       ...draftOf('relic', { transport: 'http', url: 'https://mcp.example.com/mcp', headers: {} }),
       headers: [{ key: 'Api-Key', value: ' ' }],
     }
-    expect(serverOf(header, true)).toEqual({ error: 'Enter a value for Api-Key, or remove it.' })
+    expect(serverOf(header, true)).toMatchObject({ error: 'Enter a value for Api-Key, or remove it.' })
     // Other names may be empty on purpose.
     const plain = { ...draftOf('github', github), env: [{ key: 'GITHUB_HOST', value: '' }] }
     expect(serverOf(plain, true)).toEqual({ server: { ...github, env: { GITHUB_HOST: '' } }, secrets: {} })
   })
 
-  it('names what to fix', () => {
-    expect(serverOf({ ...draftOf('x', undefined), command: ' ' }, true)).toEqual({ error: 'Enter the command that starts the server.' })
+  it('names what to fix, and the field it is in, so the editor can mark that field', () => {
+    expect(serverOf({ ...draftOf('x', undefined), command: ' ' }, true)).toEqual({
+      error: 'Enter the command that starts the server.',
+      field: 'command',
+    })
     expect(serverOf({ ...draftOf('x', undefined), transport: 'http', url: 'mcp.example.com' }, true)).toEqual({
       error: 'Enter a URL starting with https:// or http://.',
+      field: 'url',
     })
     const twice = {
       ...draftOf('x', undefined),
@@ -80,7 +84,11 @@ describe('serverOf', () => {
         { key: 'A', value: '2' },
       ],
     }
-    expect(serverOf(twice, true)).toEqual({ error: 'A is set twice.' })
+    // The second of the two, in its row's name field.
+    expect(serverOf(twice, true)).toEqual({ error: 'A is set twice.', field: { list: 'env', row: 1, part: 'key' } })
+    // An empty typed secret is the value input of its own row, an argument's included.
+    const argument = { ...draftOf('x', undefined), command: 'npx', args: ['-y', { secret: 'BB22', value: '' }] }
+    expect(serverOf(argument, true)).toEqual({ error: 'Enter a value for argument 2, or remove it.', field: { list: 'args', row: 1, part: 'value' } })
   })
 })
 
@@ -147,7 +155,7 @@ describe('imports and the catalog', () => {
       { Authorization: 'Bearer …' },
     )
     expect(draft.headers[0]).toMatchObject({ key: 'Authorization', hint: 'Bearer …' })
-    expect(serverOf(draft, true)).toEqual({ error: 'Enter a value for Authorization, or remove it.' })
+    expect(serverOf(draft, true)).toMatchObject({ error: 'Enter a value for Authorization, or remove it.' })
   })
 
   it('locks a token by its shape under a harmless name, and flags plain credentials it leaves alone', () => {
@@ -198,7 +206,7 @@ describe('imports and the catalog', () => {
       expect(isPending(value) && ['A1', 'B2'].includes(value.secret)).toBe(false)
     }
     expect(copy.env[0].key).toBe('DATABASE_URI')
-    expect(serverOf(copy, true)).toEqual({ error: 'Enter a value for DATABASE_URI, or remove it.' })
+    expect(serverOf(copy, true)).toMatchObject({ error: 'Enter a value for DATABASE_URI, or remove it.' })
   })
 
   it('saves a value marked for the store as plain text, and flags it, when there is no store', () => {
@@ -213,7 +221,7 @@ describe('imports and the catalog', () => {
     // Still empty, a marked value is asked for either way.
     expect(
       serverOf(draftFromCatalog('n', { transport: 'http', url: 'https://x/mcp', headers: { Authorization: '' } }, { Authorization: '…' }), false),
-    ).toEqual({
+    ).toMatchObject({
       error: 'Enter a value for Authorization, or remove it.',
     })
 

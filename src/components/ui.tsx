@@ -93,7 +93,7 @@ export function ValueText({ text, home }: { text: string; home: string }) {
   })
 }
 
-/** A borderless square button for an icon, labelled for assistive tech. Pressed (`aria-pressed`) or held open by a menu (`aria-expanded`) it takes the accent tint. */
+/** A borderless square button for an icon, labelled for assistive tech. Pressed (`aria-pressed`) or held open by a menu (`aria-expanded`) it takes the accent tint and a 1px accent-ink ring, since the tint alone is 1.14:1 on the card. */
 export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { label: string }>(function IconButton(
   { label, className = '', children, ...props },
   ref,
@@ -104,7 +104,7 @@ export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTM
       type="button"
       aria-label={label}
       title={label}
-      className={`inline-grid size-[26px] shrink-0 place-items-center rounded-control text-ink-2 hover:bg-[color-mix(in_srgb,var(--er-ink)_8%,transparent)] hover:text-ink active:brightness-90 disabled:opacity-40 aria-pressed:bg-tint aria-pressed:text-accent-ink aria-expanded:bg-tint aria-expanded:text-accent-ink ${className}`}
+      className={`inline-grid size-[26px] shrink-0 place-items-center rounded-control text-ink-2 hover:bg-[color-mix(in_srgb,var(--er-ink)_8%,transparent)] hover:text-ink active:brightness-90 disabled:opacity-40 aria-pressed:bg-tint aria-pressed:text-accent-ink aria-pressed:shadow-[inset_0_0_0_1px_var(--er-accent-ink)] aria-expanded:bg-tint aria-expanded:text-accent-ink aria-expanded:shadow-[inset_0_0_0_1px_var(--er-accent-ink)] ${className}`}
       {...props}
     >
       {children}
@@ -179,6 +179,8 @@ export function CheckBox({ checked }: { checked: boolean }) {
  * A segmented control: a 7% ink track, the chosen segment raised on it. The toolbar's view switch
  * is a capsule like the controls beside it, and its raised thumb slides to the chosen segment, as
  * macOS 27's tabs do; in a form it stays a rounded rectangle and the chosen segment simply lifts.
+ * Lightness alone doesn't say which is chosen (a white pill on the track is 1.15:1 to 1.8:1), so
+ * the pill carries a 1px `select-edge` ring at 3:1 or better and its label steps up to semibold.
  */
 export function Segmented<T extends string>({
   label,
@@ -214,7 +216,8 @@ export function Segmented<T extends string>({
     observer.observe(el)
     return () => observer.disconnect()
   }, [toolbar, value, options.length])
-  const raised = 'bg-button shadow-[0_0.5px_1.5px_rgb(0_0_0/0.18)] forced-colors:bg-[Highlight] forced-colors:forced-color-adjust-none'
+  const raised =
+    'bg-button shadow-[0_0.5px_1.5px_rgb(0_0_0/0.18),inset_0_0_0_1px_var(--er-select-edge)] forced-colors:bg-[Highlight] forced-colors:forced-color-adjust-none'
   return (
     <fieldset ref={track} className={`relative flex w-fit shrink-0 bg-track p-[2px] ${toolbar ? 'rounded-full' : 'rounded-[7px]'}`}>
       <legend className="sr-only">{label}</legend>
@@ -238,12 +241,27 @@ export function Segmented<T extends string>({
           }`}
         >
           {icon}
-          {text}
+          {/* The chosen label is semibold: the unseen copy holds the wider width, so choosing a segment never moves the others. */}
+          <span className="grid">
+            <span className={`col-start-1 row-start-1 ${option === value ? 'font-semibold' : ''}`}>{text}</span>
+            <span aria-hidden="true" className="invisible col-start-1 row-start-1 font-semibold">
+              {text}
+            </span>
+          </span>
         </button>
       ))}
     </fieldset>
   )
 }
+
+/**
+ * The attributes that tie a field to the error shown in its footer (`Footer`'s `errorId`) while it is the field in error: `aria-invalid`,
+ * and the error line added to what already describes the field, so a screen reader reads the message with the field, not only as an alert.
+ */
+export const invalidProps = (invalid: boolean, errorId: string, describedBy?: string) => ({
+  'aria-invalid': invalid || undefined,
+  'aria-describedby': [describedBy, invalid ? errorId : undefined].filter(Boolean).join(' ') || undefined,
+})
 
 export const TextField = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { mono?: boolean }>(function TextField(
   { mono, className = '', ...props },

@@ -84,6 +84,25 @@ describe('Try Again', () => {
   })
 })
 
+describe('a banner action that removes its banner', () => {
+  // One rule for all of them: the button that held focus goes with the banner, so focus goes on to Check Folder…, not to the page.
+  it('hands focus to Check Folder… when Try Again gets its answer', async () => {
+    const user = await open('?scenario=populated&fail=status')
+    const tryAgain = await screen.findByRole('button', { name: 'Try Again' })
+    window.__mockFix()
+    await user.click(tryAgain)
+    await screen.findByText(/Routing is on in zsh/)
+    expect(document.activeElement).toBe(document.getElementById('check-folder'))
+  })
+
+  it('hands focus to Check Folder… when Reinstall Shim fixes the shim', async () => {
+    const user = await open('?scenario=populated&shim=stale')
+    await user.click(await screen.findByRole('button', { name: 'Reinstall Shim' }))
+    await screen.findByText(/Routing is on in zsh/)
+    expect(document.activeElement).toBe(document.getElementById('check-folder'))
+  })
+})
+
 describe('an unreadable config.json', () => {
   it('offers Open config.json as the accent and Reveal beside it, until opening fails and Reveal takes the accent', async () => {
     const user = await open('?scenario=broken&fail=editor')
@@ -193,6 +212,23 @@ describe("a folder row's menu as a native menu", () => {
 
     await user.keyboard('{Escape}')
     await waitFor(() => expect(actions.getAttribute('aria-expanded')).toBe('false'))
+  })
+
+  // The browser mock's stand-in for the native menu mirrors how one behaves, so a review of the mock isn't misled.
+  it('moves to its first and last items with Home and End, and closes on Tab with focus back on its button', async () => {
+    const user = await open('?scenario=populated')
+    const actions = await screen.findByRole('button', { name: 'Actions for ~/dev/work' })
+    await user.click(actions)
+    const items = within(await screen.findByRole('menu')).getAllByRole('menuitem')
+
+    await user.keyboard('{End}')
+    expect(document.activeElement).toBe(items[items.length - 1])
+    await user.keyboard('{Home}')
+    expect(document.activeElement).toBe(items[0])
+
+    await user.keyboard('{Tab}')
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    expect(document.activeElement).toBe(actions)
   })
 
   it('closes the menu it showed before when the next one is built', async () => {
@@ -1440,6 +1476,65 @@ describe('error text', () => {
     await user.click(screen.getByRole('button', { name: 'Add by Hand' }))
     await user.click(within(screen.getByRole('form', { name: 'New MCP server' })).getByRole('button', { name: 'Save' }))
     expect((await screen.findByRole('alert')).classList.contains('select-text')).toBe(true)
+  })
+})
+
+describe('a Save that fails on a field', () => {
+  const describedByAlert = (field: HTMLElement) => {
+    const alert = screen.getAllByRole('alert').find((a) => a.textContent)
+    expect(alert?.id).toBeTruthy()
+    expect(field.getAttribute('aria-describedby')?.split(' ')).toContain(alert?.id)
+  }
+
+  it('marks the server editor field it is about, ties the message to it and moves focus there, one field after another', async () => {
+    const user = await open('?scenario=mcp&view=servers')
+    await user.click(await screen.findByRole('button', { name: 'Add by Hand' }))
+    const form = within(screen.getByRole('form', { name: 'New MCP server' }))
+    const save = () => user.click(form.getByRole('button', { name: 'Save' }))
+
+    // No name: the name field. Its own note keeps describing it too.
+    const name = form.getByLabelText('Name')
+    await save()
+    expect(name.getAttribute('aria-invalid')).toBe('true')
+    describedByAlert(name)
+    expect(name.getAttribute('aria-describedby')).toContain('server-name-note')
+    expect(document.activeElement).toBe(name)
+
+    // A name, no command: the command field, and the name is fine again.
+    await user.type(name, 'mine')
+    await save()
+    const command = form.getByLabelText('Command')
+    expect(command.getAttribute('aria-invalid')).toBe('true')
+    describedByAlert(command)
+    expect(name.getAttribute('aria-invalid')).toBeNull()
+    expect(document.activeElement).toBe(command)
+
+    // A variable with a value and no name: that row's name field, not the list.
+    await user.type(command, 'npx')
+    await user.click(form.getByRole('button', { name: 'Add Variable' }))
+    await user.type(form.getByLabelText('Environment name 1'), 'A')
+    await user.click(form.getByRole('button', { name: 'Add Variable' }))
+    await user.type(form.getByLabelText('environment 2 value'), 'x')
+    await save()
+    const key = form.getByLabelText('Environment name 2')
+    expect(key.getAttribute('aria-invalid')).toBe('true')
+    describedByAlert(key)
+    expect(form.getByLabelText('Environment name 1').getAttribute('aria-invalid')).toBeNull()
+    expect(document.activeElement).toBe(key)
+  })
+
+  it("marks the profile inspector's name field, and leaves it unmarked once the save goes on", async () => {
+    const user = await open('?scenario=populated')
+    await user.click(await screen.findByRole('button', { name: /New Profile/ }))
+    const name = inspector().getByLabelText('Name')
+    await user.click(inspector().getByRole('button', { name: 'Save' }))
+    expect(name.getAttribute('aria-invalid')).toBe('true')
+    describedByAlert(name)
+    expect(document.activeElement).toBe(name)
+
+    await user.type(name, 'Mine')
+    await user.click(inspector().getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 })
 

@@ -5,7 +5,9 @@ import { type CSSProperties, useEffect, useRef, useState } from 'react'
 import { errorMessage } from '../lib/api'
 import {
   draftOf,
+  fieldId,
   initSlot,
+  type Problem,
   type ProfileChip,
   plainCredentials,
   plainNote,
@@ -25,7 +27,10 @@ import { Caution, LockLegend, PairList, ValueList } from './ServerFields'
 import { ServerMark } from './ServerMark'
 import { type CheckRequest, CheckSection } from './ServerTools'
 import { VersionRow } from './ServerVersion'
-import { Button, Footer, PROFILE_FILL, ProfileDot, Segmented, TextField } from './ui'
+import { Button, Footer, invalidProps, PROFILE_FILL, ProfileDot, Segmented, TextField } from './ui'
+
+/** The footer's error line, which a field in error is described by. */
+const ERROR_ID = 'server-error'
 
 export function ServerEditor({
   name,
@@ -79,7 +84,15 @@ export function ServerEditor({
   // profile's own editor can change while this one waits behind the Profiles view.
   const [switched, setSwitched] = useState<Record<string, boolean>>({})
   const usedBy = profiles.map((p) => p.id).filter((id) => switched[id] ?? initialUsedBy.includes(id))
-  const [error, setError] = useState<string | null>(null)
+  // What the last Save found wrong. A problem in a field marks that field (`aria-invalid`, described by the footer's message) and takes
+  // focus; one that isn't in a field (a refusal from the backend, which sends only a sentence) stays in the footer alone.
+  const [problem, setProblem] = useState<Problem | null>(null)
+  const error = problem?.error ?? null
+  const invalid = problem?.field ?? null
+  const report = (found: Problem) => {
+    setProblem(found)
+    if (found.field) document.getElementById(fieldId(found.field))?.focus()
+  }
   const [saving, setSaving] = useState(false)
   const nameField = useRef<HTMLInputElement>(null)
   const dirty =
@@ -92,7 +105,7 @@ export function ServerEditor({
     if (!name) return onCancel()
     setDraft(initial.current)
     setSwitched({})
-    setError(null)
+    setProblem(null)
   }
   useEffect(() => onDirty(dirty), [dirty, onDirty])
   // Gone, it holds nothing: however it closed (Cancel, a delete from the list's menu, another server picked).
@@ -113,31 +126,24 @@ export function ServerEditor({
 
   const save = async () => {
     const trimmed = draft.name.trim()
-    const problem = !trimmed
+    const nameProblem = !trimmed
       ? 'Give the server a name.'
       : !SERVER_NAME.test(trimmed)
         ? 'Use only letters, digits, - and _ in the name.'
         : taken.includes(trimmed)
           ? `There's already a server named ${trimmed}.`
           : null
-    if (problem) {
-      setError(problem)
-      nameField.current?.focus()
-      return
-    }
+    if (nameProblem) return report({ error: nameProblem, field: 'name' })
     const built = serverOf(draft, platform.canLock)
-    if ('error' in built) {
-      setError(built.error)
-      return
-    }
+    if ('error' in built) return report(built)
     setSaving(true)
-    setError(null)
+    setProblem(null)
     try {
       await onSave(trimmed, built.server, built.secrets, usedBy)
       // Saved: the assignment is the saved one now, so a later change from a profile shows here.
       setSwitched({})
     } catch (err) {
-      setError(errorMessage(err))
+      setProblem({ error: errorMessage(err) })
     } finally {
       // A save that changed only which profiles use the server keeps this editor open.
       setSaving(false)
@@ -239,7 +245,7 @@ export function ServerEditor({
             value={draft.name}
             onChange={(e) => set('name', e.target.value)}
             placeholder="github"
-            aria-describedby="server-name-note"
+            {...invalidProps(invalid === 'name', ERROR_ID, 'server-name-note')}
             className="w-full"
           />
           <p id="server-name-note" className="mt-1 text-caption text-ink-2">
@@ -269,10 +275,14 @@ export function ServerEditor({
                 value={draft.command}
                 onChange={(e) => set('command', e.target.value)}
                 placeholder="npx"
+                {...invalidProps(invalid === 'command', ERROR_ID)}
                 className="w-full"
               />
             </div>
             <ValueList
+              list="args"
+              invalid={invalid}
+              errorId={ERROR_ID}
               label="Arguments"
               add="Add Argument"
               placeholder="-y"
@@ -302,6 +312,9 @@ export function ServerEditor({
             )}
             {plain.length > 0 && <Caution>{plainNote(plain, platform)}</Caution>}
             <PairList
+              list="env"
+              invalid={invalid}
+              errorId={ERROR_ID}
               label="Environment"
               add="Add Variable"
               keyPlaceholder="API_KEY"
@@ -323,11 +336,15 @@ export function ServerEditor({
                 value={draft.url}
                 onChange={(e) => set('url', e.target.value)}
                 placeholder={draft.transport === 'sse' ? 'https://example.com/sse' : 'https://example.com/mcp'}
+                {...invalidProps(invalid === 'url', ERROR_ID)}
                 className="w-full"
               />
             </div>
             {plain.length > 0 && <Caution>{plainNote(plain, platform)}</Caution>}
             <PairList
+              list="headers"
+              invalid={invalid}
+              errorId={ERROR_ID}
               label="Headers"
               add="Add Header"
               keyPlaceholder="Authorization"
@@ -363,6 +380,7 @@ export function ServerEditor({
           </>
         }
         error={error}
+        errorId={ERROR_ID}
       >
         <Button onClick={revert} disabled={saving || (!dirty && Boolean(name))}>
           {name ? 'Revert' : 'Cancel'}

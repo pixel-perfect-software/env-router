@@ -16,7 +16,24 @@ import { setUnsaved } from '../lib/unsaved'
 import { useFolderDrop } from '../lib/useFolderDrop'
 import { AgentMark } from './icons'
 import { ServerMark } from './ServerMark'
-import { Button, CheckBox, ChevronIcon, CloseIcon, DropIcon, FolderIcon, Footer, IconButton, PlusIcon, ProfileDot, TextField, ValueText } from './ui'
+import {
+  Button,
+  CheckBox,
+  ChevronIcon,
+  CloseIcon,
+  DropIcon,
+  FolderIcon,
+  Footer,
+  IconButton,
+  invalidProps,
+  PlusIcon,
+  ProfileDot,
+  TextField,
+  ValueText,
+} from './ui'
+
+/** The footer's error line, which the name field is described by while it is the one in error. */
+const ERROR_ID = 'profile-error'
 
 interface FolderRow {
   path: string
@@ -75,6 +92,9 @@ export function ProfileInspector({
     Object.fromEntries(Object.entries(base?.mcpServers ?? {}).map(([name, using]) => [name, using.disabledTools])),
   )
   const [error, setError] = useState<string | null>(null)
+  // Whether the error is the name's: that field is marked invalid and described by it. Every other failure (the backend sends only a
+  // sentence) stays in the footer alone.
+  const [nameInvalid, setNameInvalid] = useState(false)
   const [saving, setSaving] = useState(false)
   // Why the MCP folder couldn't be shown. Under its button, not in the footer: a footer that grows would push the button, which still
   // has focus, under the error.
@@ -150,6 +170,7 @@ export function ProfileInspector({
     const trimmed = name.trim()
     if (!trimmed) {
       setError('Give the profile a name.')
+      setNameInvalid(true)
       nameField.current?.focus()
       return
     }
@@ -162,6 +183,7 @@ export function ProfileInspector({
     }
     setSaving(true)
     setError(null)
+    setNameInvalid(false)
     try {
       await onSave({
         id,
@@ -211,6 +233,7 @@ export function ProfileInspector({
       await onDelete()
     } catch (err) {
       setError(errorMessage(err))
+      setNameInvalid(false)
       setSaving(false)
     }
   }
@@ -253,6 +276,7 @@ export function ProfileInspector({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Work"
+              {...invalidProps(nameInvalid, ERROR_ID)}
               className="w-full !h-[32px] !text-title"
             />
           </div>
@@ -447,6 +471,7 @@ export function ProfileInspector({
             </>
           }
           error={error}
+          errorId={ERROR_ID}
         >
           <Button onClick={close} disabled={saving}>
             Cancel

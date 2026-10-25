@@ -93,54 +93,71 @@ export function draftOf(name: string, server: McpServer | undefined): ServerDraf
   return draft
 }
 
+/** The lists of values a server's form holds. */
+export type ServerList = 'args' | 'env' | 'headers'
+
+/** The form field a problem is about: a field of its own, or one input in a row of a list. */
+export type ServerField = 'name' | 'command' | 'url' | { list: ServerList; row: number; part: 'key' | 'value' }
+
+/** The element id of a form field, which the editor sets and a failed save moves focus to. */
+export const fieldId = (field: ServerField) => (typeof field === 'string' ? `server-${field}` : `server-${field.list}-${field.row}-${field.part}`)
+
+/** A thing to fix before saving, and the field it is in, where it is in one. */
+export interface Problem {
+  error: string
+  field?: ServerField
+}
+
 /**
- * The server a draft describes and the secrets typed into it, or the first thing to fix, worded for the inspector footer.
- * `canLock` is `PlatformInfo.canLock`: with no store to keep them in, a value marked for it is saved as plain text instead, so
- * every path that fills a draft (the catalog, a copy, an import, the lock itself) can mark a value without asking.
+ * The server a draft describes and the secrets typed into it, or the first thing to fix, worded for the inspector footer, with the
+ * field it belongs to so the editor can mark that field and move focus there. `canLock` is `PlatformInfo.canLock`: with no store to
+ * keep them in, a value marked for it is saved as plain text instead, so every path that fills a draft (the catalog, a copy, an
+ * import, the lock itself) can mark a value without asking.
  */
-export function serverOf(draft: ServerDraft, canLock: boolean): { server: McpServer; secrets: Record<string, string> } | { error: string } {
+export function serverOf(draft: ServerDraft, canLock: boolean): { server: McpServer; secrets: Record<string, string> } | Problem {
   const secrets: Record<string, string> = {}
   /** The stored form of a value; a typed secret is set aside for the Keychain. */
-  const stored = (value: DraftValue, what: string): McpValue | { error: string } => {
+  const stored = (value: DraftValue, what: string, field: ServerField): McpValue | Problem => {
     if (!isPending(value)) return value
-    if (!value.value) return { error: `Enter a value for ${what}, or remove it.` }
+    if (!value.value) return { error: `Enter a value for ${what}, or remove it.`, field }
     if (!canLock) return value.value
     secrets[value.secret] = value.value
     return { secret: value.secret }
   }
   const blank = (value: DraftValue) => (isPending(value) ? !value.value : typeof value === 'string' && !value.trim())
-  const named = (rows: Pair[], what: string): Record<string, McpValue> | string => {
+  const named = (rows: Pair[], what: string, list: ServerList): { values: Record<string, McpValue> } | Problem => {
     const out: Record<string, McpValue> = {}
-    for (const row of rows) {
-      const key = row.key.trim()
-      if (!key && blank(row.value)) continue
-      if (!key) return `Give each ${what} a name.`
-      if (key in out) return `${key} is set twice.`
+    for (const [row, { key: typed, value: current }] of rows.entries()) {
+      const key = typed.trim()
+      const at = (part: 'key' | 'value'): ServerField => ({ list, row, part })
+      if (!key && blank(current)) continue
+      if (!key) return { error: `Give each ${what} a name.`, field: at('key') }
+      if (key in out) return { error: `${key} is set twice.`, field: at('key') }
       // An empty credential would start the server without it, quietly; ask for one instead.
-      if (blank(row.value) && SECRET_NAME.test(key)) return `Enter a value for ${key}, or remove it.`
-      const value = stored(row.value, key)
-      if (typeof value !== 'string' && 'error' in value) return value.error
+      if (blank(current) && SECRET_NAME.test(key)) return { error: `Enter a value for ${key}, or remove it.`, field: at('value') }
+      const value = stored(current, key, at('value'))
+      if (typeof value !== 'string' && 'error' in value) return value
       out[key] = value
     }
-    return out
+    return { values: out }
   }
   if (draft.transport === 'stdio') {
-    if (!draft.command.trim()) return { error: 'Enter the command that starts the server.' }
-    const env = named(draft.env, 'variable')
-    if (typeof env === 'string') return { error: env }
+    if (!draft.command.trim()) return { error: 'Enter the command that starts the server.', field: 'command' }
+    const env = named(draft.env, 'variable', 'env')
+    if ('error' in env) return env
     const args: McpValue[] = []
     for (const [i, arg] of draft.args.entries()) {
       if (arg === '') continue
-      const value = stored(arg, `argument ${i + 1}`)
+      const value = stored(arg, `argument ${i + 1}`, { list: 'args', row: i, part: 'value' })
       if (typeof value !== 'string' && 'error' in value) return value
       args.push(value)
     }
-    return { server: { transport: 'stdio', command: draft.command.trim(), args, env }, secrets }
+    return { server: { transport: 'stdio', command: draft.command.trim(), args, env: env.values }, secrets }
   }
-  if (!/^https?:\/\/\S/.test(draft.url.trim())) return { error: 'Enter a URL starting with https:// or http://.' }
-  const headers = named(draft.headers, 'header')
-  if (typeof headers === 'string') return { error: headers }
-  return { server: { transport: draft.transport, url: draft.url.trim(), headers }, secrets }
+  if (!/^https?:\/\/\S/.test(draft.url.trim())) return { error: 'Enter a URL starting with https:// or http://.', field: 'url' }
+  const headers = named(draft.headers, 'header', 'headers')
+  if ('error' in headers) return headers
+  return { server: { transport: draft.transport, url: draft.url.trim(), headers: headers.values }, secrets }
 }
 
 /** A URL that carries a password, as a database connection string does: `postgres://user:pass@host`. */

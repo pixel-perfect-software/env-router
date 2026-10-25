@@ -21,6 +21,8 @@
   /* The segmented control's track, and a sealed value's well (a Keychain secret). */
   --er-track: rgb(16 24 48 / 0.07);
   --er-well: #f1f3f7;
+  /* The ring on a chosen segment, which says "chosen" by more than lightness: 3:1 against the track (on the window, card and raised surface) and the segment's own fill (WCAG 1.4.11). */
+  --er-select-edge: #6c717b;
   --er-ink: #1b1d22;
   /* 4.5:1 on every surface it sits on, the segmented track included. */
   --er-ink-2: #5b5f69;
@@ -58,6 +60,7 @@
     --er-field-edge: #808693;
     --er-track: rgb(0 0 0 / 0.32);
     --er-well: #31353e;
+    --er-select-edge: #9aa0ad;
     --er-ink: #eef0f4;
     --er-ink-2: #a9aeb9;
     --er-ink-3: #6c717c;
