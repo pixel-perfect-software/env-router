@@ -13,6 +13,8 @@ use tauri::ActivationPolicy;
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
 use envrouter_core::platform::Platform;
+
+use crate::help::{self, Link};
 use envrouter_ops::commands::{self, Place, SetupStatus};
 use envrouter_ops::shell::{self, Shell};
 
@@ -24,15 +26,29 @@ pub const CHECK_FOLDER_EVENT: &str = "check-folder";
 /// Emitted to the window when the menu's "Uninstall EnvRouter…" is chosen.
 pub const UNINSTALL_EVENT: &str = "uninstall-requested";
 
-/// Emitted to the window when the menu's reveal of one of EnvRouter's places failed, so the
-/// window can say why ([`RevealFailed`]).
+/// Emitted to the window when the menu bar's reveal of one of EnvRouter's places, or its Help
+/// menu's opening of a link, failed, so the window can say why ([`RevealFailed`]).
 pub const REVEAL_FAILED_EVENT: &str = "reveal-failed";
+
+/// What the menu bar tried to show: `Failed` in `src/lib/types.ts`.
+#[derive(Clone, serde::Serialize)]
+#[serde(untagged)]
+pub enum Failed {
+    Place(Place),
+    Help(HelpPage),
+}
+
+/// A help link, as the window's `{ kind: 'help', link }`.
+#[derive(Clone, serde::Serialize)]
+#[serde(tag = "kind", rename = "help")]
+pub struct HelpPage {
+    pub link: Link,
+}
 
 /// `RevealFailed` in `src/lib/types.ts`.
 #[derive(Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct RevealFailed {
-    pub place: Place,
+    pub what: Failed,
     pub message: String,
 }
 
@@ -127,9 +143,7 @@ fn set_menu(app: &AppHandle, summary: (String, Option<String>)) {
 /// Shows `place` in the file manager without bringing the window forward: the menu bar is
 /// where the user is. On Linux this is a blocking D-Bus call, and menu events arrive on the
 /// main thread, so it runs on a thread of its own. Only a failure brings the window back, with
-/// the reason in its banner ([`REVEAL_FAILED_EVENT`]), and not one that follows an uninstall:
-/// the window drops it (the uninstall's own banner owns the place), so it would come forward for
-/// nothing.
+/// the reason in its banner ([`REVEAL_FAILED_EVENT`]).
 fn reveal_in_background(app: &AppHandle, place: Place) {
     let app = app.clone();
     std::thread::spawn(move || {
@@ -138,19 +152,38 @@ fn reveal_in_background(app: &AppHandle, place: Place) {
             .and_then(|home| commands::locate(&home, &place))
             .and_then(crate::show_located);
         if let Err(err) = shown {
-            if crate::GATE.raised() {
-                return;
-            }
-            show_window(&app);
-            let _ = app.emit(
-                REVEAL_FAILED_EVENT,
-                RevealFailed {
-                    place,
-                    message: err.to_string(),
-                },
-            );
+            tell_failed(&app, Failed::Place(place), &err);
         }
     });
+}
+
+/// Opens a help link from the Help menu, as [`reveal_in_background`] shows a place: the window
+/// stays where it was unless this fails. Opening an address never touches `~/.envrouter`, so it
+/// asks for no home folder and works after an uninstall too, which is when someone may want to
+/// report it.
+pub fn help_in_background(app: &AppHandle, link: Link) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        if let Err(err) = help::open(link) {
+            tell_failed(&app, Failed::Help(HelpPage { link }), &err);
+        }
+    });
+}
+
+/// Brings the window back with the reason, unless an uninstall has begun: the window drops it
+/// (the uninstall's own banner owns the place), so it would come forward for nothing.
+fn tell_failed(app: &AppHandle, what: Failed, err: &impl std::fmt::Display) {
+    if crate::GATE.raised() {
+        return;
+    }
+    show_window(app);
+    let _ = app.emit(
+        REVEAL_FAILED_EVENT,
+        RevealFailed {
+            what,
+            message: err.to_string(),
+        },
+    );
 }
 
 /// Brings the window back, and on macOS puts the app in the Dock while it's open.
@@ -277,21 +310,32 @@ fn summary(app: &AppHandle, on: impl Iterator<Item = Shell>) -> (String, Option<
 
 #[cfg(test)]
 mod tests {
-    use super::{list_of, RevealFailed};
+    use super::{list_of, Failed, HelpPage, RevealFailed};
+    use crate::help::Link;
     use envrouter_ops::commands::Place;
 
     /// `RevealFailed` in `src/lib/types.ts`: the `reveal-failed` event's payload.
     #[test]
     fn reveal_failed_matches_the_typescript_type() {
-        let payload = RevealFailed {
-            place: Place::McpFiles {
+        let place = RevealFailed {
+            what: Failed::Place(Place::McpFiles {
                 profile_id: "p".into(),
-            },
+            }),
             message: "m".into(),
         };
         assert_eq!(
-            serde_json::to_value(payload).unwrap(),
-            serde_json::json!({ "place": { "kind": "mcpFiles", "profileId": "p" }, "message": "m" })
+            serde_json::to_value(place).unwrap(),
+            serde_json::json!({ "what": { "kind": "mcpFiles", "profileId": "p" }, "message": "m" })
+        );
+        let help = RevealFailed {
+            what: Failed::Help(HelpPage {
+                link: Link::ReportIssue,
+            }),
+            message: "m".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(help).unwrap(),
+            serde_json::json!({ "what": { "kind": "help", "link": "reportIssue" }, "message": "m" })
         );
     }
 

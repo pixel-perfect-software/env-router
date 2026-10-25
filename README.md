@@ -282,6 +282,10 @@ secret fields empty; **Delete…** removes it from the library and from every pr
 On macOS, EnvRouter lives in the menu bar: closing the window only hides it; quit from the menu
 bar icon. On Linux, closing the window quits; routing keeps working without it.
 
+**Settings…** (⌘, on macOS, Ctrl+, on Linux) opens the Shells panel: EnvRouter has no
+Preferences window, since shells are the one setting. The Shells panel also links to the
+documentation and to **Report an Issue**; on macOS the Help menu has both.
+
 To see EnvRouter's own files, the menu bar icon's menu and the Shells panel show `config.json` in
 Finder (Files off macOS) and open `~/.envrouter`, and a profile card's right-click menu opens the
 folder its MCP files are written to.

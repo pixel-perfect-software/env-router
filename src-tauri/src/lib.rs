@@ -1,3 +1,5 @@
+mod help;
+mod menu;
 mod quit;
 #[cfg(target_os = "macos")]
 mod traffic_lights;
@@ -12,7 +14,7 @@ use std::time::Duration;
 
 use envrouter_core::config::{self, ConfigState, IdeHook, McpServer};
 use envrouter_core::{paths, Error, Result};
-use tauri::{AppHandle, Manager, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 
 use envrouter_ops::commands::{self, ConfigFault, Located, Place, SaveOutcome, SetupStatus};
 use envrouter_ops::editors::{Editor, EditorStatus};
@@ -343,6 +345,14 @@ fn show_located(located: Located) -> Result<()> {
     shown.map_err(|err| Error::Command(format!("Couldn't show `{}`: {err}", path.display())))
 }
 
+/// Opens one of the help links in the browser. The window names it ([`help::Link`]) and never
+/// gives an address, so it needs no permission from `capabilities/default.json`. Acts on the
+/// machine the window runs on, so `envrouter rpc` doesn't serve it.
+#[tauri::command]
+async fn open_help(link: help::Link) -> Result<()> {
+    blocking(move || help::open(link)).await
+}
+
 /// Acts on the machine the window runs on, so `envrouter rpc` doesn't serve it.
 #[tauri::command]
 async fn reveal_place(app: AppHandle, place: Place) -> Result<()> {
@@ -440,6 +450,7 @@ window_commands![
     preview_folder,
     open_in_editor,
     reveal_place,
+    open_help,
     check_mcp_server,
     npm_dist_tags,
     get_mcp_tools,
@@ -453,7 +464,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init());
     #[cfg(target_os = "macos")]
-    let builder = builder.menu(quit::app_menu);
+    let builder = builder.menu(menu::app_menu);
     let app = builder
         .setup(|app| {
             // Refresh the installed shim after an app update. A failure here isn't fatal:
@@ -491,8 +502,14 @@ pub fn run() {
         })
         // ⌘Q quits through `AppHandle::exit`, so it asks first with unsaved edits (see `quit`).
         .on_menu_event(|app, event| {
-            if event.id() == quit::APP_QUIT_ID {
+            let id = event.id().as_ref();
+            if id == quit::APP_QUIT_ID {
                 app.exit(0);
+            } else if id == menu::SETTINGS_ID {
+                tray::show_window(app);
+                let _ = app.emit(menu::OPEN_SETTINGS_EVENT, ());
+            } else if let Some(link) = help::Link::from_menu_id(id) {
+                tray::help_in_background(app, link);
             }
         })
         // On macOS, closing the window keeps EnvRouter in the menu bar; Quit lives in its menu.
@@ -559,13 +576,14 @@ mod tests {
     use super::*;
 
     /// A remote window (a WSL distro's, over `envrouter rpc`) must be able to make every call
-    /// the local one makes, except opening or showing a file, which would happen on the other
+    /// the local one makes, except opening or showing a file or a link, which would happen on the other
     /// machine, and quitting this app, which isn't the other machine's business.
     #[test]
     fn rpc_serves_every_window_command_but_the_local_ones() {
         const LOCAL: &[&str] = &[
             "open_in_editor",
             "reveal_place",
+            "open_help",
             "set_unsaved_edits",
             "quit_app",
         ];

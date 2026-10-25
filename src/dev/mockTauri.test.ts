@@ -233,6 +233,20 @@ describe('checks and files', () => {
     )
   })
 
+  it('opens only the help links, and says why and where the page is when the launcher cannot start, as help::open does', async () => {
+    expect(await (await boot(''))('open_help', { link: 'docs' })).toBeNull()
+    const call = await boot('?fail=reveal')
+    await expect(call('open_help', { link: 'docs' })).rejects.toBe(
+      "No such file or directory (os error 2). It's at https://github.com/pixel-perfect-software/env-router#readme.",
+    )
+    // Tauri's own argument parsing refuses a name that isn't a link, prototype keys included.
+    for (const link of ['https://example.com', 'toString']) {
+      await expect(call('open_help', { link })).rejects.toBe(
+        `invalid args \`link\` for command \`open_help\`: unknown variant \`${link}\`, expected \`docs\` or \`reportIssue\``,
+      )
+    }
+  })
+
   it('starts over only from a config.json that cannot be parsed, as reset_unreadable_config does', async () => {
     const readable = await boot('?scenario=populated')
     await expect(readable('reset_unreadable_config')).rejects.toBe('config.json can be read now, so nothing was changed.')
@@ -335,7 +349,8 @@ describe('uninstall', () => {
     await expect(call('get_config')).rejects.toEqual({ kind: 'other', message: GUARD, path: null })
     await expect(call('get_setup_status')).rejects.toBe(GUARD)
     await expect(call('save_config', { payload: {}, secrets: {} })).rejects.toBe(GUARD)
-    // The window can still ask to quit, and read pasted text.
+    // The window can still ask to quit, and read pasted text, and open a help link, which never touches the home folder.
+    expect(await call('open_help', { link: 'reportIssue' })).toBeNull()
     await call('set_unsaved_edits', { unsaved: false })
     await call('quit_app')
   })

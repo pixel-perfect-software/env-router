@@ -8,6 +8,7 @@ import type {
   Editor,
   EditorStatus,
   FolderCheck,
+  HelpLink,
   IdeHook,
   ImportCandidate,
   McpServer,
@@ -106,6 +107,9 @@ export const openInEditor = (path: string) => invoke<void>('open_in_editor', { p
  * Rejects with a sentence when the place isn't there yet, or the file manager can't show it.
  */
 export const revealPlace = (place: Place) => invoke<void>('reveal_place', { place })
+
+/** Opens one of the project's pages in the browser. Rejects with a sentence, the address included, when no browser opens it. */
+export const openHelp = (link: HelpLink) => invoke<void>('open_help', { link })
 
 /** Normalizes a rejection, which is a string from our commands but may be an Error from Tauri itself. */
 export const errorMessage = (err: unknown) => (typeof err === 'string' ? err : err instanceof Error ? err.message : String(err))

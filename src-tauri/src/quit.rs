@@ -7,7 +7,7 @@
 //!
 //! On macOS the app menu's own Quit can't be asked: the event loop handles only
 //! `applicationWillTerminate`, so `terminate:` ends the process with no `ExitRequested`. The
-//! app menu's Quit is EnvRouter's own item instead ([`app_menu`]), which quits as the menu
+//! app menu's Quit is EnvRouter's own item instead (`menu::app_menu`), which quits as the menu
 //! bar's does. The Dock's Quit still terminates without asking.
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,29 +21,6 @@ pub const QUIT_REQUESTED_EVENT: &str = "quit-requested";
 
 /// The app menu's Quit, on macOS.
 pub const APP_QUIT_ID: &str = "app-quit";
-
-/// Tauri's default macOS menu (App, File, Edit, View, Window, Help), with the app menu's
-/// predefined Quit replaced by [`APP_QUIT_ID`], under the same name and ⌘Q.
-#[cfg(target_os = "macos")]
-pub fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
-    use tauri::menu::{Menu, MenuItem, MenuItemKind};
-
-    let menu = Menu::default(app)?;
-    if let Some(MenuItemKind::Submenu(app_submenu)) = menu.items()?.into_iter().next() {
-        if let Some(quit @ MenuItemKind::Predefined(_)) = app_submenu.items()?.pop() {
-            app_submenu.remove(&quit)?;
-            let name = &app.package_info().name;
-            app_submenu.append(&MenuItem::with_id(
-                app,
-                APP_QUIT_ID,
-                format!("Quit {name}"),
-                true,
-                Some("CmdOrCtrl+Q"),
-            )?)?;
-        }
-    }
-    Ok(menu)
-}
 
 static GATE: Gate = Gate::new();
 

@@ -18,7 +18,10 @@
 //   User and local scopes live in .claude.json in the config folder; project scope in .mcp.json.
 //   The editor hook was verified on the VS Code extension 2.1.301: it runs `<wrapper> <its
 //   bundled claude> <args>` in the workspace folder. The setting is machine-wide, which is fine,
-//   since the shim routes by folder.
+//   since the shim routes by folder. The hook's `note` is the Editors… popover's line for the agent, and
+//   the window's alone (`withAgents` and `ideHooks` leave it out): anthropics/claude-code#99263, open
+//   on 2.1.288, where the extension picks "default" for any tab it starts without a permission mode
+//   whenever `claudeCode.claudeProcessWrapper` is set, whatever the wrapper does.
 // - copilot: verified on 1.0.98: `@` takes a file and the flag adds to the user's own servers; a
 //   tool is turned off with `--deny-tool=server(tool)`, one per argument.
 // - `install` is each vendor's own one-line installer (claude: claude.ai/install.sh, the native
@@ -49,14 +52,24 @@ export interface KnownTool {
   /** Where the agent keeps MCP servers of its own, for importing them into the library. */
   mcpFiles?: McpFiles
   /** Its editor extension runs a bundled copy of the agent, so the shims never see it; this setting routes it anyway. */
-  ide?: IdeHook
+  ide?: IdeHook & {
+    /** What routing the extension does that the user wouldn't expect, as one sentence for the Editors… popover. The window's alone. */
+    note?: string
+  }
 }
 
 // JSON infers `dialect` as a plain string; Rust's tests reject one that isn't a dialect.
 export const KNOWN_TOOLS: KnownTool[] = registry as KnownTool[]
 
 /** The editor hooks to offer, keyed by command. */
-export const ideHooks = (): Record<string, IdeHook> => Object.fromEntries(KNOWN_TOOLS.flatMap((t) => (t.ide ? [[t.command, t.ide] as const] : [])))
+export const ideHooks = (): Record<string, IdeHook> =>
+  Object.fromEntries(KNOWN_TOOLS.flatMap((t) => (t.ide ? [[t.command, hookOf(t.ide)] as const] : [])))
+
+/** The hook as Rust knows it: without the window's own `note`. */
+const hookOf = ({ setting, extension }: IdeHook): IdeHook => ({ setting, extension })
+
+/** The line the Editors… popover shows for an agent's extension, if it has one. */
+export const editorNote = (command: string) => toolByCommand(command)?.ide?.note
 
 export const toolByCommand = (command: string) => KNOWN_TOOLS.find((t) => t.command === command)
 
@@ -70,6 +83,7 @@ export const toolLabel = (command: string) => toolByCommand(command)?.label ?? c
  */
 export const withAgents = (config: ConfigState): ConfigState => {
   const agents: Record<string, AgentDef> = { ...config.agents }
-  for (const tool of KNOWN_TOOLS) agents[tool.command] = { mcp: tool.mcp ?? null, mcpFiles: tool.mcpFiles ?? null, ide: tool.ide ?? null }
+  for (const tool of KNOWN_TOOLS)
+    agents[tool.command] = { mcp: tool.mcp ?? null, mcpFiles: tool.mcpFiles ?? null, ide: tool.ide ? hookOf(tool.ide) : null }
   return { ...config, agents }
 }
