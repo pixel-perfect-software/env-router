@@ -118,5 +118,5 @@ export const faultOf = (err: unknown): ConfigFault =>
   'message' in err &&
   typeof err.message === 'string' &&
   (err.kind === 'parse' || err.kind === 'other')
-    ? { kind: err.kind, message: err.message }
-    : { kind: 'other', message: errorMessage(err) }
+    ? { kind: err.kind, message: err.message, path: 'path' in err && typeof err.path === 'string' ? err.path : null }
+    : { kind: 'other', message: errorMessage(err), path: null }

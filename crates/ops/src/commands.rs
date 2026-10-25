@@ -19,12 +19,21 @@ pub fn get_config(home: &Path) -> Result<ConfigState> {
     config::load_or_init(&paths::root(home))
 }
 
+/// `get_config` as the window reads it: a failure comes back as the `ConfigFault` that names the file.
+pub fn read_config(home: &Path) -> std::result::Result<ConfigState, ConfigFault> {
+    get_config(home).map_err(|err| ConfigFault::in_home(err, home))
+}
+
 /// Why config.json couldn't be read, as the window's first read rejects with it: the message to
-/// show, and the kind, so the window offers Start Over only for a file that won't parse.
+/// show, and the kind, so the window offers Start Over only for a file that won't parse. `path`
+/// is the file, so the window can open it without building the path itself, or waiting for the
+/// setup status (which the same load asks for); `None` when no home folder could be named, or the
+/// session is over (an uninstall finished). Over `envrouter rpc` it travels as `errorPath`.
 #[derive(Debug, PartialEq, Serialize)]
 pub struct ConfigFault {
     pub kind: ErrorKind,
     pub message: String,
+    pub path: Option<String>,
 }
 
 impl From<Error> for ConfigFault {
@@ -32,6 +41,17 @@ impl From<Error> for ConfigFault {
         Self {
             kind: err.kind(),
             message: err.to_string(),
+            path: None,
+        }
+    }
+}
+
+impl ConfigFault {
+    /// The failure to read the config in `home`.
+    pub fn in_home(err: Error, home: &Path) -> Self {
+        Self {
+            path: Some(paths::config_file(home).display().to_string()),
+            ..Self::from(err)
         }
     }
 }
@@ -253,7 +273,7 @@ fn save(
 pub fn reset_unreadable_config(home: &Path) -> Result<PathBuf> {
     let root = paths::root(home);
     let _lock = config::lock(&root)?;
-    let file = root.join(config::CONFIG_FILE);
+    let file = paths::config_file(home);
     // Read once: what is judged unparseable is what gets backed up, even if someone saves
     // while this runs (the lock keeps the app's and the CLI's saves out, not an editor's).
     let bytes = match std::fs::read(&file) {
@@ -363,12 +383,20 @@ pub struct SetupStatus {
     pub platform: Platform,
     /// What the store MCP secrets go to is called here: "Keychain", "keyring".
     pub secret_store: &'static str,
+    /// What a value kept there reads as in its field: "In Keychain", "In the keyring".
+    pub sealed_label: &'static str,
     /// Why that store can't keep secrets right now (no Secret Service running, no Windows
     /// helper in WSL), in its own words; `None` when it can. Asking never reads a secret or
     /// prompts.
     pub secret_store_problem: Option<String>,
+    /// What the file manager is called and the verb for showing a file in it ("Reveal" in
+    /// "Finder", "Show" in "Files"), so the window words a reveal as the menu bar does.
+    pub file_manager: &'static str,
+    pub reveal_verb: &'static str,
     pub shim_installed: bool,
     pub shims_dir: String,
+    /// The installed shim, which the window names when it is missing or out of date.
+    pub shim_path: String,
     pub shells: Vec<ShellStatus>,
 }
 
@@ -380,9 +408,13 @@ pub fn setup_status(home: &Path) -> Result<SetupStatus> {
     Ok(SetupStatus {
         platform,
         secret_store: platform.secret_store_name(),
+        sealed_label: platform.sealed_label(),
         secret_store_problem: envrouter_keychain::problem(home),
+        file_manager: platform.file_manager(),
+        reveal_verb: platform.reveal_verb(),
         shim_installed: shims::is_installed(home, &shims::bundled()?, &shims::bundled_keychain()?),
         shims_dir: paths::shims(home).display().to_string(),
+        shim_path: paths::shim_binary(home).display().to_string(),
         shells: Shell::ALL.iter().map(|&s| shell::status(s, home)).collect(),
     })
 }
@@ -600,7 +632,7 @@ pub fn locate(home: &Path, place: &Place) -> Result<Located> {
     let root = paths::root(home);
     match place {
         Place::Config => {
-            let file = root.join(config::CONFIG_FILE);
+            let file = paths::config_file(home);
             if exists(&file)? {
                 Ok(Located::File(file))
             } else {
@@ -797,7 +829,7 @@ mod tests {
         let value = HashMap::from([("7F3A".to_string(), "ghp_old".to_string())]);
         save(home, &old, &value, None, false, &store).unwrap();
 
-        let file = paths::root(home).join(config::CONFIG_FILE);
+        let file = paths::config_file(home);
         let text = std::fs::read_to_string(&file).unwrap();
         std::fs::write(&file, format!("{text}{{ half-typed")).unwrap();
         let backup = reset_unreadable_config(home).unwrap();
@@ -1000,7 +1032,7 @@ mod tests {
         let home = home.path();
         let base = with_profile(&get_config(home).unwrap(), "p1", "Work");
         save_config(home, &base, &HashMap::new(), None).unwrap();
-        let file = paths::root(home).join(config::CONFIG_FILE);
+        let file = paths::config_file(home);
         std::fs::remove_file(&file).unwrap();
 
         let edited = with_profile(&base, "p2", "Personal");
@@ -1017,7 +1049,7 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let home = home.path();
         let base = get_config(home).unwrap();
-        let file = paths::root(home).join(config::CONFIG_FILE);
+        let file = paths::config_file(home);
         std::fs::write(&file, "{ half-typed").unwrap();
         let edited = with_profile(&base, "p1", "Work");
         assert!(save_config(home, &edited, &HashMap::new(), Some(&base)).is_err());
@@ -1035,7 +1067,7 @@ mod tests {
         let root = paths::root(home);
         std::fs::create_dir_all(&root).unwrap();
         let target = home.join("dotfiles-config.json");
-        let link = root.join(config::CONFIG_FILE);
+        let link = paths::config_file(home);
         std::os::unix::fs::symlink(&target, &link).unwrap();
 
         std::fs::write(&target, "{ half-typed").unwrap();
@@ -1059,7 +1091,7 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let home = home.path();
         let root = paths::root(home);
-        let file = root.join(config::CONFIG_FILE);
+        let file = paths::config_file(home);
         let backup = root.join("config.json.bak");
 
         get_config(home).unwrap();
@@ -1203,7 +1235,29 @@ mod tests {
         let fault = ConfigFault::from(Error::Invalid("m".into()));
         assert_eq!(
             serde_json::to_value(fault).unwrap(),
-            serde_json::json!({ "kind": "other", "message": "m" })
+            serde_json::json!({ "kind": "other", "message": "m", "path": null })
+        );
+        let fault = ConfigFault::in_home(Error::Invalid("m".into()), Path::new("/h"));
+        assert_eq!(
+            serde_json::to_value(fault).unwrap()["path"],
+            "/h/.envrouter/config.json"
+        );
+        // `SetupStatus`: the words come from `Platform`, the paths from `paths`.
+        let setup = SetupStatus {
+            platform: Platform::MacOs,
+            secret_store: "Keychain",
+            sealed_label: "In Keychain",
+            secret_store_problem: None,
+            file_manager: Platform::MacOs.file_manager(),
+            reveal_verb: Platform::MacOs.reveal_verb(),
+            shim_installed: true,
+            shims_dir: "/h/.envrouter/shims".into(),
+            shim_path: paths::shim_binary(Path::new("/h")).display().to_string(),
+            shells: Vec::new(),
+        };
+        assert_eq!(
+            serde_json::to_string(&setup).unwrap(),
+            r#"{"platform":"macos","secretStore":"Keychain","sealedLabel":"In Keychain","secretStoreProblem":null,"fileManager":"Finder","revealVerb":"Reveal","shimInstalled":true,"shimsDir":"/h/.envrouter/shims","shimPath":"/h/.envrouter/bin/envrouter-shim","shells":[]}"#
         );
     }
 }

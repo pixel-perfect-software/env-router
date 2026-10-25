@@ -25,8 +25,15 @@ describe('platformInfo', () => {
     expect(platformInfo('windows').secretStore).toBe('Credential Manager')
   })
 
-  it("takes the backend's name for the store over its own", () => {
-    expect(platformInfo('linux', 'KWallet').secretStore).toBe('KWallet')
+  it("takes the backend's words for the store and the file manager over its own", () => {
+    const words = { secretStore: 'KWallet', sealedLabel: 'In the KWallet', secretStoreProblem: null, fileManager: 'Dolphin', revealVerb: 'Open' }
+    const info = platformInfo('linux', words)
+    expect([info.secretStore, info.sealedLabel, info.revealLabel, info.revealLabelOf('config.json')]).toEqual([
+      'KWallet',
+      'In the KWallet',
+      'Open in Dolphin',
+      'Open config.json in Dolphin',
+    ])
   })
 })
 

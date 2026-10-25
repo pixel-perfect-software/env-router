@@ -248,7 +248,7 @@ export default function App() {
       if (!inspecting) setView(next)
     },
   }
-  const platform = platformInfo(setup?.platform ?? guessPlatform(), setup?.secretStore, setup?.secretStoreProblem)
+  const platform = platformInfo(setup?.platform ?? guessPlatform(), setup ?? undefined)
 
   // The app asks before quitting only while an editor holds unsaved edits (`src-tauri/src/quit.rs`).
   useEffect(() => {
@@ -630,7 +630,7 @@ export default function App() {
 
   const closeShells = useCallback(() => setShellsOpen(false), [])
   const closeEditors = useCallback(() => setEditorsOpen(false), [])
-  const reported = healthOf(config, setup, loadError, setupError, actionError, home, checkedOnce, blocked, openError, saveWarning)
+  const reported = healthOf(config, setup, loadError, setupError, actionError, checkedOnce, blocked, openError, saveWarning)
   // While an uninstall runs the region holds one state, whatever the files it is changing say: the pending line, or on a retry the
   // stop's banner with Try Again busy. Nothing in it is an accent action, so no shell can be turned back on meanwhile.
   const titled: Health = running
@@ -710,8 +710,9 @@ export default function App() {
                 }
                 onRecheck={(folder, shell, tool) => runCheck(folder, shell, null, tool)}
                 onOpenConfig={() => {
+                  if (!loadError?.path) return
                   setOpenError(null)
-                  openInEditor(`${home}/.envrouter/config.json`).catch((err) => setOpenError({ action: 'open', message: errorMessage(err) }))
+                  openInEditor(loadError.path).catch((err) => setOpenError({ action: 'open', message: errorMessage(err) }))
                 }}
                 onRevealConfig={() => {
                   setOpenError(null)
@@ -788,10 +789,9 @@ export default function App() {
               {canCheck && (
                 <Docket
                   check={check}
-                  shells={setup?.shells ?? []}
+                  setup={setup}
                   home={home}
                   routedTools={routedTools}
-                  shimsDir={setup?.shimsDir ?? `${home}/.envrouter/shims`}
                   hovering={inspecting ? null : hovering}
                   onRecheck={(shell, tool) => check && !uninstalling.current && runCheck(check.folder, shell, null, tool)}
                   onAction={runAction}

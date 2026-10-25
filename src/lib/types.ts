@@ -123,17 +123,26 @@ export interface SetupStatus {
   platform: Platform
   /** What the store MCP secrets go to is called here: "Keychain", "keyring". */
   secretStore: string
+  /** What a value kept there reads as in its field: "In Keychain", "In the keyring". */
+  sealedLabel: string
   /** Why that store can't keep secrets right now, in its own words, or null when it can (Keychain and Credential Manager: always null). */
   secretStoreProblem: string | null
+  /** What the file manager is called here: "Finder", "Files" (`Platform::file_manager`). */
+  fileManager: string
+  /** The verb for showing something in it: "Reveal" in Finder, "Show" in Files (`Platform::reveal_verb`). */
+  revealVerb: string
   /** The installed shim matches the one bundled with this version of the app. */
   shimInstalled: boolean
   shimsDir: string
+  /** The installed shim itself, which is named when it is missing or out of date. */
+  shimPath: string
   shells: ShellStatus[]
 }
 
 /**
  * `editors::Editor`: VS Code and the forks that share its settings and extensions, and their remote servers (a WSL distro or an SSH
- * host that an editor connects to runs the extension there, reading the server's machine settings).
+ * host that an editor connects to runs the extension there, reading the server's machine settings). The window never words them: each
+ * `EditorStatus` carries its label.
  */
 export type Editor =
   | 'code'
@@ -157,6 +166,8 @@ export interface IdeHook {
 /** `editors::EditorStatus`: one editor's state for one agent's extension. */
 export interface EditorStatus {
   editor: Editor
+  /** What to call it: "VS Code", "Cursor Server". */
+  label: string
   /** The agent the extension runs. */
   command: string
   /** The editor has been run on this machine (for a server, connected to it). */
@@ -253,6 +264,8 @@ export type ErrorKind = 'parse' | 'other'
 export interface ConfigFault {
   kind: ErrorKind
   message: string
+  /** The file that couldn't be read, to open it; null when no home folder could be named. */
+  path: string | null
 }
 
 /** `commands::Place`: one of EnvRouter's own places to show in the file manager. `mcpFiles`: the folder a profile's MCP files are rendered into. */

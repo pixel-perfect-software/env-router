@@ -2,6 +2,7 @@
   {
     "command": "claude",
     "label": "Claude Code",
+    "mark": "claude",
     "envVar": "CLAUDE_CONFIG_DIR",
     "defaultPath": "~/.claude",
     "install": "curl -fsSL https://claude.ai/install.sh | bash",
@@ -19,6 +20,7 @@
   {
     "command": "copilot",
     "label": "Copilot CLI",
+    "mark": "copilot",
     "envVar": "COPILOT_HOME",
     "defaultPath": "~/.copilot",
     "install": "curl -fsSL https://gh.io/copilot-install | bash",

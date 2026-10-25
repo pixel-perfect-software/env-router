@@ -17,7 +17,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::commands;
+use crate::commands::{self, ConfigFault};
 use crate::editors::Editor;
 use crate::shell::{self, Shell};
 use crate::shims;
@@ -63,6 +63,9 @@ pub struct Response {
     /// With `error`: what kind of failure, as the window's config read reports it.
     #[serde(rename = "errorKind", skip_serializing_if = "Option::is_none")]
     pub error_kind: Option<ErrorKind>,
+    /// With a failed `get_config`: the file that couldn't be read (`ConfigFault::path`), so a window on the other end can open it.
+    #[serde(rename = "errorPath", skip_serializing_if = "Option::is_none")]
+    pub error_path: Option<String>,
 }
 
 /// What a session answers once an uninstall through it has finished. The window on the other end
@@ -99,6 +102,7 @@ impl<'a> Session<'a> {
                 ok: None,
                 error: Some(format!("not a request: {err}")),
                 error_kind: None,
+                error_path: None,
             },
         }
     }
@@ -117,13 +121,23 @@ impl<'a> Session<'a> {
                 ok: Some(value),
                 error: None,
                 error_kind: None,
+                error_path: None,
             },
-            Err(err) => Response {
-                id: request.id,
-                ok: None,
-                error: Some(err.to_string()),
-                error_kind: Some(err.kind()),
-            },
+            Err(err) => {
+                // A finished uninstall has no home to name, as the app's guard in `home()` has none.
+                let fault = if request.command == "get_config" && !self.uninstalled {
+                    ConfigFault::in_home(err, self.home)
+                } else {
+                    ConfigFault::from(err)
+                };
+                Response {
+                    id: request.id,
+                    ok: None,
+                    error: Some(fault.message),
+                    error_kind: Some(fault.kind),
+                    error_path: fault.path,
+                }
+            }
         }
     }
 
@@ -400,6 +414,12 @@ mod tests {
         std::fs::write(home.join(".envrouter/config.json"), "{ half-typed").unwrap();
         let broken = answer(home, r#"{"id": 10, "command": "get_config"}"#);
         assert_eq!(broken["errorKind"], "parse", "{broken}");
+        // ... and names the file, for a window that can't build the path itself.
+        assert_eq!(
+            broken["errorPath"],
+            home.join(".envrouter/config.json").display().to_string(),
+            "{broken}"
+        );
     }
 
     /// A remote window can ask what an uninstall would do, but a call that leaves out `dryRun`
@@ -460,6 +480,8 @@ mod tests {
 
         let after = ask(r#"{"id": 4, "command": "get_config"}"#);
         assert_eq!(after["error"], UNINSTALLED, "{after}");
+        // No file to name once it is gone, as with the app's guard.
+        assert!(after.get("errorPath").is_none(), "{after}");
         assert_eq!(after["id"], 4);
     }
 

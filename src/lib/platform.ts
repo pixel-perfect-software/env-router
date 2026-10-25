@@ -1,10 +1,11 @@
 // The window follows the conventions of the system it runs on: ⌘ or Ctrl in shortcuts, the
 // Keychain or a keyring, Finder or the file manager. The backend reports the platform in
 // `SetupStatus`; until that arrives the browser's user agent stands in, so the first render
-// already uses the right modifier.
+// already uses the right modifier and titlebar.
 
 import { createContext, useContext } from 'react'
-import type { Platform } from './types'
+import platformWords from './platformWords.json'
+import type { Platform, SetupStatus } from './types'
 
 export interface PlatformInfo {
   platform: Platform
@@ -25,26 +26,46 @@ export interface PlatformInfo {
   revealLabel: string
   /** The same for something named: "Reveal config.json in Finder", "Show config.json in Files". The menu bar's words come from `Platform::reveal_label`. */
   revealLabelOf: (what: string) => string
+  /** What a value sealed in the store reads as in its field: "In Keychain", "In the keyring". */
+  sealedLabel: string
+  /**
+   * Whether the window draws its own title bar (the band beside the traffic lights, which need room at the left) rather than sitting
+   * under the system's. The build decides, in `tauri.conf.json` and `tauri.linux.conf.json`, and nothing can ask it before the first paint.
+   */
+  ownsTitlebar: boolean
+  /** Whether the ground is translucent over the system's vibrancy (`windowEffects` in `tauri.conf.json`), decided before the first paint like `ownsTitlebar`. */
+  vibrant: boolean
 }
+
+/** What `SetupStatus` says that the window words itself: the backend's answer where it has one, else the platform's own. */
+export type PlatformWords = Pick<SetupStatus, 'secretStore' | 'sealedLabel' | 'secretStoreProblem' | 'fileManager' | 'revealVerb'>
 
 /** A guess from the user agent, for before the backend has answered. */
 export const guessPlatform = (): Platform => (/Mac/.test(navigator.userAgent) ? 'macos' : /Windows/.test(navigator.userAgent) ? 'windows' : 'linux')
 
-/** "Reveal in Finder" and "Reveal config.json in Finder", or "Show … in Files" off macOS: the file manager is named once. */
-const revealing = (platform: Platform, what?: string) => {
-  const [verb, manager] = platform === 'macos' ? ['Reveal', 'Finder'] : ['Show', 'Files']
-  return what ? `${verb} ${what} in ${manager}` : `${verb} in ${manager}`
-}
+/**
+ * What the backend answers (`Platform::secret_store_name`, `sealed_label`, `file_manager`, `reveal_verb`), for the window's first render
+ * and for when the status can't be read. `platformWords.json` is the one copy; a Rust test holds it to `platform.rs`, and the browser
+ * mock answers from it too. The backend's words replace these once they arrive.
+ */
+const defaultWords = (platform: Platform): PlatformWords => ({ ...platformWords[platform], secretStoreProblem: null })
 
-export const platformInfo = (platform: Platform, secretStore?: string, storeProblem: string | null = null): PlatformInfo => ({
+/** "Reveal in Finder" and "Reveal config.json in Finder", or "Show … in Files": the file manager is named once. */
+const revealing = ({ revealVerb, fileManager }: PlatformWords, what?: string) =>
+  what ? `${revealVerb} ${what} in ${fileManager}` : `${revealVerb} in ${fileManager}`
+
+export const platformInfo = (platform: Platform, words: PlatformWords = defaultWords(platform)): PlatformInfo => ({
   platform,
   isMac: platform === 'macos',
   anchorsMenus: platform === 'macos',
-  secretStore: secretStore ?? (platform === 'macos' ? 'Keychain' : platform === 'linux' ? 'keyring' : 'Credential Manager'),
-  storeProblem,
-  canLock: storeProblem === null,
-  revealLabel: revealing(platform),
-  revealLabelOf: (what) => revealing(platform, what),
+  secretStore: words.secretStore,
+  storeProblem: words.secretStoreProblem,
+  canLock: words.secretStoreProblem === null,
+  revealLabel: revealing(words),
+  revealLabelOf: (what) => revealing(words, what),
+  sealedLabel: words.sealedLabel,
+  ownsTitlebar: platform === 'macos',
+  vibrant: platform === 'macos',
 })
 
 export const PlatformContext = createContext<PlatformInfo>(platformInfo(guessPlatform()))

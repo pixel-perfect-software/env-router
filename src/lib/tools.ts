@@ -25,6 +25,8 @@
 //   installer in the Claude Code docs; copilot: gh.io/copilot-install, the install script in the
 //   Copilot CLI docs; both checked 2026-10-24). It's shown as text to copy, never run by the
 //   window, and `withAgents` doesn't copy it, since Rust never needs it.
+// - `mark` names the logo `AgentMark` draws (Claude's starburst, not the Claude Code mascot, which blurs
+//   into a blob at 14px); the window's alone, like `label`.
 
 import registry from './agents.json'
 import type { AgentDef, ConfigState, IdeHook, McpFiles, McpInjection } from './types'
@@ -33,6 +35,8 @@ export interface KnownTool {
   /** The command the shim stands in for, and the key in `Profile.tools`. */
   command: string
   label: string
+  /** Which logo `AgentMark` draws (a slug in `icons.tsx`); one it has no logo for, or none, gets the generic bot. */
+  mark?: string
   envVar: string
   /** Where the agent keeps its config when the variable isn't set, as shown to the user. */
   defaultPath: string

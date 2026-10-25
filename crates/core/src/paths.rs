@@ -13,6 +13,11 @@ pub fn root(home: &Path) -> PathBuf {
     home.join(".envrouter")
 }
 
+/// The profiles and servers: `~/.envrouter/config.json`.
+pub fn config_file(home: &Path) -> PathBuf {
+    root(home).join(crate::config::CONFIG_FILE)
+}
+
 /// Put first on PATH by the shell integration. Holds one symlink per routed tool, each
 /// pointing at [`shim_binary`].
 pub fn shims(home: &Path) -> PathBuf {

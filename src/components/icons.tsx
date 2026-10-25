@@ -33,6 +33,7 @@ import {
   X,
 } from 'lucide-react'
 import { type SimpleIcon, siClaude, siGithubcopilot } from 'simple-icons'
+import { toolByCommand } from '../lib/tools'
 import type { McpServer } from '../lib/types'
 
 const sized = (Glyph: LucideIcon, size: number) =>
@@ -78,12 +79,16 @@ export function TransportIcon({ transport, size = 14 }: { transport: McpServer['
   return <Glyph size={size} strokeWidth={1.5} absoluteStrokeWidth aria-hidden="true" />
 }
 
-// Claude's starburst rather than the Claude Code mascot, which blurs into a blob at 14px.
-const AGENT_MARKS: Record<string, SimpleIcon> = { claude: siClaude, copilot: siGithubcopilot }
+// Keyed by the `mark` slug of an agent in agents.json. Claude's starburst rather than the Claude Code mascot, which blurs into a blob at 14px.
+const MARKS = new Map<string, SimpleIcon>([
+  ['claude', siClaude],
+  ['copilot', siGithubcopilot],
+])
 
-/** An agent's logo, or a generic bot for one added by hand. */
+/** An agent's logo, or a generic bot for one added by hand or whose registry entry names no mark, or one drawn here. */
 export function AgentMark({ command, size = 14, className = '' }: { command: string; size?: number; className?: string }) {
-  const mark = AGENT_MARKS[command]
+  const slug = toolByCommand(command)?.mark
+  const mark = slug === undefined ? undefined : MARKS.get(slug)
   if (!mark) return <Bot size={size} strokeWidth={1.5} absoluteStrokeWidth aria-hidden="true" className={className} />
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={`shrink-0 ${className}`}>

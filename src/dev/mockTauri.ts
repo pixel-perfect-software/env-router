@@ -45,7 +45,7 @@
 import { emit } from '@tauri-apps/api/event'
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
 import { isSecret } from '../lib/mcp'
-import { platformInfo } from '../lib/platform'
+import platformWords from '../lib/platformWords.json'
 import { ideHooks, withAgents } from '../lib/tools'
 import type {
   AgentDef,
@@ -275,15 +275,24 @@ const secretIds = (cfg: ConfigState) => new Set(Object.values(cfg.mcpServers).fl
 let stored = storeOff ? new Set<string>() : secretIds(config)
 let shimInstalled = params.get('shim') !== 'stale'
 
-/** `Platform::secret_store_name` */
-const storeName = platformInfo(platform).secretStore
+/** `Platform::secret_store_name`, `sealed_label`, `file_manager` and `reveal_verb`, from the file a Rust test holds to `platform.rs`. */
+const { secretStore: storeName, sealedLabel, fileManager, revealVerb } = platformWords[platform]
+
+/** `paths::shim_binary` */
+const SHIM = `${HOME}/.envrouter/bin/envrouter-shim`
+/** `paths::config_file` */
+const CONFIG_FILE = `${HOME}/.envrouter/config.json`
 
 const setup: Omit<SetupStatus, 'shimInstalled'> = {
   platform,
   secretStore: storeName,
+  sealedLabel,
   // `store::usable`: the Keychain is never asked (it would prompt), so only the others report a missing store.
   secretStoreProblem: storeOff && !macos ? storeError : null,
+  fileManager,
+  revealVerb,
   shimsDir: `${HOME}/.envrouter/shims`,
+  shimPath: SHIM,
   // `shell::status`, with bash's files as `bash_startup_files` picks them for each platform.
   shells: macos
     ? [
@@ -330,7 +339,6 @@ const editorSpots: EditorSpot[] = [
   spot('remoteCursor', 'Cursor Server', remote('.cursor-server'), wsl, false),
   spot('remoteWindsurf', 'Windsurf Server', remote('.windsurf-server'), false, false),
 ]
-const SHIM = `${HOME}/.envrouter/bin/envrouter-shim`
 /** The wrapper each settings file names, keyed by file and setting. */
 const wrappers = new Map<string, string>(
   wsl ? [] : [[`${appConfig}/Code - Insiders/User/settings.json claudeCode.claudeProcessWrapper`, `${HOME}/bin/claude-wrap`]],
@@ -339,6 +347,7 @@ const editorStatus = (spot: EditorSpot, command: string, hook: IdeHook): EditorS
   const wrapper = wrappers.get(`${spot.settingsFile} ${hook.setting}`) ?? null
   return {
     editor: spot.editor,
+    label: spot.label,
     command,
     available: spot.available,
     extensionInstalled: spot.extensions.includes(hook.extension),
@@ -873,8 +882,8 @@ const uninstall = (dryRun: boolean): UninstallReport => {
 const respond = async (cmd: string, args: unknown): Promise<unknown> => {
   const a = (args ?? {}) as Record<string, unknown>
   if (uninstalled && !cmd.startsWith('plugin:') && !UNGUARDED.includes(cmd)) {
-    // `get_config` is the one command that rejects with its kind too.
-    if (cmd === 'get_config') throw { kind: 'other', message: UNINSTALLED } satisfies ConfigFault
+    // `get_config` is the one command that rejects with its kind too. `home()` refuses before any file is named, so there's no `path`.
+    if (cmd === 'get_config') throw { kind: 'other', message: UNINSTALLED, path: null } satisfies ConfigFault
     throw UNINSTALLED
   }
   switch (cmd) {
@@ -923,11 +932,13 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
         throw {
           kind: 'other',
           message: `${HOME}/.envrouter/config.json is from a newer version of EnvRouter. Update EnvRouter to use it.`,
+          path: CONFIG_FILE,
         } satisfies ConfigFault
       if (configBroken)
         throw {
           kind: 'parse',
           message: `${HOME}/.envrouter/config.json is not valid JSON: expected \`,\` or \`}\` at line 7 column 5`,
+          path: CONFIG_FILE,
         } satisfies ConfigFault
       // `config::load_or_init`
       if (configMissing) {

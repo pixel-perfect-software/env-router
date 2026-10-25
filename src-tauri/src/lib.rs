@@ -173,7 +173,9 @@ async fn blocking<T: Send + 'static>(
 #[tauri::command]
 async fn get_config(app: AppHandle) -> std::result::Result<ConfigState, ConfigFault> {
     let home = home(&app)?;
-    Ok(blocking(move || commands::get_config(&home)).await?)
+    tauri::async_runtime::spawn_blocking(move || commands::read_config(&home))
+        .await
+        .map_err(|err| ConfigFault::from(Error::Command(err.to_string())))?
 }
 
 #[tauri::command]

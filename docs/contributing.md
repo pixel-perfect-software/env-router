@@ -200,7 +200,8 @@ command. A new window command goes in `crates/ops/src/commands.rs`, gets a Tauri
   library; the shim runs the secrets helper only when a server needs a secret. `otool -L` on the
   release shim lists only `libSystem`, `ldd` only libc and libgcc.
 - **Platform differences live in one place.** Rust asks `crates/core/src/platform.rs`; the
-  window asks `usePlatform()` in `src/lib/platform.ts`. Don't check the OS inline.
+  window asks `usePlatform()` in `src/lib/platform.ts`. Don't check the OS inline, and don't
+  word a platform's name for something in the window when the backend can send it (`SetupStatus`).
 - **Compare canonical paths,** never `$PWD` text.
 - **Agents are data.** Nothing in Rust branches on an agent's name. Adding an agent is one entry
   in `src/lib/agents.json`, after checking that its variable relocates logins too, not only
