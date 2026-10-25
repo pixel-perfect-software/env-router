@@ -168,6 +168,7 @@ pub fn probe(home: &Path) -> Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shell::Shell;
     use std::fs;
     use std::os::unix::fs::{symlink, PermissionsExt};
 
@@ -355,7 +356,9 @@ mod tests {
     /// What a new terminal has to run is what its startup files and prompt hooks make of it: a
     /// program on the PATH they build, or an alias or function, wherever the machine's default
     /// shell reads them. The agents are made-up ones the config names, so nothing on the machine
-    /// running the test can be mistaken for them.
+    /// running the test can be mistaken for them. Asked of the login shell and of bash too: on a
+    /// Mac that is `/bin/bash`, 3.2, which has no `BASH_ALIASES` and is the stock login shell of
+    /// some users, but never the one a zsh developer's machine would run.
     #[test]
     fn the_probe_reads_the_path_and_the_aliases_the_startup_files_build() {
         let scratch = tempfile::tempdir().unwrap();
@@ -404,19 +407,32 @@ mod tests {
         )
         .unwrap();
 
-        let gone_agents = probe(&home).unwrap();
-        let is_missing = |name: &str| gone_agents.contains(&name.to_string());
-        assert!(is_missing("ghostagent121"), "{gone_agents:?}");
-        assert!(!is_missing("fakeagent121"), "{gone_agents:?}");
-        assert!(!is_missing("liveagent121"), "{gone_agents:?}");
-        assert!(!is_missing("fnagent121"), "{gone_agents:?}");
-        // Past a modifier, and to a function or a builtin of the shell's, which no PATH holds.
-        for name in ["noglobagent121", "tofnagent121", "tobuiltinagent121"] {
-            assert!(!is_missing(name), "{name}: {gone_agents:?}");
+        let mut shells = vec![shell::login_shell_kind()];
+        if !shells.contains(&Shell::Bash) {
+            shells.push(Shell::Bash);
         }
-        // fish's aliases are functions, which can't be seen through.
-        let fish = shell::login_shell_kind_is_fish();
-        assert_eq!(is_missing("deadagent121"), !fish, "{gone_agents:?}");
+        for shell in shells {
+            let offered = offered(&home);
+            let report = shell::login_shell_report_as(shell, &home, &offered.commands).unwrap();
+            let gone_agents = missing(&home, &offered.commands, &report);
+            let is_missing = |name: &str| gone_agents.contains(&name.to_string());
+            let said = |what: &str| format!("{} {what}: {gone_agents:?}", shell.name());
+            assert!(is_missing("ghostagent121"), "{}", said("ghost"));
+            assert!(!is_missing("fakeagent121"), "{}", said("fake"));
+            assert!(!is_missing("liveagent121"), "{}", said("live"));
+            assert!(!is_missing("fnagent121"), "{}", said("fn"));
+            // Past a modifier, and to a function or a builtin of the shell's, which no PATH holds.
+            for name in ["noglobagent121", "tofnagent121", "tobuiltinagent121"] {
+                assert!(!is_missing(name), "{}", said(name));
+            }
+            // fish's aliases are functions, which can't be seen through.
+            assert_eq!(
+                is_missing("deadagent121"),
+                shell != Shell::Fish,
+                "{}",
+                said("dead")
+            );
+        }
     }
 
     /// The offered agents are the registry's plus any the config names; a config that can't be

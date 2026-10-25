@@ -573,7 +573,7 @@ pub struct LoginReport {
     pub aliases: BTreeMap<String, String>,
     /// For each alias, the program word it starts with and what the shell calls it (`builtin`,
     /// `function`, `command`, `none`…), so an alias to a builtin or to a function of the user's
-    /// counts without a program of that name. Empty where the shell can't say (bash before 4).
+    /// counts without a program of that name. Empty where the shell can't say (fish).
     pub alias_words: BTreeMap<String, (String, String)>,
 }
 
@@ -643,7 +643,7 @@ pub const LOGIN_PATH_FOR_A_CHECK: Duration = Duration::from_secs(30);
 /// [`login_path`], but run again if what is kept is older than `max_age`, for the commands it
 /// was kept for as well, so the agents' answer isn't lost to it.
 pub fn login_path_recent(home: &Path, max_age: Duration) -> Result<String> {
-    report_of(home, &[], Some(max_age)).map(|report| report.path)
+    report_of(login_shell_kind(), home, &[], Some(max_age)).map(|report| report.path)
 }
 
 /// One run of the user's login shell the way a new terminal starts it: its PATH, and for each of
@@ -651,15 +651,26 @@ pub fn login_path_recent(home: &Path, max_age: Duration) -> Result<String> {
 /// [`LOGIN_REPORT_TTL`]); an ask about a command the kept run wasn't asked about runs again,
 /// about those and the kept ones.
 pub fn login_shell_report(home: &Path, commands: &[String]) -> Result<LoginReport> {
-    report_of(home, commands, None)
+    report_of(login_shell_kind(), home, commands, None)
+}
+
+/// [`login_shell_report`] as `shell` answers it rather than the login shell, so a test can ask
+/// the shells a machine has besides its own (macOS's `/bin/bash` is 3.2, a zsh user's never runs).
+#[cfg(test)]
+pub(crate) fn login_shell_report_as(
+    shell: Shell,
+    home: &Path,
+    commands: &[String],
+) -> Result<LoginReport> {
+    report_of(shell, home, commands, None)
 }
 
 fn report_of(
+    shell: Shell,
     home: &Path,
     commands: &[String],
     newer_than: Option<Duration>,
 ) -> Result<LoginReport> {
-    let shell = login_shell_kind();
     cached_report(
         home,
         shell,
@@ -792,15 +803,8 @@ impl Drop for RunDone<'_> {
     }
 }
 
-/// Whether the shell a new terminal runs is fish, whose aliases are functions. For tests that
-/// have to expect what the machine's own shell makes of an alias.
-#[cfg(test)]
-pub(crate) fn login_shell_kind_is_fish() -> bool {
-    login_shell_kind() == Shell::Fish
-}
-
 /// The shell a new terminal window runs: the user's login shell, else the platform's usual one.
-fn login_shell_kind() -> Shell {
+pub(crate) fn login_shell_kind() -> Shell {
     login_shell()
         .and_then(|login| {
             login
@@ -825,7 +829,9 @@ fn ask_login_shell(shell: Shell, home: &Path, commands: &[String]) -> Result<Log
     // Per command, in order: "<command>: <kind>" as the shell words it (`whence -w`, `type -t`);
     // for zsh and bash what an alias says, in the form `Shell::alias_expansion` reads; and for an
     // alias the kind of its program word ("<command> <word>: <kind>"): zsh splits the value as
-    // the shell would (`(z)`), bash by blanks, from `BASH_ALIASES` (4.0 and later).
+    // the shell would (`(z)`), bash by blanks. bash gets the value from `alias -- <name>`, whose
+    // value is already quoted for the shell, so `eval` unquotes it (`BASH_ALIASES` is only in 4.0
+    // and later, and macOS's `/bin/bash` is 3.2).
     let script = match shell {
         Shell::Fish => format!(
             "{hooks}; printf '%s\\n' \"{PATH_MARK}\"(string join : $PATH); for __c in {list}; set -l __k (type -t $__c 2>/dev/null); printf '%s\\n' \"{KIND}$__c: $__k\"; end"
@@ -834,7 +840,7 @@ fn ask_login_shell(shell: Shell, home: &Path, commands: &[String]) -> Result<Log
             "{hooks}; print -r -- \"{PATH_MARK}$PATH\"; for __c in {list}; do print -r -- \"{KIND}$(whence -w -- $__c)\"; print -r -- \"{ALIAS}${{aliases[$__c]}}\"; for __w in ${{(z)aliases[$__c]}}; do case $__w in *=*|{skipped}) ;; *) print -r -- \"{WORD}$__c $(whence -w -- $__w)\"; break ;; esac; done; done"
         ),
         Shell::Bash => format!(
-            "{hooks}; printf '%s\\n' \"{PATH_MARK}$PATH\"; for __c in {list}; do printf '%s\\n' \"{KIND}$__c: $(type -t -- $__c)\" \"{ALIAS}$(alias -- $__c 2>/dev/null)\"; read -ra __ws <<< \"${{BASH_ALIASES[$__c]}}\"; for __w in \"${{__ws[@]}}\"; do case $__w in *=*|{skipped}) ;; *) printf '%s\\n' \"{WORD}$__c $__w: $(type -t -- $__w)\"; break ;; esac; done; done"
+            "{hooks}; printf '%s\\n' \"{PATH_MARK}$PATH\"; for __c in {list}; do __a=$(alias -- $__c 2>/dev/null); __v=; case $__a in \"alias $__c=\"*) eval \"__v=${{__a#alias $__c=}}\" ;; esac; printf '%s\\n' \"{KIND}$__c: $(type -t -- $__c)\" \"{ALIAS}$__a\"; read -ra __ws <<< \"$__v\"; for __w in \"${{__ws[@]}}\"; do case $__w in *=*|{skipped}) ;; *) printf '%s\\n' \"{WORD}$__c $__w: $(type -t -- $__w)\"; break ;; esac; done; done"
         ),
     };
     let output = shell.start(home, home, &script)?;
