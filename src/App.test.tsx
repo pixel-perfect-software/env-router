@@ -358,6 +358,38 @@ describe('the server list', () => {
     expect(actions.getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('names who loads a server on the whole row, since the dots under the … can’t be hovered', async () => {
+    await openServers()
+    expect(row('playwright').getAttribute('title')).toBe('Used by Personal, Scratch')
+    expect(row('slow').getAttribute('title')).toBeNull()
+  })
+
+  it('presses the … only when it opened the menu, not for a right-click', async () => {
+    const user = await openServers()
+    const actions = screen.getByRole('button', { name: 'Actions for github' })
+    await menuOf(user, 'github')
+    expect(actions.getAttribute('aria-expanded')).toBe('false')
+    await user.keyboard('{Escape}')
+
+    await user.click(actions)
+    await screen.findByRole('menu')
+    expect(actions.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('says how many servers match once typing pauses, not at each keystroke', async () => {
+    const user = await openServers()
+    const status = within(screen.getByRole('complementary', { name: 'MCP servers' })).getByRole('status')
+    await user.type(filter(), 'docker')
+    expect(status.textContent).toBe('')
+    await waitFor(() => expect(status.textContent).toBe('1 server shown'))
+  })
+
+  it('reads the count as "of", not as a slash, to a screen reader', async () => {
+    const user = await openServers()
+    await user.type(filter(), 'docker')
+    expect(screen.getByText('1 of 6')).toBeTruthy()
+  })
+
   it('duplicates the server it was opened on into a new one', async () => {
     const user = await openServers()
     await user.click((await menuOf(user, 'github')).getByRole('menuitem', { name: 'Duplicate…' }))

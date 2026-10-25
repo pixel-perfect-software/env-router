@@ -28,6 +28,7 @@ import { usePlatform } from '../lib/platform'
 import { plural } from '../lib/text'
 import { withAgents } from '../lib/tools'
 import type { ConfigState, ImportCandidate, McpServer } from '../lib/types'
+import { useDebounced } from '../lib/useDebounced'
 import { LocalIcon, OpenIcon, RemoteIcon, SignInIcon } from './icons'
 import { ServerMark } from './ServerMark'
 import { Button, CheckBox, ChevronIcon, CloseIcon, Footer, IconButton, LockIcon, Mark, SearchField, Segmented, StatusTile } from './ui'
@@ -97,6 +98,8 @@ export function CatalogView({
   const search = useRef<HTMLInputElement>(null)
   useEffect(() => search.current?.focus(), [])
   const entries = filterCatalog(catalog(home), filter)
+  // Said once typing has paused, not at every keystroke.
+  const announced = useDebounced(plural(entries.length, 'server', 'servers'), 400)
   const set = <K extends keyof CatalogFilter>(key: K, value: CatalogFilter[K]) => setFilter((f) => ({ ...f, [key]: value }))
   return (
     <section
@@ -109,7 +112,7 @@ export function CatalogView({
       <Header title="Catalog" count={entries.length} onClose={onBack} focusClose={false} />
       {/* The count, for a screen reader, as the search and filters narrow the list. */}
       <p role="status" className="sr-only">
-        {plural(entries.length, 'server', 'servers')}
+        {announced}
       </p>
       <div className="flex flex-col gap-2 px-5 pb-3">
         <SearchField
@@ -145,7 +148,7 @@ export function CatalogView({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-0.5 pb-5">
         {entries.length === 0 ? (
-          <div className="flex items-center gap-2 rounded-[8px] bg-well py-1.5 pr-1.5 pl-3">
+          <div className="flex items-center gap-2 rounded-[8px] bg-well py-1.5 pr-2 pl-3">
             <p className="min-w-0 flex-1 text-small text-ink-2 italic">No servers match</p>
             <Button kind="plain" onClick={() => setFilter(NO_FILTER)}>
               Clear Filters

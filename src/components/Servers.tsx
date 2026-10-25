@@ -11,6 +11,7 @@ import { confirmDiscardServer } from '../lib/confirm'
 import { duplicateDraft, type ProfileChip, profilesUsing, type ServerDraft, serverMatches, TRANSPORTS } from '../lib/mcp'
 import { plural, queryWords } from '../lib/text'
 import type { ConfigState, McpServer, ToolInfo } from '../lib/types'
+import { useDebounced } from '../lib/useDebounced'
 import { CatalogIcon, ImportIcon, MoreIcon, PasteIcon, TransportIcon } from './icons'
 import { ServerEditor } from './ServerEditor'
 import { ServerMark } from './ServerMark'
@@ -106,6 +107,8 @@ export function ServersView({
   const showFilter = names.length > FILTER_FROM || query !== ''
   const words = queryWords(query)
   const shown = names.filter((name) => serverMatches(name, config.mcpServers[name], words))
+  // Said once typing has paused, not at every keystroke.
+  const announced = useDebounced(filtering ? `${plural(shown.length, 'server', 'servers')} shown` : '', 400)
   const clearFilter = () => {
     setQuery('')
     search.current?.focus()
@@ -140,11 +143,12 @@ export function ServersView({
     if (await onConfirmDelete(name)) focusRow(next)
   }
 
-  // The server whose menu is open, which keeps its "…" in view and its row washed: `popup` answers when the menu is dismissed.
-  const [menuFor, setMenuFor] = useState<string | null>(null)
+  // The server whose menu is open, which washes its row (and, when its "…" opened the menu, holds that button in view, pressed):
+  // `popup` answers when the menu is dismissed. A right-click presses nothing, as on a folder row.
+  const [menuFor, setMenuFor] = useState<{ name: string; byButton: boolean } | null>(null)
   /** A row's menu, from a right-click (at the pointer) or its "…" (under the button), so the keyboard reaches what the pointer does. */
-  const showMenu = async (name: string, below?: HTMLElement) => {
-    setMenuFor(name)
+  const showMenu = async (name: string, below?: HTMLElement, byButton = false) => {
+    setMenuFor({ name, byButton })
     try {
       await onMenu(
         [
@@ -174,7 +178,18 @@ export function ServersView({
       <aside aria-label="MCP servers" className="flex w-[232px] shrink-0 flex-col rounded-card bg-card shadow-card min-[820px]:w-[264px]">
         <header className="flex items-center gap-1 py-2 pr-2 pl-3.5 hair-b">
           <h2 className="min-w-0 flex-1 truncate text-title font-semibold">
-            Servers <span className="font-normal text-ink-2">{filtering ? `${shown.length}/${names.length}` : names.length}</span>
+            Servers{' '}
+            <span className="font-normal text-ink-2">
+              {filtering ? (
+                <>
+                  {/* "1/6" reads as "1 slash 6". */}
+                  <span aria-hidden="true">{`${shown.length}/${names.length}`}</span>
+                  <span className="sr-only">{`${shown.length} of ${names.length}`}</span>
+                </>
+              ) : (
+                names.length
+              )}
+            </span>
           </h2>
           <IconButton id="add-server" label="Add by Hand" onClick={() => go({ kind: 'edit', name: null })}>
             <PlusIcon />
@@ -207,7 +222,7 @@ export function ServersView({
             <SearchField ref={search} label="Filter servers" placeholder="Filter servers" value={query} onChange={setQuery} />
             {/* The count, for a screen reader, as the filter narrows the list. */}
             <p role="status" className="sr-only">
-              {filtering ? `${plural(shown.length, 'server', 'servers')} shown` : ''}
+              {announced}
             </p>
           </div>
         )}
@@ -234,13 +249,15 @@ export function ServersView({
                     className={`group/row relative rounded-[7px] ${
                       isSelected
                         ? 'bg-tint'
-                        : `hover:bg-[color-mix(in_srgb,var(--er-ink)_5%,transparent)] ${menuFor === name ? 'bg-[color-mix(in_srgb,var(--er-ink)_5%,transparent)]' : ''}`
+                        : `hover:bg-[color-mix(in_srgb,var(--er-ink)_5%,transparent)] ${menuFor?.name === name ? 'bg-[color-mix(in_srgb,var(--er-ink)_5%,transparent)]' : ''}`
                     }`}
                   >
                     <button
                       type="button"
                       data-server={name}
                       aria-current={isSelected ? 'true' : undefined}
+                      // Who loads it, one hover away on the whole row (the dots under the "…" can't be hovered), and the button's description for assistive tech.
+                      title={users.length > 0 ? `Used by ${users.map((p) => p.name).join(', ')}` : undefined}
                       onClick={() => go({ kind: 'edit', name })}
                       onContextMenu={(event) => {
                         event.preventDefault()
@@ -263,13 +280,12 @@ export function ServersView({
                       {/* The right edge is the dots' place, 26px wide at least: the "…" sits over it, so no row's text runs under that button.
                           The dots give way while the row is hovered or the button focused or open. */}
                       <span
+                        aria-hidden="true"
                         className="flex min-w-[26px] shrink-0 items-center justify-end gap-0.5 group-hover/row:opacity-0 group-has-[[aria-haspopup]:focus-visible]/row:opacity-0 group-has-[[aria-expanded=true]]/row:opacity-0"
-                        title={users.length > 0 ? `Used by ${users.map((p) => p.name).join(', ')}` : undefined}
                       >
                         {users.slice(0, 4).map((p) => (
                           <ProfileDot key={p.id} color={colors.get(p.id) ?? ''} size={2} />
                         ))}
-                        {users.length > 0 && <span className="sr-only">Used by {users.map((p) => p.name).join(', ')}</span>}
                       </span>
                     </button>
                     {/* The right-click menu for the keyboard, as a folder row has: quiet until the row is hovered or the button focused, and held in
@@ -277,9 +293,9 @@ export function ServersView({
                     <IconButton
                       label={`Actions for ${name}`}
                       aria-haspopup="menu"
-                      aria-expanded={menuFor === name}
+                      aria-expanded={menuFor?.name === name && menuFor.byButton}
                       className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100"
-                      onClick={(event) => void showMenu(name, event.currentTarget)}
+                      onClick={(event) => void showMenu(name, event.currentTarget, true)}
                     >
                       <MoreIcon />
                     </IconButton>
