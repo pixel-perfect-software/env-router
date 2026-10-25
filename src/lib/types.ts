@@ -255,6 +255,15 @@ export interface ConfigFault {
   message: string
 }
 
+/** `commands::Place`: one of EnvRouter's own places to show in the file manager. `mcpFiles`: the folder a profile's MCP files are rendered into. */
+export type Place = { kind: 'config' } | { kind: 'root' } | { kind: 'mcpFiles'; profileId: string }
+
+/** `tray::RevealFailed`, the payload of the `reveal-failed` event: the menu bar's reveal couldn't show `place`. */
+export interface RevealFailed {
+  place: Place
+  message: string
+}
+
 /** `mcp_probe::ServerCheck`: what starting a server and asking for its tools found. */
 export interface ServerCheck {
   /** needsLogin: the server answered 401, so the agent has to sign in with /mcp. unsupported: an SSE server, which can't be checked here. */

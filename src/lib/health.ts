@@ -13,9 +13,9 @@ export type Health =
   /**
    * `dismissible`: a one-off action failed. A failing status refresh isn't: it clears itself once one works. `title` names what
    * stopped when "Something went wrong" is too little; `busy`: Try Again is running, and the banner stays as it was until it answers.
-   * `message` holds one sentence per line.
+   * `message` holds one sentence per line. `attempt` counts the failures shown, so the same message again is a new line to announce.
    */
-  | { kind: 'error'; message: string; dismissible: boolean; title?: string; busy?: boolean }
+  | { kind: 'error'; message: string; dismissible: boolean; title?: string; busy?: boolean; attempt?: number }
   /** An uninstall is running: no accent action, no way to turn a shell on, until it stops or the app quits. */
   | { kind: 'uninstalling' }
   /** A save went through but couldn't finish something after it (see `SaveOutcome`). Dismissed by the user, or replaced by the next save's. */

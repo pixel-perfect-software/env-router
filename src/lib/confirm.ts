@@ -71,6 +71,9 @@ export const confirmStartOver = () =>
 export const tellBackedUp = (backup: string) =>
   message(`Your old config.json is at ${backup}. Copy it back over config.json to return to it.`, { title: 'Started over', kind: 'info' })
 
+/** The native note for a failed reveal that no banner can show: another error holds the banner's place, or the inspector hides it. */
+export const tellRevealFailed = (title: string, reason: string) => message(reason, { title, kind: 'error' })
+
 /**
  * The native confirmation before EnvRouter is uninstalled. `store` is what the secrets' home is called here ("Keychain",
  * "keyring"); the CLI's `uninstall` plan says the same things.

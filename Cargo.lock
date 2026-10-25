@@ -1153,6 +1153,8 @@ dependencies = [
  "envrouter-build-support",
  "envrouter-core",
  "envrouter-ops",
+ "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

@@ -52,7 +52,7 @@ saved to `config.agents.*.ide`.
   `src-tauri/src/lib.rs` wraps each one (adding only the tray and the async runtime), and
   `ops::rpc` serves the same ones by name to `envrouter rpc`, one JSON line each way, the bridge
   a window will use to manage a WSL distro (`wsl.exe -d <distro> -- ~/.envrouter/bin/envrouter
-  rpc`). A new command goes in all three; a test pins `rpc::COMMANDS` to the window's handler list (`window_commands!` in `lib.rs`). `open_in_editor` isn't served over rpc, nor are the app-lifecycle commands `set_unsaved_edits` and `quit_app`, which live only in `src-tauri`.
+  rpc`). A new command goes in all three; a test pins `rpc::COMMANDS` to the window's handler list (`window_commands!` in `lib.rs`). `open_in_editor` and `reveal_place` (which shows one of EnvRouter's own places, `commands::Place`: config.json revealed, `~/.envrouter` or a profile's MCP folder opened, through the opener's Rust API so the window needs no capability for it; the menu bar's Reveal config.json and Open ~/.envrouter call the same `show_located`, which opens only a real folder (a file, or a link to one, is refused, since the system would run it), and, on a failure, show the window with the reason through the `reveal-failed` event unless an uninstall has begun) aren't served over rpc, nor are the app-lifecycle commands `set_unsaved_edits` and `quit_app`, which live only in `src-tauri`.
 - `crates/cli` (`envrouter`), `crates/shim`, `crates/keychain` (secrets), and
   `crates/build-support`, which builds the shim and helper for the build scripts that bundle or
   test them.

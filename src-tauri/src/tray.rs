@@ -12,7 +12,8 @@ use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::ActivationPolicy;
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
-use envrouter_ops::commands::SetupStatus;
+use envrouter_core::platform::Platform;
+use envrouter_ops::commands::{self, Place, SetupStatus};
 use envrouter_ops::shell::{self, Shell};
 
 const TRAY_ID: &str = "main";
@@ -22,6 +23,18 @@ pub const CHECK_FOLDER_EVENT: &str = "check-folder";
 
 /// Emitted to the window when the menu's "Uninstall EnvRouter…" is chosen.
 pub const UNINSTALL_EVENT: &str = "uninstall-requested";
+
+/// Emitted to the window when the menu's reveal of one of EnvRouter's places failed, so the
+/// window can say why ([`RevealFailed`]).
+pub const REVEAL_FAILED_EVENT: &str = "reveal-failed";
+
+/// `RevealFailed` in `src/lib/types.ts`.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RevealFailed {
+    pub place: Place,
+    pub message: String,
+}
 
 /// Decoded at compile time, so the app needs no PNG decoder at runtime.
 const ICON: Image<'static> = tauri::include_image!("icons/tray.png");
@@ -42,6 +55,8 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
                 show_window(app);
                 let _ = app.emit(CHECK_FOLDER_EVENT, ());
             }
+            "reveal-config" => reveal_in_background(app, Place::Config),
+            "open-root" => reveal_in_background(app, Place::Root),
             "uninstall" => {
                 show_window(app);
                 let _ = app.emit(UNINSTALL_EVENT, ());
@@ -109,6 +124,35 @@ fn set_menu(app: &AppHandle, summary: (String, Option<String>)) {
     }
 }
 
+/// Shows `place` in the file manager without bringing the window forward: the menu bar is
+/// where the user is. On Linux this is a blocking D-Bus call, and menu events arrive on the
+/// main thread, so it runs on a thread of its own. Only a failure brings the window back, with
+/// the reason in its banner ([`REVEAL_FAILED_EVENT`]), and not one that follows an uninstall:
+/// the window drops it (the uninstall's own banner owns the place), so it would come forward for
+/// nothing.
+fn reveal_in_background(app: &AppHandle, place: Place) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        // The lease on the home folder ends with the lookup, not with the file manager's answer.
+        let shown = crate::home(&app)
+            .and_then(|home| commands::locate(&home, &place))
+            .and_then(crate::show_located);
+        if let Err(err) = shown {
+            if crate::GATE.raised() {
+                return;
+            }
+            show_window(&app);
+            let _ = app.emit(
+                REVEAL_FAILED_EVENT,
+                RevealFailed {
+                    place,
+                    message: err.to_string(),
+                },
+            );
+        }
+    });
+}
+
 /// Brings the window back, and on macOS puts the app in the Dock while it's open.
 pub fn show_window(app: &AppHandle) {
     #[cfg(target_os = "macos")]
@@ -158,6 +202,20 @@ fn menu(app: &AppHandle, (status, profiles): (String, Option<String>)) -> tauri:
         app,
         "open",
         "Open EnvRouter",
+        true,
+        None::<&str>,
+    )?));
+    items.push(Box::new(MenuItem::with_id(
+        app,
+        "reveal-config",
+        Platform::current().reveal_label(config::CONFIG_FILE),
+        true,
+        None::<&str>,
+    )?));
+    items.push(Box::new(MenuItem::with_id(
+        app,
+        "open-root",
+        "Open ~/.envrouter",
         true,
         None::<&str>,
     )?));
@@ -219,7 +277,23 @@ fn summary(app: &AppHandle, on: impl Iterator<Item = Shell>) -> (String, Option<
 
 #[cfg(test)]
 mod tests {
-    use super::list_of;
+    use super::{list_of, RevealFailed};
+    use envrouter_ops::commands::Place;
+
+    /// `RevealFailed` in `src/lib/types.ts`: the `reveal-failed` event's payload.
+    #[test]
+    fn reveal_failed_matches_the_typescript_type() {
+        let payload = RevealFailed {
+            place: Place::McpFiles {
+                profile_id: "p".into(),
+            },
+            message: "m".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(payload).unwrap(),
+            serde_json::json!({ "place": { "kind": "mcpFiles", "profileId": "p" }, "message": "m" })
+        );
+    }
 
     #[test]
     fn lists_shells_as_the_window_does() {

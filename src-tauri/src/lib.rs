@@ -11,7 +11,7 @@ use envrouter_core::config::{self, ConfigState, IdeHook, McpServer};
 use envrouter_core::{paths, Error, Result};
 use tauri::{AppHandle, Manager, WindowEvent};
 
-use envrouter_ops::commands::{self, ConfigFault, SaveOutcome, SetupStatus};
+use envrouter_ops::commands::{self, ConfigFault, Located, Place, SaveOutcome, SetupStatus};
 use envrouter_ops::editors::{Editor, EditorStatus};
 use envrouter_ops::shell::{self, FolderCheck, Preview, Shell, ShellStatus};
 use envrouter_ops::uninstall::{Caller, UninstallReport};
@@ -76,6 +76,12 @@ impl Gate {
     /// The state stays usable if a command panicked while holding the lock.
     fn lock(&self) -> MutexGuard<'_, GateState> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Whether an uninstall is running or has finished: the window is saying so itself, and drops
+    /// whatever else the menu bar would tell it.
+    fn raised(&self) -> bool {
+        self.lock().uninstalled
     }
 
     /// Counts a command in, or turns it away once an uninstall has begun.
@@ -310,6 +316,34 @@ async fn open_in_editor(app: AppHandle, path: String) -> Result<()> {
     blocking(move || commands::open_in_editor(&home, &path)).await
 }
 
+/// Shows what `commands::locate` found in the file manager: a file selected in its folder, a
+/// folder opened. The opener's Rust API, not its plugin commands, so the window needs no
+/// capability for it (see `capabilities/default.json`); and `locate` is why the window can't
+/// ask for any other path. It takes no home folder, so no [`Lease`] is held while it waits: a
+/// file manager that doesn't answer for a while mustn't make an uninstall refuse.
+fn show_located(located: Located) -> Result<()> {
+    let (path, shown) = match located {
+        Located::File(path) => {
+            let shown = tauri_plugin_opener::reveal_item_in_dir(&path);
+            (path, shown)
+        }
+        Located::Folder(path) => {
+            let shown = tauri_plugin_opener::open_path(&path, None::<&str>);
+            (path, shown)
+        }
+    };
+    shown.map_err(|err| Error::Command(format!("Couldn't show `{}`: {err}", path.display())))
+}
+
+/// Acts on the machine the window runs on, so `envrouter rpc` doesn't serve it.
+#[tauri::command]
+async fn reveal_place(app: AppHandle, place: Place) -> Result<()> {
+    let home = home(&app)?;
+    // The home folder (and its lease) goes with the lookup; showing the place comes after.
+    let located = blocking(move || commands::locate(&home, &place)).await?;
+    blocking(move || show_located(located)).await
+}
+
 #[tauri::command]
 async fn preview_folder(
     app: AppHandle,
@@ -394,6 +428,7 @@ window_commands![
     check_folder,
     preview_folder,
     open_in_editor,
+    reveal_place,
     check_mcp_server,
     npm_dist_tags,
     get_mcp_tools,
@@ -480,11 +515,16 @@ mod tests {
     use super::*;
 
     /// A remote window (a WSL distro's, over `envrouter rpc`) must be able to make every call
-    /// the local one makes, except opening a file, which would open it on the other machine,
-    /// and quitting this app, which isn't the other machine's business.
+    /// the local one makes, except opening or showing a file, which would happen on the other
+    /// machine, and quitting this app, which isn't the other machine's business.
     #[test]
     fn rpc_serves_every_window_command_but_the_local_ones() {
-        const LOCAL: &[&str] = &["open_in_editor", "set_unsaved_edits", "quit_app"];
+        const LOCAL: &[&str] = &[
+            "open_in_editor",
+            "reveal_place",
+            "set_unsaved_edits",
+            "quit_app",
+        ];
         let mut window: Vec<&str> = WINDOW_COMMANDS
             .iter()
             .copied()
@@ -558,12 +598,15 @@ mod tests {
         let wait = Duration::from_secs(30);
         assert!(gate.enter().is_ok());
 
+        assert!(!gate.raised());
         let stopped = gate.uninstall(false, wait, || {
             assert!(gate.enter().is_err());
+            assert!(gate.raised());
             Ok(report(&["Stopped."]))
         });
         assert!(!stopped.unwrap().finished());
         assert!(gate.enter().is_ok());
+        assert!(!gate.raised());
 
         gate.uninstall(false, wait, || Err(Error::NoHome))
             .unwrap_err();
@@ -576,6 +619,7 @@ mod tests {
             .uninstall(false, wait, || Ok(report(&[])))
             .unwrap()
             .finished());
+        assert!(gate.raised());
         let again = gate.uninstall(false, wait, || panic!("a second run must not start"));
         // The words `src/dev/mockTauri.ts` repeats.
         for refused in [again.unwrap_err(), gate.enter().err().unwrap()] {
