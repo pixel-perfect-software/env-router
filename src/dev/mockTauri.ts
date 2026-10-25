@@ -40,7 +40,7 @@
 // every package (at 1.4.0, `next` at 2.0.0-beta.2) except one whose name ends in `-nope`.
 // The profile card's context menu and a folder row's "…" menu pop up as a DOM stand-in, at the position `popup(at)` names or else at the
 // pointer (where it last was: a menu opened from the keyboard on Linux opens there too), and give focus back to where it was when closed by Escape or a choice, as a native menu leaves it. `window.__mockMenuReveal(place)`
-// reveals as the menu bar's items do, without the window, and emits `reveal-failed` when that fails.
+// reveals as the menu bar's items do, without the window, and emits `reveal-failed` when that fails (not once an uninstall has begun, as the tray drops it).
 
 import { emit } from '@tauri-apps/api/event'
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
@@ -1045,7 +1045,7 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       return { status: 'ok', tools, message: null, log: null } satisfies ServerCheck
     }
     case 'reveal_place': {
-      // `commands::locate`, then `show_place`
+      // `commands::locate`, then `show_located`
       const place = a.place as Place
       let path: string
       if (place.kind === 'config') {
@@ -1205,11 +1205,12 @@ window.__mockFix = () => {
   failing = null
 }
 
-// `tray::reveal_in_background`
+// `tray::reveal_in_background`: a failure after the uninstall began (the gate refused it, or it ran on) isn't told, as the window has nothing to add.
 window.__mockMenuReveal = async (place) => {
   try {
     await respond('reveal_place', { place })
   } catch (message) {
+    if (uninstalled) return
     await emit('reveal-failed', { place, message: String(message) } satisfies RevealFailed)
   }
 }

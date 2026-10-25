@@ -115,6 +115,9 @@ export default function App() {
     load,
     commit: save,
   } = useConfigStore(refreshEditors)
+  // The banner's message as of the latest render, for a Try Again that finishes later to tell whether the banner is still its own.
+  const shownError = useRef<string | null>(null)
+  shownError.current = actionError
   // What the failed action in `actionError` was, for the banner's Try Again.
   const [retry, setRetry] = useState<Retry | null>(null)
   // Counts the failures shown, so a repeat of the same message is a new line in the banner, which the status region announces again.
@@ -445,14 +448,14 @@ export default function App() {
   }, [])
 
   // The menu bar reveals without the window; when that fails it comes forward and says why, with Try Again. Only where the banner
-  // can show it: a load or status error outranks an action's, and an uninstall owns the banner (the reveal then failed with the
-  // uninstall's own message, and a stopped one's Try Again must stay).
+  // can show it: a load or status error outranks an action's, and an uninstall owns the banner (a stopped one's Try Again must stay).
   const revealFailed = useRef((_: RevealFailed) => {})
   revealFailed.current = ({ place, message }) => {
     if (uninstalling.current || (actionError !== null && (retry?.kind === 'uninstall' || retry?.kind === 'quit'))) return
-    // The unreadable-config banner has a slot for a failed Reveal; the status error's has none, so that one is told natively.
-    if (loadError) setOpenError({ action: 'reveal', message })
-    else if (setupError) tellRevealFailed(message).catch(() => {})
+    // The unreadable-config banner has a slot for config.json's Reveal alone; every other place has nowhere in it. The status error's
+    // banner has no slot, and the open inspector keeps the banner behind its scrim, out of reach, so those are told natively.
+    if (loadError && place.kind === 'config') setOpenError({ action: 'reveal', message })
+    else if (loadError || setupError || inspecting) tellRevealFailed(placeTitle(place), message).catch(() => {})
     else {
       focusRetry.current = true
       fail(message, { kind: 'place', place })
@@ -465,18 +468,29 @@ export default function App() {
     }
   }, [])
 
+  // Set when a reveal's Try Again succeeds with focus on it, so Check Folder… takes focus once the banner has gone.
+  const focusAfterRetry = useRef(false)
+
   /**
    * Try Again for a reveal. The banner stays as it was, Try Again busy, until the answer, so focus stays on the button instead of
-   * falling to the page when the banner goes and comes back; a success clears it, another failure is shown as a new one.
+   * falling to the page when the banner goes and comes back; a success clears it, another failure is shown as a new one. Only while
+   * the banner is still this reveal's own: one that something else replaced or cleared meanwhile (a newer failure, a save) stays as
+   * that left it.
    */
   const retryReveal = async (work: () => Promise<void>) => {
+    const mine = shownError.current
     setRetrying(true)
     try {
       await work()
-      setActionError(null)
+      if (shownError.current === mine) {
+        focusAfterRetry.current = document.activeElement?.id === 'try-again'
+        setActionError(null)
+      }
     } catch (err) {
-      setActionError(errorMessage(err))
-      setAttempt((n) => n + 1)
+      if (shownError.current === mine) {
+        setActionError(errorMessage(err))
+        setAttempt((n) => n + 1)
+      }
     } finally {
       setRetrying(false)
     }
@@ -521,12 +535,27 @@ export default function App() {
   // The menu last shown. A native menu is a resource Tauri keeps until it's closed, and `popup` may resolve before an item's action
   // has run, so the previous one is closed when the next is built, never right after its own popup.
   const shownMenu = useRef<Menu | null>(null)
-  /** Pops a native menu: at `at` in the window, or at the pointer. */
+  // Counts the menus asked for, so a call that a newer one overtook while it awaited gives its menu up instead of leaving it open.
+  const menuAsk = useRef(0)
+  useEffect(
+    () => () => {
+      menuAsk.current++
+      shownMenu.current?.close().catch(() => {})
+    },
+    [],
+  )
+  /** Pops a native menu: at `at` in the window, or at the pointer. The latest ask wins. */
   const popupMenu = async (items: MenuOptions['items'], at?: LogicalPosition) => {
+    const ask = ++menuAsk.current
     const previous = shownMenu.current
     shownMenu.current = null
     await previous?.close().catch(() => {})
+    if (ask !== menuAsk.current) return
     const menu = await Menu.new({ items })
+    if (ask !== menuAsk.current) {
+      await menu.close().catch(() => {})
+      return
+    }
     shownMenu.current = menu
     await menu.popup(at)
   }
@@ -560,11 +589,10 @@ export default function App() {
   /** A folder row's "…": the folder's own menu, under the button, so the keyboard reaches what the right-click offers. */
   const showFolderMenu = async (folder: string, anchor: HTMLElement) => {
     try {
-      // Under the button on macOS, where a position is the webview's own. On Linux it is the toplevel window's, which with the system's title
-      // bar starts above the webview (muda's GTK `show_context_menu`), and nothing the window may call says by how much, so the pointer it is.
+      // Under the button where a position is the webview's own (`anchorsMenus`); elsewhere the pointer, as the right-click menu opens.
       const box = anchor.getBoundingClientRect()
       setMenuFolder(folder)
-      await popupMenu(folderItems(folder), platform.isMac ? new LogicalPosition(box.left, box.bottom) : undefined)
+      await popupMenu(folderItems(folder), platform.anchorsMenus ? new LogicalPosition(box.left, box.bottom) : undefined)
     } catch {
       // No native menu (the browser preview): the right-click menu carries the same items.
     } finally {
@@ -591,6 +619,10 @@ export default function App() {
     if (focusRetry.current && health.kind === 'error' && !health.busy) {
       focusRetry.current = false
       document.getElementById('try-again')?.focus()
+    } else if (focusAfterRetry.current && health.kind !== 'error') {
+      // The banner that held focus is gone; Check Folder… is where the next thing starts, as after the docket's Dismiss.
+      focusAfterRetry.current = false
+      document.getElementById('check-folder')?.focus()
     }
   })
   const accents = accentsOf(health, view, inspecting, docketHasFix(check, setup, routedTools, home))

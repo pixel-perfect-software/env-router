@@ -15,6 +15,12 @@ export interface PlatformInfo {
   storeProblem: string | null
   /** Whether a value can go to the store at all. Decided here, once: the editor locks nothing, and saves what was typed as plain text, when it can't. */
   canLock: boolean
+  /**
+   * Whether a native menu can be popped at a point of the webview. On macOS a position is the webview's own. On Linux it is the toplevel
+   * window's, which with the system's title bar starts above the webview (muda's GTK `show_context_menu`), and nothing the window may call
+   * says by how much, so menus open at the pointer there.
+   */
+  anchorsMenus: boolean
   /** What revealing a file in the file manager is called: "Reveal in Finder" on macOS, "Show in Files" elsewhere. */
   revealLabel: string
   /** The same for something named: "Reveal config.json in Finder", "Show config.json in Files". The menu bar's words come from `Platform::reveal_label`. */
@@ -33,6 +39,7 @@ const revealing = (platform: Platform, what?: string) => {
 export const platformInfo = (platform: Platform, secretStore?: string, storeProblem: string | null = null): PlatformInfo => ({
   platform,
   isMac: platform === 'macos',
+  anchorsMenus: platform === 'macos',
   secretStore: secretStore ?? (platform === 'macos' ? 'Keychain' : platform === 'linux' ? 'keyring' : 'Credential Manager'),
   storeProblem,
   canLock: storeProblem === null,

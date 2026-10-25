@@ -76,6 +76,8 @@ export function ProfileInspector({
   // Why the MCP folder couldn't be shown. Under its button, not in the footer: a footer that grows would push the button, which still
   // has focus, under the error.
   const [revealError, setRevealError] = useState<string | null>(null)
+  // Whether Reveal MCP Folder is waiting on its answer, so a second press can't start another and flicker the error.
+  const [revealing, setRevealing] = useState(false)
   const revealErrorLine = useRef<HTMLParagraphElement>(null)
   useEffect(() => {
     if (revealError) revealErrorLine.current?.scrollIntoView({ block: 'nearest' })
@@ -186,11 +188,14 @@ export function ProfileInspector({
 
   const revealMcp = async () => {
     if (!onRevealMcp) return
+    setRevealing(true)
     setRevealError(null)
     try {
       await onRevealMcp()
     } catch (err) {
       setRevealError(errorMessage(err))
+    } finally {
+      setRevealing(false)
     }
   }
 
@@ -400,7 +405,7 @@ export function ProfileInspector({
             {/* What the saved profile hands out, so it follows the saved servers, not the checkboxes above. */}
             {onRevealMcp && profile && hasMcpFiles(profile) && (
               <>
-                <Button className="mt-2" onClick={revealMcp}>
+                <Button className="mt-2" busy={revealing} onClick={revealMcp}>
                   {revealLabelOf('MCP Folder')}
                 </Button>
                 <p ref={revealErrorLine} role="alert" className="mt-1.5 text-small text-problem empty:hidden">

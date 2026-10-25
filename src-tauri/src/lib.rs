@@ -79,6 +79,12 @@ impl Gate {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// Whether an uninstall is running or has finished: the window is saying so itself, and drops
+    /// whatever else the menu bar would tell it.
+    fn raised(&self) -> bool {
+        self.lock().uninstalled
+    }
+
     /// Counts a command in, or turns it away once an uninstall has begun.
     fn enter(&'static self) -> Result<Lease> {
         let mut state = self.lock();
@@ -593,12 +599,15 @@ mod tests {
         let wait = Duration::from_secs(30);
         assert!(gate.enter().is_ok());
 
+        assert!(!gate.raised());
         let stopped = gate.uninstall(false, wait, || {
             assert!(gate.enter().is_err());
+            assert!(gate.raised());
             Ok(report(&["Stopped."]))
         });
         assert!(!stopped.unwrap().finished());
         assert!(gate.enter().is_ok());
+        assert!(!gate.raised());
 
         gate.uninstall(false, wait, || Err(Error::NoHome))
             .unwrap_err();
@@ -611,6 +620,7 @@ mod tests {
             .uninstall(false, wait, || Ok(report(&[])))
             .unwrap()
             .finished());
+        assert!(gate.raised());
         let again = gate.uninstall(false, wait, || panic!("a second run must not start"));
         // The words `src/dev/mockTauri.ts` repeats.
         for refused in [again.unwrap_err(), gate.enter().err().unwrap()] {

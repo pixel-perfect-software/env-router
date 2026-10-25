@@ -4,7 +4,8 @@
 // the mock for one URL, renders App and drives it as a user would. happy-dom loads no CSS, so what a rule means
 // on screen is read from the DOM: `inert` and the accent fill's `bg-accent` class.
 
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { emit } from '@tauri-apps/api/event'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
@@ -208,6 +209,41 @@ describe("a folder row's menu as a native menu", () => {
   })
 })
 
+describe('native menus asked for in quick succession', () => {
+  it('close the one that was overtaken while it was being built, and the last when the window goes', async () => {
+    await open('?scenario=populated')
+    const { __TAURI_INTERNALS__: internals } = window as unknown as {
+      __TAURI_INTERNALS__: { invoke: (command: string, ...rest: unknown[]) => Promise<unknown> }
+    }
+    const real = internals.invoke
+    // The first menu is slow to build: the second is asked for, and shown, before it exists.
+    let built = (): void => {}
+    let slow = true
+    let building = (): void => {}
+    const started = new Promise<void>((resolve) => (building = resolve))
+    const invoked = vi.spyOn(internals, 'invoke').mockImplementation(async (command, ...rest) => {
+      if (command === 'plugin:menu|new' && slow) {
+        slow = false
+        building()
+        await new Promise<void>((resolve) => (built = resolve))
+      }
+      return real.call(internals, command, ...rest)
+    })
+    const actions = await screen.findByRole('button', { name: 'Actions for ~/dev/work' })
+    fireEvent.click(actions)
+    await started
+    fireEvent.contextMenu(actions)
+    await screen.findByRole('menu')
+    built()
+    const closed = () => invoked.mock.calls.filter(([command]) => command === 'plugin:resources|close').map(([, args]) => args)
+    await waitFor(() => expect(closed()).toHaveLength(1))
+
+    cleanup()
+    await waitFor(() => expect(closed()).toHaveLength(2))
+    expect(new Set(closed().map((args) => JSON.stringify(args))).size).toBe(2)
+  })
+})
+
 describe('MCP folder', () => {
   it("is offered in the inspector only for a saved profile with servers, and asks for that profile's folder", async () => {
     const user = await open('?scenario=mcp')
@@ -219,6 +255,25 @@ describe('MCP folder', () => {
     await user.click(screen.getByRole('button', { name: 'Edit Personal' }))
     await user.click(inspector().getByRole('button', { name: 'Reveal MCP Folder in Finder' }))
     expect(invoked).toHaveBeenCalledWith('reveal_place', { place: { kind: 'mcpFiles', profileId: 'p1' } }, undefined)
+  })
+
+  it('is busy while it asks, so a second press does not start another reveal', async () => {
+    const user = await open('?scenario=mcp')
+    await user.click(await screen.findByRole('button', { name: 'Edit Personal' }))
+    const { __TAURI_INTERNALS__: internals } = window as unknown as {
+      __TAURI_INTERNALS__: { invoke: (command: string, ...rest: unknown[]) => Promise<unknown> }
+    }
+    const real = internals.invoke
+    const revealed = vi.fn()
+    vi.spyOn(internals, 'invoke').mockImplementation((command, ...rest) => {
+      if (command !== 'reveal_place') return real.call(internals, command, ...rest)
+      revealed()
+      return new Promise(() => {})
+    })
+    const reveal = inspector().getByRole('button', { name: 'Reveal MCP Folder in Finder' })
+    await user.click(reveal)
+    await user.click(reveal)
+    expect(revealed).toHaveBeenCalledTimes(1)
   })
 
   it('says why it failed under its button, not in the footer that would grow over the focused button, with the path as a mono value', async () => {
@@ -269,6 +324,61 @@ describe('a reveal from the menu bar that failed', () => {
     await waitFor(() => expect(screen.getByText(/No file manager could show it/)).not.toBe(first))
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Try Again' }))
     expect(document.activeElement).toBe(tryAgain)
+  })
+
+  it('is told natively when the banner has no room for it: behind the inspector, or beside an unreadable config.json for another place', async () => {
+    const confirm = vi.fn().mockReturnValue(true)
+    vi.stubGlobal('confirm', confirm)
+    const user = await open('?scenario=mcp&fail=reveal')
+    await user.click(await screen.findByRole('button', { name: 'Edit Personal' }))
+    await window.__mockMenuReveal({ kind: 'root' })
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.stringContaining("Couldn't open ~/.envrouter")))
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('No file manager could show it'))
+    await user.click(inspector().getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('button', { name: 'Try Again' })).toBeNull()
+
+    cleanup()
+    confirm.mockClear()
+    await open('?scenario=broken&fail=reveal')
+    await screen.findByRole('button', { name: 'Open config.json' })
+    await window.__mockMenuReveal({ kind: 'root' })
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.stringContaining("Couldn't open ~/.envrouter")))
+    expect(screen.queryByText(/No file manager could show it/)).toBeNull()
+  })
+
+  it('leaves a banner that something else replaced while its Try Again was asking', async () => {
+    const user = await open('?scenario=populated&fail=reveal')
+    await screen.findByText(/Routing is on in zsh/)
+    await window.__mockMenuReveal({ kind: 'root' })
+    const tryAgain = await screen.findByRole('button', { name: 'Try Again' })
+
+    const { __TAURI_INTERNALS__: internals } = window as unknown as {
+      __TAURI_INTERNALS__: { invoke: (command: string, ...rest: unknown[]) => Promise<unknown> }
+    }
+    const real = internals.invoke
+    let answer = () => {}
+    vi.spyOn(internals, 'invoke').mockImplementation((command, ...rest) =>
+      command === 'reveal_place' ? new Promise((resolve) => (answer = () => resolve(null))) : real.call(internals, command, ...rest),
+    )
+    await user.click(tryAgain)
+    await window.__mockMenuReveal({ kind: 'config' })
+    await screen.findByText("Couldn't show config.json")
+
+    answer()
+    await new Promise((resolve) => setTimeout(resolve))
+    expect(screen.getByText("Couldn't show config.json")).toBeTruthy()
+  })
+
+  it('moves focus to Check Folder… when Try Again succeeds, since the button that held it is gone', async () => {
+    const user = await open('?scenario=populated&fail=reveal')
+    await screen.findByText(/Routing is on in zsh/)
+    await window.__mockMenuReveal({ kind: 'root' })
+    const tryAgain = await screen.findByRole('button', { name: 'Try Again' })
+
+    window.__mockFix()
+    await user.click(tryAgain)
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Try Again' })).toBeNull())
+    expect(document.activeElement).toBe(document.getElementById('check-folder'))
   })
 
   it("sets the path in the Shells panel's note as a value too, as every other reveal failure does", async () => {
@@ -595,7 +705,8 @@ describe('Uninstall EnvRouter…', () => {
     await uninstallFromShells(user)
     await screen.findByText('EnvRouter is uninstalled')
 
-    await window.__mockMenuReveal({ kind: 'root' })
+    // The tray itself says nothing once the uninstall has begun; an event that still arrives (one sent just before) changes nothing.
+    await emit('reveal-failed', { place: { kind: 'root' }, message: 'No file manager could show it.' })
     await new Promise((resolve) => setTimeout(resolve))
     expect(screen.getByText('EnvRouter is uninstalled')).toBeTruthy()
     expect(screen.getByText('Quit EnvRouter yourself to finish.')).toBeTruthy()

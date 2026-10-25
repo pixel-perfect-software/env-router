@@ -127,7 +127,9 @@ fn set_menu(app: &AppHandle, summary: (String, Option<String>)) {
 /// Shows `place` in the file manager without bringing the window forward: the menu bar is
 /// where the user is. On Linux this is a blocking D-Bus call, and menu events arrive on the
 /// main thread, so it runs on a thread of its own. Only a failure brings the window back, with
-/// the reason in its banner ([`REVEAL_FAILED_EVENT`]).
+/// the reason in its banner ([`REVEAL_FAILED_EVENT`]), and not one that follows an uninstall:
+/// the window drops it (the uninstall's own banner owns the place), so it would come forward for
+/// nothing.
 fn reveal_in_background(app: &AppHandle, place: Place) {
     let app = app.clone();
     std::thread::spawn(move || {
@@ -136,6 +138,9 @@ fn reveal_in_background(app: &AppHandle, place: Place) {
             .and_then(|home| commands::locate(&home, &place))
             .and_then(crate::show_located);
         if let Err(err) = shown {
+            if crate::GATE.raised() {
+                return;
+            }
             show_window(&app);
             let _ = app.emit(
                 REVEAL_FAILED_EVENT,

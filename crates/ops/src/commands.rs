@@ -575,7 +575,26 @@ fn exists(path: &Path) -> Result<bool> {
     }
 }
 
-/// Finds `place` under `home`, or says why it isn't there yet. It never reads config.json, so it
+/// `path` as a folder to open, or why it isn't one. Opening hands the path to the system, which
+/// *runs* a file it is given (an app, a `.command` script), so only a real folder qualifies. A
+/// link to a folder does (a `~/.envrouter` kept in a dotfiles repo is one); a link to anything
+/// else, or a link to nothing, does not. `absent` is what to say when nothing is there, and
+/// `not_a_folder` when something else is.
+fn folder(path: &Path, absent: &str, not_a_folder: &str) -> Result<PathBuf> {
+    match std::fs::metadata(path) {
+        Ok(meta) if meta.is_dir() => Ok(path.to_path_buf()),
+        Ok(_) => Err(Error::Invalid(not_a_folder.into())),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            Err(Error::Invalid(absent.into()))
+        }
+        Err(source) => Err(Error::Io {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+/// Finds `place` under `home`, or says why it isn't there yet (or can't be shown). It never reads config.json, so it
 /// answers while the file is unreadable, which is when someone wants to see it.
 pub fn locate(home: &Path, place: &Place) -> Result<Located> {
     let root = paths::root(home);
@@ -591,29 +610,22 @@ pub fn locate(home: &Path, place: &Place) -> Result<Located> {
                 ))
             }
         }
-        Place::Root => {
-            if exists(&root)? {
-                Ok(Located::Folder(root))
-            } else {
-                Err(Error::Invalid(
-                    "There's no ~/.envrouter yet. EnvRouter makes it the next time the window reads its settings."
-                        .into(),
-                ))
-            }
-        }
+        Place::Root => folder(
+            &root,
+            "There's no ~/.envrouter yet. EnvRouter makes it the next time the window reads its settings.",
+            "~/.envrouter isn't a folder, so EnvRouter won't open it.",
+        )
+        .map(Located::Folder),
         Place::McpFiles { profile_id } => {
             if !config::is_file_name(profile_id) {
                 return Err(Error::Invalid("That isn't a profile.".into()));
             }
-            let folder = paths::mcp(home).join(profile_id);
-            if exists(&folder)? {
-                Ok(Located::Folder(folder))
-            } else {
-                Err(Error::Invalid(
-                    "This profile has no MCP files yet. EnvRouter writes them when the profile is saved with an MCP server."
-                        .into(),
-                ))
-            }
+            folder(
+                &paths::mcp(home).join(profile_id),
+                "This profile has no MCP files yet. EnvRouter writes them when the profile is saved with an MCP server.",
+                "This profile's MCP files aren't in a folder, so EnvRouter won't open them.",
+            )
+            .map(Located::Folder)
         }
     }
 }
@@ -1098,6 +1110,42 @@ mod tests {
         assert_eq!(
             locate(home, &place("../x")).unwrap_err().to_string(),
             "That isn't a profile."
+        );
+    }
+
+    /// Opening hands the path to the system, which runs a file it is given, so a folder to open
+    /// has to be one: a regular file, or a link to one, is refused; a link to a folder is fine.
+    #[cfg(unix)]
+    #[test]
+    fn opens_only_a_folder_and_not_a_file_or_a_link_to_one() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let program = home.join("program");
+        std::fs::write(&program, "").unwrap();
+        let mcp = |id: &str| Place::McpFiles {
+            profile_id: id.into(),
+        };
+
+        std::fs::write(paths::root(home), "").unwrap();
+        assert_eq!(
+            locate(home, &Place::Root).unwrap_err().to_string(),
+            "~/.envrouter isn't a folder, so EnvRouter won't open it."
+        );
+
+        std::fs::remove_file(paths::root(home)).unwrap();
+        std::fs::create_dir_all(paths::mcp(home)).unwrap();
+        std::os::unix::fs::symlink(&program, paths::mcp(home).join("to-file")).unwrap();
+        assert_eq!(
+            locate(home, &mcp("to-file")).unwrap_err().to_string(),
+            "This profile's MCP files aren't in a folder, so EnvRouter won't open them."
+        );
+
+        let target = home.join("elsewhere");
+        std::fs::create_dir(&target).unwrap();
+        std::os::unix::fs::symlink(&target, paths::mcp(home).join("to-folder")).unwrap();
+        assert_eq!(
+            locate(home, &mcp("to-folder")).unwrap(),
+            Located::Folder(paths::mcp(home).join("to-folder"))
         );
     }
 
