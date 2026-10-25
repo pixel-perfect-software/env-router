@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { Menu, type MenuOptions } from '@tauri-apps/api/menu'
 import { open } from '@tauri-apps/plugin-dialog'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
-import { type MouseEvent, useCallback, useEffect, useRef, useState } from 'react'
+import { type MouseEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Docket } from './components/Docket'
 import { type DropTarget, Frame } from './components/Frame'
 import { HealthLine } from './components/Health'
@@ -163,7 +163,9 @@ export default function App() {
     return () => document.removeEventListener('focusin', onFocus)
   }, [])
   const wasInspecting = useRef(false)
-  useEffect(() => {
+  // A layout effect, so focus moves in the commit that removes the inspector and the button that held it. A passive effect
+  // runs a task later when the close follows a save, and focus sits on the body in between.
+  useLayoutEffect(() => {
     if (wasInspecting.current && !inspecting) {
       const last = lastOutside.current
       // A card swaps its pencil for "Editing" while open, so the pencil that was pressed is a
@@ -643,7 +645,8 @@ export default function App() {
         ? { ...reported, title: placeTitle(retry.place) }
         : reported
   const health: Health = titled.kind === 'error' ? { ...titled, busy: titled.busy || retrying, attempt } : titled
-  useEffect(() => {
+  // In the commit that changes the banner, as the inspector's close does, so focus never sits on the body after its button goes.
+  useLayoutEffect(() => {
     if (focusRetry.current && health.kind === 'error' && !health.busy) {
       focusRetry.current = false
       document.getElementById('try-again')?.focus()
