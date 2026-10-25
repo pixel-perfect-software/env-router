@@ -791,15 +791,13 @@ mod tests {
         assert!(cli_installs(home), "no shim yet");
         let shim = paths::shim_binary(home);
         std::fs::create_dir_all(shim.parent().unwrap()).unwrap();
-        // A shim from 0.7.0 or earlier doesn't know the question: it exits 2, as 0.6.0's does.
-        // One that answers an older version is older too.
-        // Copied into place by `cp`, so no thread here holds it open for writing when it runs:
-        // on Linux, a fork meanwhile would make running it fail with "Text file busy".
-        let install_script = |script: &str| {
-            let source = shim.with_extension("src");
-            std::fs::write(&source, script).unwrap();
+        // Every shim here is copied into place by `cp`, never written by this process (as
+        // `shims::install_binary` does), so no thread here holds it open for writing when it
+        // runs: on Linux, a test thread that forks meanwhile inherits that handle, and running
+        // the shim fails with "Text file busy" until the fork execs.
+        let install = |source: &Path| {
             let copied = std::process::Command::new("cp")
-                .arg(&source)
+                .arg(source)
                 .arg(&shim)
                 .status()
                 .unwrap();
@@ -807,6 +805,13 @@ mod tests {
             std::fs::set_permissions(&shim, std::os::unix::fs::PermissionsExt::from_mode(0o755))
                 .unwrap();
         };
+        let install_script = |script: &str| {
+            let source = shim.with_extension("src");
+            std::fs::write(&source, script).unwrap();
+            install(&source);
+        };
+        // A shim from 0.7.0 or earlier doesn't know the question: it exits 2, as 0.6.0's does.
+        // One that answers an older version is older too.
         for old in [
             "#!/bin/sh\nexit 2\n".to_string(),
             format!("#!/bin/sh\necho {}\n", config::CONFIG_VERSION - 1),
@@ -818,7 +823,7 @@ mod tests {
         // the app's build.
         install_script(&format!("#!/bin/sh\necho {}\n", config::CONFIG_VERSION + 1));
         assert!(!cli_installs(home));
-        shims::install_binary(home, Path::new(env!("ENVROUTER_STAGED_SHIM"))).unwrap();
+        install(Path::new(env!("ENVROUTER_STAGED_SHIM")));
         assert!(!cli_installs(home));
     }
 
