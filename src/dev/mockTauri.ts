@@ -17,6 +17,9 @@
 //   byPromptHook, shadowedByShell (an alias, so no origin), notFound,
 //   notInstalled, owned (the owner sets no config for the agent), unowned (no profile owns the folder), shimFailed (empty message, as when macOS kills a shim), timeout or noPath (the
 //   two ways the shell itself fails). Use it with a populated scenario, where the shell is on.
+// - `&agents=` which agents are on a new terminal's PATH: a list of commands (`claude`, `claude,copilot`), `none`, or `unknown` (the
+//   shell didn't say, so nothing is marked). Every agent the window offers is there unless it says otherwise; VS Code and Insiders carry
+//   Claude Code's extension (see the editors below), so Claude isn't marked in a window that has them even with `none`.
 // - `&shim=stale`: the installed shim doesn't match the app's, until a save reinstalls it.
 // - `&store=off`: there's no secret store, so saving a secret (or checking a server that needs
 //   a saved one) fails as it does there, and a save that drops a secret goes through with a warning. Off macOS the setup status says so up front
@@ -42,14 +45,15 @@
 // pointer (where it last was: a menu opened from the keyboard on Linux opens there too), and give focus back to where it was when closed
 // by Escape or a choice, as a native menu leaves it. `window.__mockMenuReveal(place)` reveals as the menu bar's items do, without the
 // window, and emits `reveal-failed` when that fails (not once an uninstall has begun, as the tray drops it). `window.__mockMenuHelp(link)`
-// is the Help menu's item, opening the link and telling a failure the same way.
+// is the Help menu's item, opening the link and telling a failure the same way. `window.__mockMenuRequest({ kind: 'checkFolder' })` (or `checkLastFolder` with a folder)
+// is the menu bar's Check Folder… or Check Last Folder, left for the window to take.
 
 import { emit } from '@tauri-apps/api/event'
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
 import helpLinks from '../lib/helpLinks.json'
 import { isSecret } from '../lib/mcp'
 import platformWords from '../lib/platformWords.json'
-import { ideHooks, withAgents } from '../lib/tools'
+import { ideHooks, KNOWN_TOOLS, withAgents } from '../lib/tools'
 import type {
   AgentDef,
   ConfigFault,
@@ -63,6 +67,7 @@ import type {
   McpDialect,
   McpServer,
   McpValue,
+  MenuRequest,
   Pasted,
   Place,
   Platform,
@@ -287,6 +292,14 @@ const SHIM = `${HOME}/.envrouter/bin/envrouter-shim`
 /** `paths::config_file` */
 const CONFIG_FILE = `${HOME}/.envrouter/config.json`
 
+/** `installed::missing`, as `?agents=` sets it: the agents on the PATH, from which the missing ones follow (before an editor's extension is taken into account, as `get_setup_status` does). */
+const missingAgents = (() => {
+  const asked = params.get('agents')
+  if (asked === 'unknown') return null
+  const there = asked === 'none' ? [] : asked ? asked.split(',') : KNOWN_TOOLS.map((t) => t.command)
+  return KNOWN_TOOLS.map((t) => t.command).filter((command) => !there.includes(command))
+})()
+
 const setup: Omit<SetupStatus, 'shimInstalled'> = {
   platform,
   secretStore: storeName,
@@ -309,6 +322,7 @@ const setup: Omit<SetupStatus, 'shimInstalled'> = {
         shell('bash', wsl ? ['.profile', '.bashrc'] : ['.bashrc'], true, populated, true),
         shell('fish', ['.config/fish/config.fish'], false, false),
       ],
+  missingAgents,
 }
 /** `Shell::binary`: the login shell, then `/etc/shells`. Named in a timeout's message. */
 const shellBinary = (name: Shell) => ({ zsh: '/bin/zsh', bash: '/bin/bash', fish: macos ? '/opt/homebrew/bin/fish' : '/usr/bin/fish' })[name]
@@ -829,7 +843,7 @@ const failed = (status: ServerCheck['status'], message: string, log: string | nu
 const UNINSTALLED = 'EnvRouter is uninstalled. Quit it to finish.'
 
 /** The commands that never ask for the home folder, so the guard in `home()` doesn't stop them. */
-const UNGUARDED = ['set_unsaved_edits', 'quit_app', 'parse_mcp_json', 'open_help']
+const UNGUARDED = ['set_unsaved_edits', 'quit_app', 'take_menu_request', 'parse_mcp_json', 'open_help']
 
 /** `uninstall::remove_next`, as an app installed the usual way would hear it. */
 const removeNext = (): UninstallReport['removeNext'] =>
@@ -1002,6 +1016,12 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       unsaved = a.unsaved === true
       quitAsked = false
       return null
+    case 'take_menu_request': {
+      // `tray::take_menu_request`: what the menu bar left, once.
+      const request = menuRequest
+      menuRequest = null
+      return request
+    }
     case 'quit_app':
       unsaved = false
       console.info('quit')
@@ -1098,10 +1118,17 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
       configBroken = false
       return null
     }
-    case 'get_setup_status':
+    case 'get_setup_status': {
       // `shims::bundled`, when the app's own executable can't be found
       if (failing === 'status') throw 'current executable: No such file or directory (os error 2)'
-      return { ...setup, shimInstalled } satisfies SetupStatus
+      // `installed::probe` leaves out an agent an editor's extension carries.
+      const carried = (command: string) => editorSpots.some((spot) => spot.extensions.includes(ideHooks()[command]?.extension ?? ''))
+      return {
+        ...setup,
+        shimInstalled,
+        missingAgents: setup.missingAgents ? setup.missingAgents.filter((command) => !carried(command)) : null,
+      } satisfies SetupStatus
+    }
     case 'set_shell_integration': {
       await delay(300)
       const s = setup.shells.find((x) => x.shell === a.shell)
@@ -1212,6 +1239,9 @@ mockWindows('main')
 // let a later mutation here pass for "nothing changed" and skip the re-render.
 mockIPC(async (cmd, args) => structuredClone(await respond(cmd, args)), { shouldMockEvents: true })
 
+/** What the menu bar has left for the window to take (`tray::MENU_REQUEST`). */
+let menuRequest: MenuRequest | null = null
+
 declare global {
   interface Window {
     __mockDrop: (path: string, x: number, y: number) => Promise<void>
@@ -1221,6 +1251,7 @@ declare global {
     __mockFix: () => void
     __mockMenuReveal: (place: Place) => Promise<void>
     __mockMenuHelp: (link: HelpLink) => Promise<void>
+    __mockMenuRequest: (request: MenuRequest) => Promise<void>
   }
 }
 
@@ -1257,6 +1288,13 @@ window.__mockDeleteConfig = () => {
 }
 
 // `quit::may_quit`
+// The menu bar's Check Folder… and Check Last Folder: the request waits in the backend, and the window is told to take it (a window that
+// isn't listening yet takes it as it starts, as a real launch does).
+window.__mockMenuRequest = async (request) => {
+  menuRequest = request
+  await emit('menu-request')
+}
+
 window.__mockQuit = async () => {
   if (!unsaved || quitAsked) {
     console.info('quit')

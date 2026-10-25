@@ -22,10 +22,6 @@ use std::path::Path;
 
 use envrouter_core::{Error, Result};
 
-// Compiled for tests everywhere, so the logic is tested off Linux too.
-#[cfg(any(test, all(unix, not(target_os = "macos"))))]
-mod checker;
-
 #[cfg_attr(target_os = "macos", path = "store/macos.rs")]
 #[cfg_attr(all(unix, not(target_os = "macos")), path = "store/linux.rs")]
 #[cfg_attr(windows, path = "store/windows.rs")]

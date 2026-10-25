@@ -74,3 +74,10 @@ pub fn mcp_launch(home: &Path, profile_id: &str, command: &str) -> PathBuf {
 pub fn mcp_retired(home: &Path) -> PathBuf {
     root(home).join("mcp-retired.json")
 }
+
+/// The folder the window last checked, which the menu bar's Check Last Folder checks again. A
+/// file of its own because the menu bar is Rust and the window's `localStorage` isn't readable
+/// from it. It lives here so an uninstall removes it with the rest.
+pub fn last_folder(home: &Path) -> PathBuf {
+    root(home).join("last-folder.json")
+}

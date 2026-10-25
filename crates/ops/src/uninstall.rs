@@ -25,7 +25,7 @@ use std::fs::{self, File, TryLockError};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use envrouter_core::platform::{self, AppFound, Platform};
+use envrouter_core::platform::{self, AppFound, Platform, XdgHomes};
 use envrouter_core::{agents, config, paths, Error, Result};
 use serde::Serialize;
 
@@ -327,14 +327,12 @@ pub struct AppData {
 }
 
 impl AppData {
-    /// What `platform` keeps for the app under `home`. `xdg_data_home` is the caller's
-    /// `$XDG_DATA_HOME`, which the platform code only trusts inside `home`.
-    pub fn of(platform: Platform, home: &Path, xdg_data_home: Option<&Path>) -> Self {
+    /// What `platform` keeps for the app under `home`. `xdg` is what the caller read of
+    /// `$XDG_DATA_HOME` and `$XDG_CONFIG_HOME`, which the platform code only trusts inside `home`.
+    pub fn of(platform: Platform, home: &Path, xdg: &XdgHomes) -> Self {
         Self {
             delete: platform::app_data_dirs(platform, home),
-            outside: platform::app_data_dir_outside_home(platform, home, xdg_data_home)
-                .into_iter()
-                .collect(),
+            outside: platform::app_dirs_outside_home(platform, home, xdg),
             preferences: platform::preferences_domain(platform),
         }
     }
@@ -351,8 +349,8 @@ impl AppData {
 
 /// What the app deletes of its own as it exits after a finished uninstall, when its webview
 /// has let go. Returns a sentence for each folder it couldn't delete.
-pub fn remove_app_data(home: &Path, xdg_data_home: Option<&Path>) -> Vec<String> {
-    let mut app_data = AppData::of(Platform::current(), home, xdg_data_home);
+pub fn remove_app_data(home: &Path, xdg: &XdgHomes) -> Vec<String> {
+    let mut app_data = AppData::of(Platform::current(), home, xdg);
     // The uninstall's report already named these.
     app_data.outside.clear();
     app_data_step(&app_data, false, &Keychain, &mut Vec::new()).1
@@ -941,7 +939,7 @@ mod tests {
         // A real run is refused before it touches anything.
         fs::write(h.join(".zshrc"), BLOCK).unwrap();
         let store = FakeStore::default();
-        crate::commands::uninstall_with(h, false, &cli, &store, None).unwrap_err();
+        crate::commands::uninstall_with(h, false, &cli, &store, &XdgHomes::default()).unwrap_err();
         assert_eq!(fs::read_to_string(h.join(".zshrc")).unwrap(), BLOCK);
         assert_eq!(store.deletes.get(), 0);
 
@@ -1000,15 +998,32 @@ mod tests {
         );
     }
 
-    /// The webview's folders as the app's data lives on macOS: a folder with files in it, a
-    /// file, and three that aren't there. Made in a scratch home so that nothing real is named.
+    /// The one of `app_data`'s folders that sits directly in `~/Library/<library>`.
+    fn in_library(app_data: &AppData, library: &str) -> PathBuf {
+        app_data
+            .delete
+            .iter()
+            .find(|folder| {
+                folder
+                    .parent()
+                    .and_then(Path::file_name)
+                    .is_some_and(|name| name == library)
+            })
+            .unwrap_or_else(|| panic!("no folder in {library}"))
+            .clone()
+    }
+
+    /// The app's folders as they are on macOS, made in a scratch home so that nothing real is
+    /// named: the webview's with files in it, the preferences, which are a file, and the others
+    /// not there.
     fn app_data(home: &Path) -> AppData {
-        let app_data = AppData::of(Platform::MacOs, home, None);
-        let folders = &app_data.delete;
-        fs::create_dir_all(folders[0].join("WebsiteData")).unwrap();
-        fs::write(folders[0].join("WebsiteData/db"), "x").unwrap();
-        fs::create_dir_all(folders[4].parent().unwrap()).unwrap();
-        fs::write(&folders[4], "plist").unwrap();
+        let app_data = AppData::of(Platform::MacOs, home, &XdgHomes::default());
+        let webkit = in_library(&app_data, "WebKit");
+        fs::create_dir_all(webkit.join("WebsiteData")).unwrap();
+        fs::write(webkit.join("WebsiteData/db"), "x").unwrap();
+        let plist = in_library(&app_data, "Preferences");
+        fs::create_dir_all(plist.parent().unwrap()).unwrap();
+        fs::write(&plist, "plist").unwrap();
         app_data
     }
 
@@ -1018,19 +1033,27 @@ mod tests {
         let h = home.path();
         let app_data = app_data(h);
         let folders = &app_data.delete;
+        let (webkit, caches, plist) = (
+            in_library(&app_data, "WebKit"),
+            in_library(&app_data, "Caches"),
+            in_library(&app_data, "Preferences"),
+        );
         // A link goes alone, and its target is reported like a linked `~/.envrouter`'s.
         let moved = h.join("elsewhere");
         fs::create_dir_all(&moved).unwrap();
         fs::write(moved.join("kept"), "x").unwrap();
-        fs::create_dir_all(folders[1].parent().unwrap()).unwrap();
-        symlink(&moved, &folders[1]).unwrap();
+        fs::create_dir_all(caches.parent().unwrap()).unwrap();
+        symlink(&moved, &caches).unwrap();
         let store = FakeStore::default();
 
         let report = run(h, false, &store, &app_data).unwrap();
 
         assert!(report.finished(), "{report:?}");
-        let went = |i: usize| folders[i].display().to_string();
-        assert_eq!(report.app_data, [went(0), went(1), went(4)]);
+        let went = |folder: &PathBuf| folder.display().to_string();
+        assert_eq!(
+            report.app_data,
+            [went(&webkit), went(&caches), went(&plist)]
+        );
         assert!(folders
             .iter()
             .all(|folder| fs::symlink_metadata(folder).is_err()));
@@ -1038,7 +1061,7 @@ mod tests {
         assert_eq!(
             report.left,
             [Left {
-                link: went(1),
+                link: went(&caches),
                 target: fs::canonicalize(&moved).unwrap().display().to_string()
             }]
         );
@@ -1073,7 +1096,7 @@ mod tests {
         }
         let home = tempfile::tempdir().unwrap();
         let app_data = app_data(home.path());
-        let plist = app_data.delete[4].clone();
+        let plist = in_library(&app_data, "Preferences");
 
         let report = run(home.path(), false, &Removes(plist.clone()), &app_data).unwrap();
 
@@ -1095,7 +1118,7 @@ mod tests {
 
         assert_eq!(snapshot(h), before);
         assert_eq!(plan.app_data.len(), 2, "{plan:?}");
-        assert!(app_data.delete[0].is_dir());
+        assert!(in_library(&app_data, "WebKit").is_dir());
         assert!(store.forgotten.borrow().is_empty());
     }
 
@@ -1109,7 +1132,7 @@ mod tests {
         // Its parent is a file, so it can neither be found nor told apart from a folder that's gone.
         fs::write(h.join("blocker"), "x").unwrap();
         let blocked = h.join("blocker/data");
-        let first = app_data.delete[0].clone();
+        let first = in_library(&app_data, "WebKit");
         app_data.delete = vec![blocked.clone(), first.clone()];
 
         let report = run(h, false, &FakeStore::default(), &app_data).unwrap();
@@ -1125,29 +1148,41 @@ mod tests {
         assert_eq!(report.folder, FolderStep::Absent);
     }
 
-    /// A `$XDG_DATA_HOME` outside the home folder is never deleted, but it is named when it holds
-    /// the app's folder, whoever runs the uninstall.
+    /// An `$XDG_DATA_HOME` or `$XDG_CONFIG_HOME` outside the home folder is never deleted, but it
+    /// is named when it holds the app's folder (the webview's data, the window's state), whoever
+    /// runs the uninstall.
     #[test]
-    fn an_outside_data_home_is_named_and_left() {
+    fn outside_xdg_folders_are_named_and_left() {
         let home = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
-        let theirs = outside.path().join(platform::APP_IDENTIFIER);
-        fs::create_dir_all(&theirs).unwrap();
-        let named = AppData::of(Platform::Linux, home.path(), Some(outside.path()));
-        assert_eq!(named.outside, std::slice::from_ref(&theirs));
+        let (data, config) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let theirs = [data.path(), config.path()].map(|dir| dir.join(platform::APP_IDENTIFIER));
+        for folder in &theirs {
+            fs::create_dir_all(folder).unwrap();
+        }
+        let xdg = XdgHomes {
+            data: Some(data.path().to_path_buf()),
+            config: Some(config.path().to_path_buf()),
+        };
+        let named = AppData::of(Platform::Linux, home.path(), &xdg);
+        assert_eq!(named.outside, theirs);
 
         for app_data in [
             named,
-            AppData::of(Platform::Linux, home.path(), Some(outside.path())).named_only(),
+            AppData::of(Platform::Linux, home.path(), &xdg).named_only(),
         ] {
             let report = run(home.path(), false, &FakeStore::default(), &app_data).unwrap();
             assert!(report.finished(), "{report:?}");
-            assert_eq!(report.app_data_left.len(), 1, "{report:?}");
-            assert!(
-                report.app_data_left[0].contains(&theirs.display().to_string()),
-                "{report:?}"
-            );
-            assert!(theirs.is_dir());
+            assert_eq!(report.app_data_left.len(), 2, "{report:?}");
+            for folder in &theirs {
+                assert!(
+                    report
+                        .app_data_left
+                        .iter()
+                        .any(|left| left.contains(&folder.display().to_string())),
+                    "{report:?}"
+                );
+                assert!(folder.is_dir());
+            }
         }
     }
 
@@ -1170,7 +1205,14 @@ mod tests {
             fs::create_dir_all(folder).unwrap();
         }
         let uninstall = |caller| {
-            crate::commands::uninstall_with(h, false, caller, &FakeStore::default(), None).unwrap()
+            crate::commands::uninstall_with(
+                h,
+                false,
+                caller,
+                &FakeStore::default(),
+                &XdgHomes::default(),
+            )
+            .unwrap()
         };
 
         let left = uninstall(&app);

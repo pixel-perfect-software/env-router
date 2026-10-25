@@ -139,6 +139,11 @@ export interface SetupStatus {
   /** The installed shim itself, which is named when it is missing or out of date. */
   shimPath: string
   shells: ShellStatus[]
+  /**
+   * The commands of the agents a new terminal has nothing to run for and no editor carries (`installed::probe`: the offered ones, and any the
+   * config names), or null when that couldn't be asked or hasn't been yet: nothing is marked then, since an agent not known to be missing isn't.
+   */
+  missingAgents: string[] | null
 }
 
 /**
@@ -291,6 +296,9 @@ export interface RevealFailed {
   what: Failed
   message: string
 }
+
+/** `tray::MenuRequest`: what the menu bar's Check Folder… and Check Last Folder ask of the window, which takes it when it hears `menu-request` and when it starts. */
+export type MenuRequest = { kind: 'checkFolder' } | { kind: 'checkLastFolder'; folder: string }
 
 /** `mcp_probe::ServerCheck`: what starting a server and asking for its tools found. */
 export interface ServerCheck {

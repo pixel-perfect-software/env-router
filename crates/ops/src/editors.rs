@@ -98,7 +98,7 @@ impl Editor {
         }
     }
 
-    fn extensions_dir(self, home: &Path) -> PathBuf {
+    pub(crate) fn extensions_dir(self, home: &Path) -> PathBuf {
         if let Some(server) = self.server_dir(home) {
             return server.join("extensions");
         }
@@ -131,6 +131,15 @@ pub struct EditorStatus {
     pub installed: bool,
 }
 
+/// The agent's extension is installed in `editor`, which then runs its own copy of the agent.
+pub fn extension_installed(editor: Editor, home: &Path, hook: &IdeHook) -> bool {
+    fs::read_dir(editor.extensions_dir(home)).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            entry.path().is_dir() && hook.is_installed_copy(&entry.file_name().to_string_lossy())
+        })
+    })
+}
+
 pub fn status(editor: Editor, home: &Path, command: &str, hook: &IdeHook) -> EditorStatus {
     let file = editor.settings_file(home);
     // An unreadable file reads as off; turning it on reports why.
@@ -138,17 +147,12 @@ pub fn status(editor: Editor, home: &Path, command: &str, hook: &IdeHook) -> Edi
         .ok()
         .and_then(|text| CstRootNode::parse(&text, &ParseOptions::default()).ok())
         .and_then(|root| read_setting(&root, &hook.setting));
-    let extension_installed = fs::read_dir(editor.extensions_dir(home)).is_ok_and(|entries| {
-        entries.flatten().any(|entry| {
-            entry.path().is_dir() && hook.is_installed_copy(&entry.file_name().to_string_lossy())
-        })
-    });
     EditorStatus {
         editor,
         label: editor.label(),
         command: command.to_owned(),
         available: editor.root_dir(home).is_dir(),
-        extension_installed,
+        extension_installed: extension_installed(editor, home, hook),
         settings_file: file.display().to_string(),
         installed: wrapper.as_deref() == Some(shim(home).as_str()),
         wrapper,

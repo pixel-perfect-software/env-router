@@ -13,14 +13,16 @@ use std::sync::{Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::Duration;
 
 use envrouter_core::config::{self, ConfigState, IdeHook, McpServer};
+use envrouter_core::platform::XdgHomes;
 use envrouter_core::{paths, Error, Result};
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
 use envrouter_ops::commands::{self, ConfigFault, Located, Place, SaveOutcome, SetupStatus};
 use envrouter_ops::editors::{Editor, EditorStatus};
 use envrouter_ops::shell::{self, FolderCheck, Preview, Shell, ShellStatus};
 use envrouter_ops::uninstall::{Caller, UninstallReport};
-use envrouter_ops::{mcp_import, mcp_probe, shims};
+use envrouter_ops::{last_folder, mcp_import, mcp_probe, shims};
 
 // Each command is a wrapper over `envrouter_ops::commands`, which the CLI's `rpc` mode calls by
 // the same names. Only the window's own concerns live here: the tray and the async runtime.
@@ -213,12 +215,21 @@ async fn reset_unreadable_config(app: AppHandle) -> Result<PathBuf> {
     .await
 }
 
+/// Emitted to the window when the agents a new terminal finds were learned after the status that
+/// asked gave up waiting for them, so it asks again: `SetupStatus::missing_agents` was null then.
+const SETUP_CHANGED_EVENT: &str = "setup-changed";
+
 #[tauri::command]
 async fn get_setup_status(app: AppHandle) -> Result<SetupStatus> {
     let home = home(&app)?;
     // The window reads this whenever it gains focus; the menu bar catches up from the same answer.
     blocking(move || {
-        let status = commands::setup_status(&home)?;
+        let told = app.clone();
+        let status = commands::setup_status_within(&home, commands::AGENTS_WAIT, move || {
+            if !GATE.raised() {
+                let _ = told.emit(SETUP_CHANGED_EVENT, ());
+            }
+        })?;
         tray::refresh_from(&app, &status);
         Ok(status)
     })
@@ -267,7 +278,18 @@ async fn check_folder(
     tool: String,
 ) -> Result<FolderCheck> {
     let home = home(&app)?;
-    blocking(move || commands::check_folder(&home, shell, Path::new(&folder), &tool)).await
+    blocking(move || {
+        let check = commands::check_folder(&home, shell, Path::new(&folder), &tool)?;
+        // The menu bar's Check Last Folder. A convenience, so a failure to keep it is told, not
+        // raised. The menu only changes when it turns the item on.
+        match last_folder::remember(&home, Path::new(&folder)) {
+            Ok(true) => tray::refresh_in_background(&app),
+            Ok(false) => {}
+            Err(err) => eprintln!("envrouter: couldn't keep the last folder: {err}"),
+        }
+        Ok(check)
+    })
+    .await
 }
 
 /// Runs only when the user asks: it runs the server's own command.
@@ -281,11 +303,13 @@ async fn check_mcp_server(
     let home = home(&app)?;
     let path = {
         let dir = home.to_path_buf();
-        blocking(move || shell::login_path(&dir)).await?
+        blocking(move || shell::login_path_recent(&dir, shell::LOGIN_PATH_FOR_A_CHECK)).await?
     };
     commands::check_mcp_server(&home, &path, &name, &server, &secrets).await
 }
 
+// The kept PATH, not a fresh one: opening a catalog entry asks this on its own, and where `npm`
+// is doesn't change in the minutes it is kept. A server check, which the user asks for, runs afresh.
 #[tauri::command]
 async fn npm_dist_tags(
     app: AppHandle,
@@ -413,6 +437,12 @@ fn set_unsaved_edits(unsaved: bool) {
     quit::set_unsaved_edits(unsaved);
 }
 
+/// The choice the menu bar left for the window ("Check Folder…", "Check Last Folder"), if any.
+#[tauri::command]
+fn take_menu_request() -> Option<tray::MenuRequest> {
+    tray::take_menu_request()
+}
+
 /// Quits without saving, once the user has said so.
 #[tauri::command]
 #[expect(
@@ -440,6 +470,7 @@ window_commands![
     get_config,
     set_unsaved_edits,
     quit_app,
+    take_menu_request,
     save_config,
     reset_unreadable_config,
     get_setup_status,
@@ -459,10 +490,23 @@ window_commands![
     uninstall,
 ];
 
+/// What the window gets back at launch: its size, where it was, and whether it was maximized.
+/// Not whether it was visible (a window hidden to the menu bar must still open when launched), nor
+/// its decorations (the platform config decides those).
+const WINDOW_STATE: StateFlags = StateFlags::SIZE
+    .union(StateFlags::POSITION)
+    .union(StateFlags::MAXIMIZED);
+
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init());
+        .plugin(tauri_plugin_opener::init())
+        // The window's own Rust hooks do all of it, so the window is granted none of the plugin's commands.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(WINDOW_STATE)
+                .build(),
+        );
     #[cfg(target_os = "macos")]
     let builder = builder.menu(menu::app_menu);
     let app = builder
@@ -531,6 +575,9 @@ pub fn run() {
             }
             WindowEvent::CloseRequested { api, .. } if cfg!(target_os = "macos") => {
                 api.prevent_close();
+                // The plugin saves when the app exits, and a menu bar app can go on for weeks, so
+                // a force quit or a crash would lose where the window was.
+                let _ = window.app_handle().save_window_state(WINDOW_STATE);
                 tray::hide_window(window.app_handle());
             }
             // The guard has a side effect: with unsaved edits, it shows the window and asks.
@@ -550,6 +597,8 @@ pub fn run() {
         // Clicking the Dock icon while the window is hidden.
         #[cfg(target_os = "macos")]
         tauri::RunEvent::Reopen { .. } => tray::show_window(app),
+        // The plugin has just saved the window's state (plugins see the event first), so what
+        // this deletes includes that file.
         tauri::RunEvent::Exit => finish_uninstall(app),
         _ => {}
     });
@@ -565,8 +614,7 @@ fn finish_uninstall(app: &AppHandle) {
     let Ok(home) = app.path().home_dir() else {
         return;
     };
-    let xdg_data_home = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from);
-    for sentence in envrouter_ops::uninstall::remove_app_data(&home, xdg_data_home.as_deref()) {
+    for sentence in envrouter_ops::uninstall::remove_app_data(&home, &XdgHomes::from_env()) {
         eprintln!("envrouter: {sentence}");
     }
 }
@@ -586,6 +634,7 @@ mod tests {
             "open_help",
             "set_unsaved_edits",
             "quit_app",
+            "take_menu_request",
         ];
         let mut window: Vec<&str> = WINDOW_COMMANDS
             .iter()

@@ -3,9 +3,8 @@
 use std::time::Duration;
 
 use envrouter_core::platform::Platform;
+use envrouter_core::watcher::Watcher;
 use envrouter_core::{Error, Result};
-
-use crate::checker::Checker;
 
 #[path = "secret_service.rs"]
 mod secret_service;
@@ -20,20 +19,31 @@ fn in_wsl() -> bool {
 /// interop starts a process, and `setup_status` holds up the window.
 const USABLE_TIMEOUT: Duration = Duration::from_secs(3);
 
-static CHECKER: Checker = Checker::new();
+/// What a check found: `Err` is the store's own reason it can't be used.
+type Answer = std::result::Result<(), String>;
+
+static CHECKER: Watcher<String, Answer> = Watcher::new();
 
 /// Whether the store can be used: `Err` only when it has said it can't. A store that is slow to
-/// answer is not known to be missing, so the window keeps offering the lock (see [`Checker`]).
+/// answer is not known to be missing, so the window keeps offering the lock (see [`Watcher`]).
 pub fn usable(account: &str) -> Result<()> {
     CHECKER
-        .ask(account, USABLE_TIMEOUT, |account| {
-            let found = if in_wsl() {
-                wsl::usable(account)
-            } else {
-                secret_service::usable()
-            };
-            found.map_err(|err| err.to_string())
-        })
+        .ask(
+            &account.to_owned(),
+            USABLE_TIMEOUT,
+            // Asked on every ask: a store's answer can change as the user starts a keyring.
+            Duration::ZERO,
+            |account| {
+                let found = if in_wsl() {
+                    wsl::usable(account)
+                } else {
+                    secret_service::usable()
+                };
+                found.map_err(|err| err.to_string())
+            },
+            || {},
+        )
+        .unwrap_or(Ok(()))
         .map_err(Error::SecretStore)
 }
 

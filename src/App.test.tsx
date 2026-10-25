@@ -24,6 +24,8 @@ const open = async (search: string) => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  // The window remembers its view there; a test mustn't open on the last one's.
+  localStorage.clear()
 })
 
 const inspector = () => within(screen.getByRole('dialog'))
@@ -1093,5 +1095,149 @@ describe('settings and help', () => {
     window.__mockFix()
     await user.click(tryAgain)
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Try Again' })).toBeNull())
+  })
+})
+
+describe('agents a new terminal does not find', () => {
+  it('are still offered in the inspector, marked, with the vendor install line, and the one that is there is not', async () => {
+    const user = await open('?scenario=populated&agents=claude')
+    await user.click(await screen.findByRole('button', { name: 'Edit Personal' }))
+    const agent = (name: string) => inspector().getByLabelText(new RegExp(name)).closest('li') as HTMLElement
+
+    expect(within(agent('Copilot CLI')).getByText('Not installed')).toBeTruthy()
+    expect(within(agent('Copilot CLI')).getByText('curl -fsSL https://gh.io/copilot-install | bash')).toBeTruthy()
+    expect(within(agent('Copilot CLI')).getByRole('textbox')).toBeTruthy()
+    expect(within(agent('Claude Code')).queryByText('Not installed')).toBeNull()
+  })
+
+  it('are marked on a profile card that sets them and in the welcome sentence', async () => {
+    await open('?scenario=mcp&agents=none')
+    const card = await screen.findByRole('region', { name: 'Profile Work' })
+    expect(within(card).getAllByText('Not installed').length).toBeGreaterThan(0)
+
+    cleanup()
+    await open('?scenario=first-run&agents=claude')
+    const welcome = await screen.findByRole('heading', { name: 'The folder decides' })
+    expect(welcome.parentElement?.textContent).toMatch(/claude and copilot \(not installed\) use/)
+  })
+
+  it('are not marked while the terminal has not said what it has', async () => {
+    const user = await open('?scenario=populated&agents=unknown')
+    await user.click(await screen.findByRole('button', { name: 'Edit Personal' }))
+    expect(inspector().queryByText('Not installed')).toBeNull()
+  })
+
+  it('are not marked when an editor carries them: Claude Code for VS Code has no claude on PATH', async () => {
+    const user = await open('?scenario=populated&agents=none')
+    await screen.findByRole('button', { name: /Editors/ })
+    await user.click(await screen.findByRole('button', { name: 'Edit Personal' }))
+    const agent = (name: string) => inspector().getByLabelText(new RegExp(name)).closest('li') as HTMLElement
+    expect(within(agent('Copilot CLI')).getByText('Not installed')).toBeTruthy()
+    expect(within(agent('Claude Code')).queryByText('Not installed')).toBeNull()
+  })
+
+  it('are asked about again when the backend says it learned late, not at the next focus', async () => {
+    await open('?scenario=populated')
+    await screen.findByText(/Routing is on in zsh/)
+    const invoked = spyOnInvoke()
+    await emit('setup-changed')
+    await waitFor(() => expect(invoked.mock.calls.some(([command]) => command === 'get_setup_status')).toBe(true))
+  })
+})
+
+describe('the setup status', () => {
+  it('is the latest one asked for, though an older read resolves after it', async () => {
+    const user = await open('?scenario=populated')
+    await screen.findByText(/Routing is on in zsh/)
+    const { __TAURI_INTERNALS__: internals } = window as unknown as {
+      __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> }
+    }
+    const original = internals.invoke.bind(internals)
+    const invoked = spyOnInvoke()
+    let release = () => {}
+    const slow = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let reads = 0
+    invoked.mockImplementation(async (command: string, args?: unknown) => {
+      const answer = await original(command, args)
+      if (command !== 'get_setup_status') return answer
+      // The first read is slow and stale (Copilot missing); the second is current (nothing missing).
+      if (++reads === 1) {
+        await slow
+        return { ...(answer as object), missingAgents: ['copilot'] }
+      }
+      return { ...(answer as object), missingAgents: [] }
+    })
+
+    window.dispatchEvent(new Event('focus'))
+    await emit('setup-changed')
+    await waitFor(() => expect(reads).toBe(2))
+    release()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    await user.click(await screen.findByRole('button', { name: 'Edit Personal' }))
+    expect(inspector().queryByText('Not installed')).toBeNull()
+  })
+})
+
+describe('the last view', () => {
+  it('is the one the window opens on next time', async () => {
+    const user = await open('?scenario=mcp')
+    await user.click(await screen.findByRole('button', { name: 'MCP Servers' }))
+    const pressed = (view: string) => screen.getByRole('button', { name: view }).getAttribute('aria-pressed')
+    expect(pressed('MCP Servers')).toBe('true')
+
+    cleanup()
+    await open('?scenario=mcp')
+    await screen.findByRole('button', { name: 'Add by Hand' })
+    expect(pressed('MCP Servers')).toBe('true')
+  })
+})
+
+describe("the menu bar's Check Last Folder", () => {
+  it('checks the folder it names, as a dropped folder is, and leaves it to Profiles', async () => {
+    await open('?scenario=mcp&view=servers')
+    await screen.findByRole('button', { name: 'Add by Hand' })
+    await window.__mockMenuRequest({ kind: 'checkLastFolder', folder: '/Users/sam/dev/work' })
+    await screen.findByText('Routed to Work', undefined, { timeout: 3000 })
+    expect(screen.getByRole('button', { name: 'Profiles' }).getAttribute('aria-pressed')).toBe('true')
+  })
+})
+
+describe("the menu bar's requests", () => {
+  it('reach a window that was not listening yet, when it starts', async () => {
+    vi.resetModules()
+    history.replaceState(null, '', '?scenario=populated')
+    await import('./dev/mockTauri')
+    // Left before the window exists, as on the first show after a launch with it hidden: the event goes nowhere.
+    await window.__mockMenuRequest({ kind: 'checkLastFolder', folder: '/Users/sam/dev/work' })
+    render(<App />)
+    await screen.findByText('Routed to Work', undefined, { timeout: 3000 })
+  })
+
+  it('are taken once, so a later start does not act on one already carried out', async () => {
+    await open('?scenario=populated')
+    await screen.findByText(/Routing is on in zsh/)
+    const invoked = spyOnInvoke()
+    await window.__mockMenuRequest({ kind: 'checkLastFolder', folder: '/Users/sam/dev/work' })
+    await screen.findByText('Routed to Work', undefined, { timeout: 3000 })
+    cleanup()
+    // Another window start (a reload) finds nothing waiting.
+    render(<App />)
+    await screen.findByText(/Routing is on in zsh/)
+    expect(invoked.mock.calls.filter(([command]) => command === 'check_folder')).toHaveLength(1)
+  })
+})
+
+describe("the menu bar's Check Last Folder, when the window can't do it", () => {
+  it('says why instead of doing nothing, since the menu bar has brought the window forward', async () => {
+    const confirm = vi.fn().mockReturnValue(true)
+    vi.stubGlobal('confirm', confirm)
+    const user = await open('?scenario=populated')
+    await user.click(await screen.findByRole('button', { name: 'Edit Personal' }))
+    await window.__mockMenuRequest({ kind: 'checkLastFolder', folder: '/Users/sam/dev/work' })
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1))
+    expect(confirm.mock.calls[0][0]).toMatch(/Close the profile editor/)
+    expect(screen.queryByText('Routed to Work')).toBeNull()
   })
 })

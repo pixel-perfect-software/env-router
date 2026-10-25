@@ -50,6 +50,13 @@ impl Platform {
         }
     }
 
+    /// Whether asking the secret store if it works can take a while: Linux's Secret Service is
+    /// started on demand over D-Bus, and a WSL distro runs a Windows process. macOS and Windows
+    /// answer without asking anything.
+    pub fn store_check_can_block(self) -> bool {
+        matches!(self, Platform::Linux | Platform::Wsl)
+    }
+
     /// What a value kept in that store reads as in its field: "In Keychain", "In the keyring".
     pub fn sealed_label(self) -> &'static str {
         match self {
@@ -187,14 +194,18 @@ fn xdg_dir(home: &Path, var: &str, default: &[&str]) -> PathBuf {
 pub const APP_IDENTIFIER: &str = "com.tylerrobertson.envrouter";
 
 /// The folders the desktop app's webview and the system keep for it under `home`, whether or not
-/// they exist now. Tauri's `app_data_dir`, `app_config_dir`, `app_cache_dir` and `app_log_dir`
-/// are never made: the app asks for none of them.
+/// they exist now. Tauri's `app_data_dir`, `app_cache_dir` and `app_log_dir` are never made: the
+/// app asks for none of them. Its `app_config_dir` (`<config dir>/<identifier>`, see
+/// [`app_config_dir`]) holds the window-state plugin's `.window-state.json`, written when the
+/// app exits, and is listed too: last on macOS and Windows, and on Linux after the data folders,
+/// with `~/.config` itself after `$XDG_CONFIG_HOME`.
 ///
 /// - macOS: WKWebView's default store keeps its data in `~/Library/WebKit/<identifier>` and its
 ///   caches in `~/Library/Caches/<identifier>`, and the open panel leaves `NSNavLastRootDirectory`
 ///   and the like in `~/Library/Preferences/<identifier>.plist` (these three were made by the
 ///   built app). `HTTPStorages` and `Saved Application State` are the other places the system
-///   names after an identifier. The cask's `zap` stanza lists the same five.
+///   names after an identifier. The cask's `zap` stanza lists the same six, the config folder
+///   among them.
 /// - Linux and WSL, Windows: Tauri gives the webview `app_local_data_dir` as its data folder
 ///   (`manager/webview.rs`: "in `windows`, we need to force a data_directory", on Linux too), which
 ///   is `<local data dir>/<identifier>`, and wry points WebKitGTK's data and cache at it, so
@@ -217,14 +228,20 @@ pub fn app_data_dirs(platform: Platform, home: &Path) -> Vec<PathBuf> {
                 library
                     .join("Preferences")
                     .join(format!("{APP_IDENTIFIER}.plist")),
+                app_config_dir(platform, home).join(APP_IDENTIFIER),
             ]
         }
         Platform::Linux | Platform::Wsl => vec![
             xdg_dir(home, "XDG_DATA_HOME", &LINUX_DATA_DIR).join(APP_IDENTIFIER),
             home.join(LINUX_DATA_DIR.iter().collect::<PathBuf>())
                 .join(APP_IDENTIFIER),
+            app_config_dir(platform, home).join(APP_IDENTIFIER),
+            home.join(".config").join(APP_IDENTIFIER),
         ],
-        Platform::Windows => vec![home.join("AppData").join("Local").join(APP_IDENTIFIER)],
+        Platform::Windows => vec![
+            home.join("AppData").join("Local").join(APP_IDENTIFIER),
+            app_config_dir(platform, home).join(APP_IDENTIFIER),
+        ],
     };
     dirs.dedup();
     dirs
@@ -233,20 +250,40 @@ pub fn app_data_dirs(platform: Platform, home: &Path) -> Vec<PathBuf> {
 /// `~/.local/share`, as path components.
 const LINUX_DATA_DIR: [&str; 2] = [".local", "share"];
 
-/// The folder Linux's webview data would be in if `xdg_data_home` (the caller's `$XDG_DATA_HOME`,
-/// read at the edge) pointed outside `home`: [`app_data_dirs`] leaves such a folder alone, since
-/// a path from the environment doesn't get to name what is deleted, but an uninstall can say it
-/// is there. `None` when it's unset, relative (glib ignores those too) or inside `home`.
-pub fn app_data_dir_outside_home(
-    platform: Platform,
-    home: &Path,
-    xdg_data_home: Option<&Path>,
-) -> Option<PathBuf> {
+/// The XDG base folders the app started in named, read at the edge by whoever asks
+/// ([`XdgHomes::from_env`]): this process may not share them (a scratch home in a test, a CLI run
+/// from another session), so the platform code trusts them only inside `home` ([`xdg_dir`]) and
+/// otherwise only names the app's folder in them ([`app_dirs_outside_home`]).
+#[derive(Clone, Debug, Default)]
+pub struct XdgHomes {
+    /// `$XDG_DATA_HOME`: where the webview keeps its data on Linux.
+    pub data: Option<PathBuf>,
+    /// `$XDG_CONFIG_HOME`: where the app's config folder, with the window's state, is.
+    pub config: Option<PathBuf>,
+}
+
+impl XdgHomes {
+    pub fn from_env() -> Self {
+        Self {
+            data: std::env::var_os("XDG_DATA_HOME").map(PathBuf::from),
+            config: std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
+        }
+    }
+}
+
+/// The folders Linux would keep the app's data and config in if `xdg` pointed outside `home`:
+/// [`app_data_dirs`] leaves such a folder alone, since a path from the environment doesn't get to
+/// name what is deleted, but an uninstall can say it is there. A variable that's unset, relative
+/// (glib ignores those too) or inside `home` names none.
+pub fn app_dirs_outside_home(platform: Platform, home: &Path, xdg: &XdgHomes) -> Vec<PathBuf> {
     match platform {
-        Platform::Linux | Platform::Wsl => xdg_data_home
+        Platform::Linux | Platform::Wsl => [&xdg.data, &xdg.config]
+            .into_iter()
+            .flatten()
             .filter(|dir| dir.is_absolute() && !dir.starts_with(home))
-            .map(|dir| dir.join(APP_IDENTIFIER)),
-        Platform::MacOs | Platform::Windows => None,
+            .map(|dir| dir.join(APP_IDENTIFIER))
+            .collect(),
+        Platform::MacOs | Platform::Windows => Vec::new(),
     }
 }
 
@@ -433,35 +470,48 @@ mod tests {
                     .join("Saved Application State")
                     .join(format!("{id}.savedState")),
                 library.join("Preferences").join(format!("{id}.plist")),
+                library.join("Application Support").join(id),
             ]
         );
         // Whatever XDG_DATA_HOME this test runs with, it isn't inside the scratch home, so it
         // counts for nothing and the default isn't listed twice.
-        let linux = [home.join(".local").join("share").join(id)];
+        let linux = [
+            home.join(".local").join("share").join(id),
+            home.join(".config").join(id),
+        ];
         assert_eq!(app_data_dirs(Platform::Linux, home), linux);
         assert_eq!(app_data_dirs(Platform::Wsl, home), linux);
         assert_eq!(
             app_data_dirs(Platform::Windows, home),
-            [home.join("AppData").join("Local").join(id)]
+            [
+                home.join("AppData").join("Local").join(id),
+                home.join("AppData").join("Roaming").join(id)
+            ]
         );
     }
 
     #[test]
-    fn a_data_home_outside_the_home_is_named_but_never_listed_for_deletion() {
+    fn an_xdg_folder_outside_the_home_is_named_but_never_listed_for_deletion() {
         let home = Path::new("/scratch/home");
         let id = APP_IDENTIFIER;
-        let outside = |platform, xdg: Option<&str>| {
-            app_data_dir_outside_home(platform, home, xdg.map(Path::new))
+        let outside = |platform, data: Option<&str>, config: Option<&str>| {
+            app_dirs_outside_home(
+                platform,
+                home,
+                &XdgHomes {
+                    data: data.map(PathBuf::from),
+                    config: config.map(PathBuf::from),
+                },
+            )
         };
         assert_eq!(
-            outside(Platform::Linux, Some("/data")),
-            Some(Path::new("/data").join(id))
+            outside(Platform::Linux, Some("/data"), Some("/conf")),
+            [Path::new("/data").join(id), Path::new("/conf").join(id)]
         );
-        assert!(outside(Platform::Wsl, Some("/data")).is_some());
-        assert_eq!(outside(Platform::Linux, Some("/scratch/home/data")), None);
-        assert_eq!(outside(Platform::Linux, Some("data")), None);
-        assert_eq!(outside(Platform::Linux, None), None);
-        assert_eq!(outside(Platform::MacOs, Some("/data")), None);
+        assert_eq!(outside(Platform::Wsl, None, Some("/conf")).len(), 1);
+        assert!(outside(Platform::Linux, Some("/scratch/home/data"), Some("conf")).is_empty());
+        assert!(outside(Platform::Linux, None, None).is_empty());
+        assert!(outside(Platform::MacOs, Some("/data"), Some("/conf")).is_empty());
     }
 
     /// The names come from the app's config and the cask; this is what keeps them in step.

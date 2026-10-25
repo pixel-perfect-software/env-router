@@ -4,16 +4,19 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use envrouter_core::config::{self, ConfigState, IdeHook, McpServer};
-use envrouter_core::platform::{self, Platform};
+use envrouter_core::platform::{self, Platform, XdgHomes};
+use envrouter_core::watcher::Watcher;
 use envrouter_core::{agents, mcp, paths, Error, ErrorKind, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::editors::{self, Editor, EditorStatus};
 use crate::shell::{self, FolderCheck, Preview, Shell, ShellStatus};
 use crate::uninstall::{self, AppData, Caller, UninstallReport};
-use crate::{mcp_import, mcp_probe, npm, shims};
+use crate::{installed, mcp_import, mcp_probe, npm, shims};
 
 pub fn get_config(home: &Path) -> Result<ConfigState> {
     config::load_or_init(&paths::root(home))
@@ -398,24 +401,149 @@ pub struct SetupStatus {
     /// The installed shim, which the window names when it is missing or out of date.
     pub shim_path: String,
     pub shells: Vec<ShellStatus>,
+    /// The commands of the offered agents (`claude`, `copilot`, and any the config names) that a
+    /// new terminal doesn't find on its PATH ([`installed::missing`]), so the window can mark them;
+    /// `None` when the terminal's PATH couldn't be asked, or hasn't been yet: nothing is marked
+    /// then, since an agent not known to be missing isn't. An agent that an editor's extension
+    /// carries, or that a terminal runs an alias or a function for, isn't listed: this is the one
+    /// answer for the window, the CLI and rpc.
+    pub missing_agents: Option<Vec<String>>,
 }
 
-/// The window asks this whenever it gains focus, which is also when the user may have changed
-/// their startup files, so the PATH a new terminal gets is asked again on the next check.
-pub fn setup_status(home: &Path) -> Result<SetupStatus> {
-    shell::forget_login_path();
+/// Longest the window's (and rpc's) status waits for the agents: the answer is a few `stat`s while the terminal's
+/// PATH is kept, and a login shell when it isn't.
+pub const AGENTS_WAIT: Duration = Duration::from_secs(1);
+
+/// How long a caller that has nobody to ask again later (the CLI's `status --agents`) waits for
+/// the agents: the login shell's own limit, with a moment over.
+pub const SHELL_WAIT: Duration = Duration::from_secs(16);
+
+/// How long a probe's answer is handed to whoever asks again without asking afresh: long enough
+/// for the window's own second ask, after a late answer, to get it; short enough that a refocus
+/// a moment later still looks along PATH again.
+const AGENTS_FRESH: Duration = Duration::from_secs(5);
+
+/// The agent probe, one at a time and never waited on for long (see [`Watcher`]).
+static AGENTS: Watcher<PathBuf, Option<Vec<String>>> = Watcher::new();
+
+/// The window asks this whenever it gains focus. Where the secret store check can block, it and
+/// the agents are asked side by side, each at most `wait` (the store's own wait aside), so one
+/// slow answer is never added to the other. If the agents hadn't answered by then they are
+/// unknown, and `late` runs when they have, so the caller can ask again.
+pub fn setup_status_within(
+    home: &Path,
+    wait: Duration,
+    late: impl FnOnce() + Send + 'static,
+) -> Result<SetupStatus> {
+    setup_status_using(home, wait, late, probe_agents)
+}
+
+/// [`setup_status_within`] with the probe given, so a test never runs a login shell.
+pub(crate) fn setup_status_using(
+    home: &Path,
+    wait: Duration,
+    late: impl FnOnce() + Send + 'static,
+    probe: fn(&Path) -> Option<Vec<String>>,
+) -> Result<SetupStatus> {
+    let ask = move || {
+        AGENTS
+            .ask(
+                &home.to_path_buf(),
+                wait,
+                AGENTS_FRESH,
+                move |home| probe(home),
+                late,
+            )
+            .flatten()
+    };
+    let (problem, missing) = if Platform::current().store_check_can_block() {
+        std::thread::scope(|scope| {
+            let store = scope.spawn(|| envrouter_keychain::problem(home));
+            let missing = ask();
+            (store_problem(store.join()), missing)
+        })
+    } else {
+        let problem = envrouter_keychain::problem(home);
+        (problem, ask())
+    };
+    status_of(home, problem, missing)
+}
+
+/// [`installed::probe`], saying on stderr why when it fails, once for each period a failure is
+/// believed (`shell::LOGIN_REPORT_FAILURE_TTL`): the window just marks nothing then, and each
+/// focus asks again.
+pub(crate) fn probe_agents(home: &Path) -> Option<Vec<String>> {
+    static LOGGED: Mutex<Option<(String, Instant)>> = Mutex::new(None);
+    match installed::probe(home) {
+        Ok(missing) => Some(missing),
+        Err(err) => {
+            let message = err.to_string();
+            let mut logged = LOGGED
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if first_in_period(
+                &mut logged,
+                &message,
+                Instant::now(),
+                shell::LOGIN_REPORT_FAILURE_TTL,
+            ) {
+                eprintln!("envrouter: couldn't find which agents are installed: {message}");
+            }
+            None
+        }
+    }
+}
+
+/// Whether `message` at `now` is news: not the one told in the last `period`. Notes it if so.
+fn first_in_period(
+    last: &mut Option<(String, Instant)>,
+    message: &str,
+    now: Instant,
+    period: Duration,
+) -> bool {
+    match last {
+        Some((told, at)) if told == message && now.duration_since(*at) < period => false,
+        _ => {
+            *last = Some((message.to_string(), now));
+            true
+        }
+    }
+}
+
+/// What the secret store check found, or, if the check itself panicked, that it couldn't be made:
+/// never "no problem", which would turn the lock on over a store nobody has looked at.
+fn store_problem(checked: std::thread::Result<Option<String>>) -> Option<String> {
+    checked.unwrap_or_else(|_| {
+        Some(format!(
+            "Couldn't check the {}: the check stopped unexpectedly.",
+            Platform::current().secret_store_name()
+        ))
+    })
+}
+
+/// The status without asking which agents are installed, for a caller that won't show it.
+pub fn setup_status_without_agents(home: &Path) -> Result<SetupStatus> {
+    status_of(home, envrouter_keychain::problem(home), None)
+}
+
+fn status_of(
+    home: &Path,
+    secret_store_problem: Option<String>,
+    missing_agents: Option<Vec<String>>,
+) -> Result<SetupStatus> {
     let platform = Platform::current();
     Ok(SetupStatus {
         platform,
         secret_store: platform.secret_store_name(),
         sealed_label: platform.sealed_label(),
-        secret_store_problem: envrouter_keychain::problem(home),
+        secret_store_problem,
         file_manager: platform.file_manager(),
         reveal_verb: platform.reveal_verb(),
         shim_installed: shims::is_installed(home, &shims::bundled()?, &shims::bundled_keychain()?),
         shims_dir: paths::shims(home).display().to_string(),
         shim_path: paths::shim_binary(home).display().to_string(),
         shells: Shell::ALL.iter().map(|&s| shell::status(s, home)).collect(),
+        missing_agents,
     })
 }
 
@@ -441,11 +569,7 @@ pub fn editor_status(home: &Path, hooks: &BTreeMap<String, IdeHook>) -> Vec<Edit
 /// The editor hooks of the saved config's agents, with the registry's filled in as the
 /// window's next save would, for callers without the window.
 pub fn saved_hooks(home: &Path) -> Result<BTreeMap<String, IdeHook>> {
-    Ok(agents::with_agents(get_config(home)?)
-        .agents
-        .into_iter()
-        .filter_map(|(command, agent)| agent.ide.map(|hook| (command, hook)))
-        .collect())
+    Ok(agents::ide_hooks(&agents::with_agents(get_config(home)?)))
 }
 
 /// Points an agent's editor extension at the shim, or stops it, in the editor's settings.
@@ -468,30 +592,29 @@ pub fn set_editor_integration(
 /// still using them. With `dry_run` it only reports what it would do. A stop comes back as a report with `problems`, not an error;
 /// a real run for the CLI while the window is open is refused before it changes anything.
 pub fn uninstall(home: &Path, dry_run: bool, caller: &Caller) -> Result<UninstallReport> {
-    let xdg_data_home = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from);
     uninstall_with(
         home,
         dry_run,
         caller,
         &uninstall::Keychain,
-        xdg_data_home.as_deref(),
+        &XdgHomes::from_env(),
     )
 }
 
 /// [`uninstall`] against any secret store, so a test never reaches the machine's real one, and
-/// with the `$XDG_DATA_HOME` the caller read.
+/// with the XDG folders the caller read.
 pub(crate) fn uninstall_with(
     home: &Path,
     dry_run: bool,
     caller: &Caller,
     store: &dyn uninstall::Store,
-    xdg_data_home: Option<&Path>,
+    xdg: &XdgHomes,
 ) -> Result<UninstallReport> {
     if !dry_run {
         uninstall::refuse_while_app_runs(home, caller)?;
     }
     // The window can't delete what its own webview is using: it does that as it exits.
-    let app_data = AppData::of(Platform::current(), home, xdg_data_home);
+    let app_data = AppData::of(Platform::current(), home, xdg);
     let app_data = match caller {
         Caller::App { .. } => app_data.named_only(),
         Caller::Cli { .. } => app_data,
@@ -513,7 +636,7 @@ pub fn preview_folder(home: &Path, payload: &ConfigState, folder: &Path, tool: &
 }
 
 /// Starts `server` (or connects to it) and lists its tools. `path` is the PATH a new terminal
-/// gets ([`shell::login_path`], which blocks, so the caller runs it where blocking is fine).
+/// gets ([`shell::login_path_recent`], which blocks, so the caller runs it where blocking is fine).
 /// `secrets` holds values typed since the last save; the store supplies the rest. A good list
 /// is remembered for the profile editor's tool filter.
 pub async fn check_mcp_server(
@@ -1258,10 +1381,48 @@ mod tests {
             shims_dir: "/h/.envrouter/shims".into(),
             shim_path: paths::shim_binary(Path::new("/h")).display().to_string(),
             shells: Vec::new(),
+            missing_agents: Some(vec!["copilot".into()]),
         };
         assert_eq!(
             serde_json::to_string(&setup).unwrap(),
-            r#"{"platform":"macos","secretStore":"Keychain","sealedLabel":"In Keychain","secretStoreProblem":null,"fileManager":"Finder","revealVerb":"Reveal","shimInstalled":true,"shimsDir":"/h/.envrouter/shims","shimPath":"/h/.envrouter/bin/envrouter-shim","shells":[]}"#
+            r#"{"platform":"macos","secretStore":"Keychain","sealedLabel":"In Keychain","secretStoreProblem":null,"fileManager":"Finder","revealVerb":"Reveal","shimInstalled":true,"shimsDir":"/h/.envrouter/shims","shimPath":"/h/.envrouter/bin/envrouter-shim","shells":[],"missingAgents":["copilot"]}"#
         );
+    }
+
+    /// A secret store check that panics is a problem told, not the absence of one.
+    #[test]
+    fn a_panicking_store_check_is_reported_as_a_problem() {
+        let checked = std::thread::spawn(|| -> Option<String> { panic!("the check broke") }).join();
+        let problem = store_problem(checked).expect("a problem is reported");
+        assert!(problem.starts_with("Couldn't check the "), "{problem}");
+        assert_eq!(store_problem(Ok(None)), None);
+    }
+
+    /// A failure to find the agents is told once for each period it's believed, not on every
+    /// focus; a different one, or the same after the period, is news again.
+    #[test]
+    fn a_probe_failure_is_told_once_per_period() {
+        let start = Instant::now();
+        let period = Duration::from_secs(60);
+        let mut last = None;
+        assert!(first_in_period(&mut last, "zsh hung", start, period));
+        assert!(!first_in_period(
+            &mut last,
+            "zsh hung",
+            start + Duration::from_secs(5),
+            period
+        ));
+        assert!(first_in_period(
+            &mut last,
+            "no zsh",
+            start + Duration::from_secs(6),
+            period
+        ));
+        assert!(first_in_period(
+            &mut last,
+            "no zsh",
+            start + Duration::from_secs(70),
+            period
+        ));
     }
 }

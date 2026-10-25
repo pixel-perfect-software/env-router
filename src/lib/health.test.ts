@@ -27,6 +27,7 @@ const setupOf = (shells: ShellStatus[], shimInstalled = true): SetupStatus => ({
   shimsDir: `${HOME}/.envrouter/shims`,
   shimPath: `${HOME}/.envrouter/bin/envrouter-shim`,
   shells,
+  missingAgents: null,
 })
 
 const zshOn = shell('zsh', true, { isDefault: true })

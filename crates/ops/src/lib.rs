@@ -4,6 +4,8 @@
 
 pub mod commands;
 pub mod editors;
+pub mod installed;
+pub mod last_folder;
 pub mod mcp_import;
 pub mod mcp_probe;
 pub mod npm;

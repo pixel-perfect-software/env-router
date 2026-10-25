@@ -4,10 +4,11 @@
 //! data, the same data the window writes.
 
 use std::collections::btree_map::Entry;
+use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use crate::config::{AgentDef, ConfigState};
+use crate::config::{AgentDef, ConfigState, IdeHook};
 
 const REGISTRY: &str = include_str!("../../../src/lib/agents.json");
 
@@ -52,6 +53,16 @@ pub fn with_agents(mut config: ConfigState) -> ConfigState {
         }
     }
     config
+}
+
+/// The editor hook of each agent in `config.agents` that has one, keyed by command: how the
+/// window's Editors… and the installed check recognise an agent's extension.
+pub fn ide_hooks(config: &ConfigState) -> BTreeMap<String, IdeHook> {
+    config
+        .agents
+        .iter()
+        .filter_map(|(command, agent)| agent.ide.clone().map(|hook| (command.clone(), hook)))
+        .collect()
 }
 
 fn add_missing(ours: &mut Vec<String>, theirs: Vec<String>) {

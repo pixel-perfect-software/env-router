@@ -74,6 +74,9 @@ export const tellBackedUp = (backup: string) =>
 /** The native note for a failed reveal that no banner can show: another error holds the banner's place, or the inspector hides it. */
 export const tellRevealFailed = (title: string, reason: string) => message(reason, { title, kind: 'error' })
 
+/** The native note for a Check Last Folder the window can't do now, since the menu bar has already brought it forward. */
+export const tellLastFolderNotChecked = (reason: string) => message(reason, { title: "Couldn't check the last folder", kind: 'info' })
+
 /**
  * The native confirmation before EnvRouter is uninstalled. `store` is what the secrets' home is called here ("Keychain",
  * "keyring"); the CLI's `uninstall` plan says the same things.

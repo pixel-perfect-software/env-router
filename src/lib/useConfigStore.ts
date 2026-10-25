@@ -28,11 +28,19 @@ export function useConfigStore(refreshEditors: () => Promise<void>) {
   // Bumped by every save, so a read of config.json that started before it can't put the old file back.
   const configSeq = useRef(0)
 
+  // Counts the status reads, so one that resolves after a newer one (focus and the backend's `setup-changed` can overlap, and the first may be
+  // the slow one) can't put the older answer back.
+  const setupSeq = useRef(0)
+
   const refreshSetup = useCallback(async () => {
+    const seq = ++setupSeq.current
     try {
-      setSetup(await getSetupStatus())
+      const status = await getSetupStatus()
+      if (seq !== setupSeq.current) return
+      setSetup(status)
       setSetupError(null)
     } catch (err) {
+      if (seq !== setupSeq.current) return
       setSetupError(errorMessage(err))
     }
   }, [])

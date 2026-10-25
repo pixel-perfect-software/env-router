@@ -1,8 +1,9 @@
 //! The menu bar icon and menu. The window is opened occasionally; the menu bar is where
 //! EnvRouter stays visible, so its first line always says whether routing is on.
 
+use std::path::PathBuf;
 use std::sync::mpsc::{sync_channel, SyncSender};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use envrouter_core::{config, paths};
 use tauri::image::Image;
@@ -16,12 +17,49 @@ use envrouter_core::platform::Platform;
 
 use crate::help::{self, Link};
 use envrouter_ops::commands::{self, Place, SetupStatus};
+use envrouter_ops::last_folder;
 use envrouter_ops::shell::{self, Shell};
 
 const TRAY_ID: &str = "main";
 
-/// Emitted to the window when the menu's "Check Folder…" is chosen.
-pub const CHECK_FOLDER_EVENT: &str = "check-folder";
+/// Emitted to the window when the menu bar has left it a [`MenuRequest`] to take.
+pub const MENU_REQUEST_EVENT: &str = "menu-request";
+
+/// What the menu bar asks the window to do for "Check Folder…" and "Check Last Folder". The
+/// window may not be listening yet (the first show after a launch with the window hidden, or a
+/// reload), and an event sent then is lost, so the request waits here and the window takes it
+/// (`take_menu_request`): when it hears [`MENU_REQUEST_EVENT`], and once as it starts listening.
+/// `MenuRequest` in `src/lib/types.ts`.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum MenuRequest {
+    CheckFolder,
+    CheckLastFolder { folder: String },
+}
+
+/// The one request waiting for the window: a newer choice replaces an older one it hasn't taken.
+static MENU_REQUEST: Mutex<Option<MenuRequest>> = Mutex::new(None);
+
+fn queue_menu_request(request: MenuRequest) {
+    *MENU_REQUEST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(request);
+}
+
+/// The request waiting, if there is one; the window then has it, so it is gone from here.
+pub fn take_menu_request() -> Option<MenuRequest> {
+    MENU_REQUEST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take()
+}
+
+/// Leaves `request` for the window and brings it forward.
+fn ask_window(app: &AppHandle, request: MenuRequest) {
+    queue_menu_request(request);
+    show_window(app);
+    let _ = app.emit(MENU_REQUEST_EVENT, ());
+}
 
 /// Emitted to the window when the menu's "Uninstall EnvRouter…" is chosen.
 pub const UNINSTALL_EVENT: &str = "uninstall-requested";
@@ -67,10 +105,18 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => show_window(app),
-            "check" => {
-                show_window(app);
-                let _ = app.emit(CHECK_FOLDER_EVENT, ());
-            }
+            "check" => ask_window(app, MenuRequest::CheckFolder),
+            "check-last" => match last_folder_of(app) {
+                Some(folder) => ask_window(
+                    app,
+                    MenuRequest::CheckLastFolder {
+                        folder: folder.display().to_string(),
+                    },
+                ),
+                // The folder went after the menu was built: nothing to show the window for. The
+                // menu was stale, so it is built again, with the item off.
+                None => refresh_in_background(app),
+            },
             "reveal-config" => reveal_in_background(app, Place::Config),
             "open-root" => reveal_in_background(app, Place::Root),
             "uninstall" => {
@@ -186,6 +232,12 @@ fn tell_failed(app: &AppHandle, what: Failed, err: &impl std::fmt::Display) {
     );
 }
 
+/// The folder the window last checked, if it's still there: read whenever the menu is built and
+/// again when the item is chosen, since the folder may have gone between the two.
+fn last_folder_of(app: &AppHandle) -> Option<PathBuf> {
+    last_folder::recall(&app.path().home_dir().ok()?)
+}
+
 /// Brings the window back, and on macOS puts the app in the Dock while it's open.
 pub fn show_window(app: &AppHandle) {
     #[cfg(target_os = "macos")]
@@ -233,6 +285,13 @@ fn menu(app: &AppHandle, (status, profiles): (String, Option<String>)) -> tauri:
     )?));
     items.push(Box::new(MenuItem::with_id(
         app,
+        "check-last",
+        "Check Last Folder",
+        last_folder_of(app).is_some(),
+        None::<&str>,
+    )?));
+    items.push(Box::new(MenuItem::with_id(
+        app,
         "open",
         "Open EnvRouter",
         true,
@@ -260,6 +319,14 @@ fn menu(app: &AppHandle, (status, profiles): (String, Option<String>)) -> tauri:
         None::<&str>,
     )?));
     items.push(Box::new(PredefinedMenuItem::separator(app)?));
+    // The version the package declares, which every crate inherits from the workspace.
+    items.push(Box::new(MenuItem::with_id(
+        app,
+        "version",
+        format!("EnvRouter {}", env!("CARGO_PKG_VERSION")),
+        false,
+        None::<&str>,
+    )?));
     items.push(Box::new(MenuItem::with_id(
         app,
         "quit",
@@ -310,7 +377,9 @@ fn summary(app: &AppHandle, on: impl Iterator<Item = Shell>) -> (String, Option<
 
 #[cfg(test)]
 mod tests {
-    use super::{list_of, Failed, HelpPage, RevealFailed};
+    use super::{
+        list_of, queue_menu_request, take_menu_request, Failed, HelpPage, MenuRequest, RevealFailed,
+    };
     use crate::help::Link;
     use envrouter_ops::commands::Place;
 
@@ -344,5 +413,38 @@ mod tests {
         assert_eq!(list_of(&["zsh"]), "zsh");
         assert_eq!(list_of(&["zsh", "bash"]), "zsh and bash");
         assert_eq!(list_of(&["zsh", "bash", "fish"]), "zsh, bash and fish");
+    }
+
+    /// `MenuRequest` in `src/lib/types.ts`.
+    #[test]
+    fn menu_request_matches_the_typescript_type() {
+        assert_eq!(
+            serde_json::to_value(MenuRequest::CheckFolder).unwrap(),
+            serde_json::json!({ "kind": "checkFolder" })
+        );
+        let last = MenuRequest::CheckLastFolder {
+            folder: "/f".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(last).unwrap(),
+            serde_json::json!({ "kind": "checkLastFolder", "folder": "/f" })
+        );
+    }
+
+    /// A choice the window wasn't there to hear waits for it, once, and a newer one replaces it.
+    #[test]
+    fn a_menu_request_waits_until_taken_and_a_newer_one_replaces_it() {
+        assert_eq!(take_menu_request(), None);
+        queue_menu_request(MenuRequest::CheckFolder);
+        queue_menu_request(MenuRequest::CheckLastFolder {
+            folder: "/f".into(),
+        });
+        assert_eq!(
+            take_menu_request(),
+            Some(MenuRequest::CheckLastFolder {
+                folder: "/f".into()
+            })
+        );
+        assert_eq!(take_menu_request(), None);
     }
 }

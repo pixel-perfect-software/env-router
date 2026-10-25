@@ -34,7 +34,13 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// What's set up: the shim, each shell and editor, and the config (the default).
-    Status,
+    Status {
+        /// Also work out which agents a new terminal doesn't find, by running your login shell
+        /// (a few seconds, up to 15). Without it that isn't asked: `missingAgents` is null in
+        /// --json, and the text has no line for it.
+        #[arg(long)]
+        agents: bool,
+    },
     /// Install the shim, the secrets helper and this command into ~/.envrouter/bin, and the
     /// shims for every agent the config names.
     Install,
@@ -174,8 +180,9 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: &Cli, home: &Path) -> Result<ExitCode> {
-    match cli.command.as_ref().unwrap_or(&Command::Status) {
-        Command::Status => status(cli, home),
+    let plain_status = Command::Status { agents: false };
+    match cli.command.as_ref().unwrap_or(&plain_status) {
+        Command::Status { agents } => status(cli, home, *agents),
         Command::Install => install(cli, home),
         Command::Shell { switch, shell } => {
             let status = commands::set_shell_integration(
@@ -310,8 +317,14 @@ fn run(cli: &Cli, home: &Path) -> Result<ExitCode> {
     }
 }
 
-fn status(cli: &Cli, home: &Path) -> Result<ExitCode> {
-    let setup = commands::setup_status(home)?;
+fn status(cli: &Cli, home: &Path, agents: bool) -> Result<ExitCode> {
+    // Which agents a new terminal finds takes a login shell, which this command doesn't otherwise
+    // start (nothing is kept between runs), so only `status --agents` asks for it.
+    let setup = if agents {
+        commands::setup_status_within(home, commands::SHELL_WAIT, || {})?
+    } else {
+        commands::setup_status_without_agents(home)?
+    };
     let editors: Vec<EditorStatus> = commands::editor_status(home, &commands::saved_hooks(home)?)
         .into_iter()
         .filter(|e| e.available)
@@ -343,6 +356,16 @@ fn status(cli: &Cli, home: &Path) -> Result<ExitCode> {
             "not installed: run `envrouter install`".into()
         }
     );
+    if agents {
+        println!(
+            "Agents  {}",
+            match setup.missing_agents.as_deref() {
+                None => "couldn't tell which are installed".to_string(),
+                Some([]) => "Every agent is installed".to_string(),
+                Some(missing) => format!("Not installed: {}", missing.join(", ")),
+            }
+        );
+    }
     println!("Shells");
     for shell in &setup.shells {
         println!("  {}", shell_line(shell, home));

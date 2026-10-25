@@ -12,6 +12,7 @@ import type {
   IdeHook,
   ImportCandidate,
   McpServer,
+  MenuRequest,
   Pasted,
   Place,
   Preview,
@@ -56,6 +57,9 @@ export const setUnsavedEdits = (unsaved: boolean) => invoke<void>('set_unsaved_e
 
 /** Quits without saving, once the user has said so. */
 export const quitApp = () => invoke<void>('quit_app')
+
+/** The choice the menu bar left, if any: it is gone once taken. */
+export const takeMenuRequest = () => invoke<MenuRequest | null>('take_menu_request')
 
 /** Adds or removes EnvRouter's block in the shell's startup files. */
 export const setShellIntegration = (shell: Shell, enabled: boolean) => invoke<ShellStatus>('set_shell_integration', { shell, enabled })
