@@ -57,7 +57,8 @@ pub fn install_binaries(home: &Path, shim: &Path, keychain: &Path) -> Result<boo
 }
 
 /// Copies `source` to the installed location if it's missing or different, and says whether
-/// it did. The rename is atomic, so a shim that's running keeps its old inode.
+/// it did. A temp file and a rename put it in place, so a shim that's running keeps its old
+/// inode; a child `dd` writes the temp file (see `copy_to_new_file`).
 pub fn install_binary(home: &Path, source: &Path) -> Result<bool> {
     install_file(&paths::shim_binary(home), source)
 }
@@ -67,21 +68,133 @@ pub fn install_cli(home: &Path, source: &Path) -> Result<bool> {
     install_file(&paths::cli_binary(home), source)
 }
 
-fn install_file(dest: &Path, source: &Path) -> Result<bool> {
-    let dest = dest.to_path_buf();
-    let bytes = fs::read(source).map_err(|source_err| Error::Io {
-        path: source.to_path_buf(),
-        source: source_err,
-    })?;
-    if fs::read(&dest).is_ok_and(|current| current == bytes) {
+/// Everything that installs an executable lives in this unix-only module (it links shims with
+/// `symlink` and sets modes), so none of it runs on native Windows yet. That platform is M7
+/// work and will need its own copy step, since it has no `dd`.
+pub(crate) fn install_file(dest: &Path, source: &Path) -> Result<bool> {
+    install_file_with(dest, source, true)
+}
+
+/// [`install_file`], optionally without flushing the copy to disk before the rename. Tests skip
+/// the flush: it's slow (macOS flushes the drive's cache too) and a crash can't matter there.
+pub(crate) fn install_file_with(dest: &Path, source: &Path, sync: bool) -> Result<bool> {
+    let io_err = |path: &Path| {
+        let path = path.to_path_buf();
+        move |source| Error::Io { path, source }
+    };
+    let wanted = fs::File::open(source).map_err(io_err(source))?;
+    if has_contents_of(&wanted, dest) {
         return Ok(false);
     }
-    config::write_atomic(&dest, &bytes)?;
-    fs::set_permissions(&dest, fs::Permissions::from_mode(0o755)).map_err(|source| Error::Io {
-        path: dest.clone(),
-        source,
-    })?;
-    Ok(true)
+    drop(wanted);
+    if let Some(dir) = dest.parent() {
+        fs::create_dir_all(dir).map_err(io_err(dir))?;
+    }
+    let tmp = config::unused_temp_name(dest);
+    let staged = copy_to_new_file(source, &tmp, sync).and_then(|()| {
+        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755))
+            .and_then(|()| fs::rename(&tmp, dest))
+            .map_err(io_err(dest))
+    });
+    if staged.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    staged.map(|()| true)
+}
+
+/// Whether the file at `path` holds exactly what `wanted` does. Any error says no.
+fn has_contents_of(wanted: &fs::File, path: &Path) -> bool {
+    use std::io::Read;
+    let compare = || -> std::io::Result<bool> {
+        let (mut wanted, mut have) = (wanted, fs::File::open(path)?);
+        if wanted.metadata()?.len() != have.metadata()?.len() {
+            return Ok(false);
+        }
+        let (mut a, mut b) = ([0_u8; 64 * 1024], [0_u8; 64 * 1024]);
+        loop {
+            let n = wanted.read(&mut a)?;
+            if n == 0 {
+                return Ok(true);
+            }
+            have.read_exact(&mut b[..n])?;
+            if a[..n] != b[..n] {
+                return Ok(false);
+            }
+        }
+    };
+    compare().unwrap_or(false)
+}
+
+/// Where a `dd` is looked for before PATH: an app started from Finder or a `.desktop` file has
+/// a bare PATH, and another `dd` ahead of the system's shouldn't decide what runs here.
+const DD_LOCATIONS: [&str; 4] = [
+    "/bin/dd",
+    "/usr/bin/dd",
+    // NixOS has neither of the above.
+    "/run/current-system/sw/bin/dd",
+    "/nix/var/nix/profiles/default/bin/dd",
+];
+
+/// Copies `from` to `to`, a name nothing exists at, and flushes it to disk if `sync`, as
+/// `config::write_atomic` does before its rename. A child `dd` does it, never this process. An
+/// executable that's written here can't be run safely on Linux: this app forks all the time
+/// (shell probes, server checks, npm, editors), and a child forked while the file is open for
+/// writing holds that handle until it execs, however soon this process closes its own. Running
+/// the file meanwhile fails with ETXTBSY ("Text file busy"): an agent started right after an
+/// update, or the Keychain helper that `ask_keychain_access` runs just after its install. The
+/// `dd` is the only process that ever holds the handle, and it's gone before the rename puts
+/// the file where anything can run it. (A lock around this process's spawns wouldn't do: the
+/// libraries it uses spawn on their own.)
+///
+/// `dd` rather than `cp`, which on macOS hands the source's `com.apple.quarantine` to the copy
+/// (verified: `cp -X` and `ditto --noextattr` too, since copyfile carries it over itself). The
+/// bundled shim has it from the download, and Gatekeeper would block an unnotarized one the
+/// first time a terminal runs it. `dd` just writes bytes.
+fn copy_to_new_file(from: &Path, to: &Path, sync: bool) -> Result<()> {
+    let dd = DD_LOCATIONS
+        .into_iter()
+        .find(|dd| Path::new(dd).is_file())
+        .unwrap_or("dd");
+    let output = std::process::Command::new(dd)
+        .arg(format!("if={}", from.display()))
+        .arg(format!("of={}", to.display()))
+        .arg("bs=65536")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|err| {
+            Error::Command(format!(
+                "could not run `dd` to install {}: {err}. EnvRouter needs it; put one on your PATH.",
+                to.display()
+            ))
+        })?;
+    if !output.status.success() {
+        return Err(Error::Command(format!(
+            "`dd` failed to copy {} ({}): {}",
+            from.display(),
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    if sync {
+        // A read-only handle is enough for fsync and can't make the file busy.
+        fs::File::open(to)
+            .and_then(|file| file.sync_all())
+            .map_err(|source| Error::Io {
+                path: to.to_path_buf(),
+                source,
+            })?;
+    }
+    Ok(())
+}
+
+/// Writes a script for a test to run straight away, the way the app installs one: through a
+/// side file and a child `dd`, so this process never holds the script open for writing (a test
+/// thread that forks meanwhile would make running it fail on Linux, as `copy_to_new_file` says).
+#[cfg(test)]
+pub(crate) fn write_executable(path: &Path, contents: &str) {
+    let source = path.with_extension("src");
+    fs::write(&source, contents).unwrap();
+    install_file_with(path, &source, false).unwrap();
 }
 
 /// Runs the installed Keychain helper once, in the background. A new build has a new ad hoc
@@ -230,6 +343,80 @@ mod tests {
                 0o111
             );
         }
+    }
+
+    /// On Linux, running a file fails with "Text file busy" while any process holds it open for
+    /// writing, and a fork of this process holds this process's handles until it execs. So the
+    /// install must never write the file here; the threads spawn all the while to catch it.
+    /// Only Linux refuses (macOS would spend seconds in `fsync` proving nothing).
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn an_installed_executable_runs_while_other_threads_spawn() {
+        use std::process::{Command, Stdio};
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        /// Stops the spawning threads however the test ends: `thread::scope` waits for them, so
+        /// a panic that left them looping would hang the run instead of failing it.
+        struct StopOnDrop<'a>(&'a AtomicBool);
+        impl Drop for StopOnDrop<'_> {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Relaxed);
+            }
+        }
+
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        let source = root.path().join("source");
+        let installed = paths::shim_binary(&home);
+        let stop = AtomicBool::new(false);
+        std::thread::scope(|scope| {
+            let _stop_when_done = StopOnDrop(&stop);
+            for _ in 0..4 {
+                scope.spawn(|| {
+                    while !stop.load(Ordering::Relaxed) {
+                        let _ = Command::new("/bin/sh")
+                            .args(["-c", ":"])
+                            .stdout(Stdio::null())
+                            .status();
+                    }
+                });
+            }
+            for round in 0..150 {
+                fs::write(&source, format!("#!/bin/sh\n# {round}\nexit 0\n")).unwrap();
+                assert!(install_binary(&home, &source).unwrap());
+                let ran = Command::new(&installed).status();
+                assert!(
+                    ran.as_ref().is_ok_and(std::process::ExitStatus::success),
+                    "round {round}: running the installed file gave {ran:?}"
+                );
+            }
+        });
+    }
+
+    /// A download leaves `com.apple.quarantine` on the bundle, and macOS's `cp` hands it
+    /// on even with `-X`; Gatekeeper blocks a quarantined, unnotarized shim at its first run.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn an_installed_executable_does_not_inherit_the_quarantine_flag() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let dest = root.path().join("bin/installed");
+        fs::write(&source, "#!/bin/sh\n").unwrap();
+        let xattr = |args: &[&str], file: &Path| {
+            std::process::Command::new("/usr/bin/xattr")
+                .args(args)
+                .arg(file)
+                .output()
+                .unwrap()
+        };
+        let flag = "com.apple.quarantine";
+        assert!(xattr(&["-w", flag, "0081;00000000;Safari;"], &source)
+            .status
+            .success());
+        assert!(xattr(&["-p", flag], &source).status.success());
+
+        assert!(install_file(&dest, &source).unwrap());
+        assert!(!xattr(&["-p", flag], &dest).status.success());
     }
 
     #[test]

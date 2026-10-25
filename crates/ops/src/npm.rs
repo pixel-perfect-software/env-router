@@ -140,22 +140,7 @@ fn is_name_part(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-
-    /// See `mcp_probe`'s: the script is copied into place so no test thread forks while this
-    /// process holds it open for writing.
-    fn write_executable(path: &Path, contents: &str) {
-        use std::os::unix::fs::PermissionsExt;
-        let source = path.with_extension("src");
-        fs::write(&source, contents).unwrap();
-        let copied = std::process::Command::new("cp")
-            .arg(&source)
-            .arg(path)
-            .status()
-            .unwrap();
-        assert!(copied.success());
-        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    use crate::shims::write_executable;
 
     fn run(
         home: &Path,
