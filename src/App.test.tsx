@@ -743,6 +743,9 @@ describe('unsaved edits', () => {
 
     await user.click(inspector().getByRole('button', { name: 'Save' }))
     await screen.findByRole('button', { name: 'Edit Personal 2' })
+    // The card shows the saved name a render before the inspector closes, and the inspector reports
+    // its edits gone as it closes, so wait for that rather than the card.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(hasUnsaved()).toBe(false)
   })
 
