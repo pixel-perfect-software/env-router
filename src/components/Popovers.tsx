@@ -271,7 +271,10 @@ const shortSettingsPath = (file: string) => file.replace('/Library/Application S
 /** A popover's closing note under a hairline; a failed switch's error takes its place. */
 function Note({ error, home, children }: { error: string | null; home: string; children: ReactNode }) {
   return (
-    <p role={error ? 'alert' : undefined} className={`mx-2.5 mt-1 mb-1.5 pt-2 text-small hair-t ${error ? 'text-problem' : 'text-ink-2'}`}>
+    <p
+      role={error ? 'alert' : undefined}
+      className={`mx-2.5 mt-1 mb-1.5 pt-2 text-small hair-t ${error ? 'text-problem select-text' : 'text-ink-2'}`}
+    >
       {error ? <ValueText text={error} home={home} /> : children}
     </p>
   )

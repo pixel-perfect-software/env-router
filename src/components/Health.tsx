@@ -18,14 +18,17 @@ function ValueLines({ text, home }: { text: string; home: string }) {
   ))
 }
 
-function Banner({ tone, title, detail, action }: { tone: Tone; title: string; detail?: ReactNode; action?: ReactNode }) {
+function Banner({ tone, title, home, detail, action }: { tone: Tone; title: string; home: string; detail?: ReactNode; action?: ReactNode }) {
   return (
     // The actions wrap under the text when the window is too narrow for both.
     <div className="mx-4 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-card bg-card p-3 shadow-card">
       <StatusTile tone={tone} />
       <div className="min-w-56 flex-1">
-        <p className="font-medium">{title}</p>
-        {detail && <p className="text-small text-ink-2">{detail}</p>}
+        <p className="font-medium">
+          <ValueText text={title} home={home} />
+        </p>
+        {/* Selectable: an error's detail is what gets pasted into a report. */}
+        {detail && <p className="text-small text-ink-2 select-text">{detail}</p>}
       </div>
       {action && <div className="flex flex-wrap items-center gap-2">{action}</div>}
     </div>
@@ -110,6 +113,7 @@ export function HealthLine({
     case 'error':
       return (
         <Banner
+          home={home}
           tone="problem"
           title={health.title ?? 'Something went wrong'}
           detail={<ValueLines key={health.attempt} text={health.message} home={home} />}
@@ -131,6 +135,7 @@ export function HealthLine({
     case 'warning':
       return (
         <Banner
+          home={home}
           tone="warn"
           title="Saved, with a loose end"
           detail={<ValueText text={health.message} home={home} />}
@@ -145,6 +150,7 @@ export function HealthLine({
       const openFailed = health.openError?.action === 'open'
       return (
         <Banner
+          home={home}
           tone="problem"
           title="EnvRouter can't read config.json"
           detail={
@@ -189,6 +195,7 @@ export function HealthLine({
     case 'shim':
       return (
         <Banner
+          home={home}
           tone="problem"
           title="The shim is missing or out of date"
           detail={
@@ -206,6 +213,7 @@ export function HealthLine({
     case 'off':
       return (
         <Banner
+          home={home}
           tone="warn"
           title="Routing is off"
           detail={`New ${health.shell.shell} windows run every agent without a profile.`}
@@ -219,6 +227,7 @@ export function HealthLine({
     case 'partial':
       return (
         <Banner
+          home={home}
           tone="warn"
           title={`Routing is off in ${health.shell.shell}, your login shell`}
           detail={`It's on in ${listOf(health.on)}.`}
@@ -228,6 +237,7 @@ export function HealthLine({
     case 'blocked':
       return (
         <Banner
+          home={home}
           tone="problem"
           title={`Routing is blocked in ${health.shell}`}
           detail={`${health.headline}.`}

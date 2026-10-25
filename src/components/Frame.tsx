@@ -7,6 +7,7 @@ import { isInside, splitLeaf, tildify, triggerBase } from '../lib/paths'
 import { shortcutLabel, usePlatform } from '../lib/platform'
 import { KNOWN_TOOLS, toolLabel } from '../lib/tools'
 import type { Profile } from '../lib/types'
+import { onGridKeyDown } from '../lib/useRoving'
 import { AgentMark } from './icons'
 import { BranchIcon, FolderIcon, IconButton, Mark, type MarkKind, MoreIcon, PencilIcon, PlugIcon, PlusIcon, ProfileDot, profileColors } from './ui'
 
@@ -73,7 +74,9 @@ export function Frame({
   const colors = profileColors(profiles.map((p) => p.id))
   return (
     // Side padding plus the scroller's gutter on each side (App.tsx) makes the 16px window gutter, so the grid lines up with the banner.
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3 px-[5px] pt-3 pb-4">
+    // The arrow keys also move between the cards (each card's name, then New Profile); every one of them stays in the Tab order.
+    // biome-ignore lint/a11y/noStaticElementInteractions: an extra route between buttons that Tab reaches anyway
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3 px-[5px] pt-3 pb-4" onKeyDown={onGridKeyDown}>
       {profiles.map((profile) => (
         <ProfileCard
           key={profile.id}
@@ -160,6 +163,7 @@ function ProfileCard({
     <section
       aria-label={`Profile ${profile.name}`}
       data-profile={profile.id}
+      data-card
       onContextMenu={(event) => {
         event.preventDefault()
         const row = (event.target as HTMLElement).closest<HTMLElement>('[data-folder]')
@@ -175,7 +179,7 @@ function ProfileCard({
       >
         <ProfileDot color={color} />
         <h2 className="min-w-0 flex-1 truncate text-title font-semibold">
-          <button type="button" onClick={onEdit} className="max-w-full truncate text-left">
+          <button type="button" data-card-target onClick={onEdit} className="max-w-full truncate text-left">
             {profile.name}
           </button>
         </h2>
@@ -190,7 +194,7 @@ function ProfileCard({
 
       <ul className="flex-1 space-y-0.5 px-2 pb-2">
         {slip && !profile.triggerPaths.some((raw) => triggerBase(raw, home) === slip.trigger) && <SlipRow slip={slip} home={home} />}
-        {profile.triggerPaths.length === 0 && !slip && <li className="px-1.5 py-1 text-small text-ink-2">No folders yet.</li>}
+        {profile.triggerPaths.length === 0 && !slip && <li className="px-1.5 py-1 text-small text-ink-2 italic">No folders yet.</li>}
         {profile.triggerPaths.map((raw) => (
           <li key={raw} data-folder={triggerBase(raw, home)}>
             <FolderRow
@@ -295,6 +299,8 @@ function NewProfileCard({ first, selected, onNew }: { first: boolean; selected: 
     <button
       type="button"
       id="new-profile"
+      data-card
+      data-card-target
       disabled={selected}
       onClick={onNew}
       className={`group flex min-h-[176px] flex-col items-center justify-center gap-2 rounded-card text-ink-2 shadow-[inset_0_0_0_1.5px_var(--er-rule)] transition-[opacity,background-color,color] duration-150 hover:bg-card hover:text-accent-ink disabled:pointer-events-none ${
@@ -318,7 +324,7 @@ function EverywhereElse({ slip, home, targeted }: { slip: Slip | null; home: str
         <h2 className="min-h-[26px] flex-1 content-center text-title font-semibold text-ink-2">Everywhere else</h2>
       </header>
       <ul className="flex-1 space-y-0.5 px-2 pb-2">
-        {slip ? <SlipRow slip={slip} home={home} /> : <li className="px-1.5 py-1 text-small text-ink-2">Folders no profile owns.</li>}
+        {slip ? <SlipRow slip={slip} home={home} /> : <li className="px-1.5 py-1 text-small text-ink-2 italic">Folders no profile owns.</li>}
       </ul>
       <footer className="px-3.5 py-2 hair-t">
         <p className="text-small text-ink-2 italic">Every agent uses its default config</p>

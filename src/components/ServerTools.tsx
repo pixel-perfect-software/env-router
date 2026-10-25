@@ -104,26 +104,32 @@ export function CheckSection({
                 : null
 
   return (
-    <section ref={section} aria-label="Tools" aria-live="polite">
+    <section ref={section} aria-label="Tools">
       <h3 className="mb-1.5 text-small font-medium text-ink-2">Tools</h3>
       <div className="flex items-center gap-2.5">
-        {headline ? (
-          <>
-            <StatusTile tone={tone} size={28} />
-            <p className="min-w-0 flex-1 truncate">
-              <span className="font-medium">{headline}</span>
-              {fromCache && <span className="ml-2 text-small text-ink-2">from the last check</span>}
-            </p>
-          </>
-        ) : (
-          <p className="min-w-0 flex-1 text-small text-ink-2 italic">Not checked yet</p>
-        )}
+        {/* When a check answers, the headline ("9 tools", "Didn't answer") and the reason under it are announced; the list is there to be
+            explored, not read out again at every check. Both regions exist before their text changes, so the change is what's spoken. */}
+        <div role="status" className="flex min-w-0 flex-1 items-center gap-2.5">
+          {headline ? (
+            <>
+              <StatusTile tone={tone} size={28} />
+              <p className="min-w-0 flex-1 truncate">
+                <span className="font-medium">{headline}</span>
+                {fromCache && <span className="ml-2 text-small text-ink-2">from the last check</span>}
+              </p>
+            </>
+          ) : (
+            <p className="min-w-0 flex-1 text-small text-ink-2 italic">Not checked yet</p>
+          )}
+        </div>
         <Button onClick={run} busy={running}>
           <CheckIcon />
           {result || problem || fromCache ? 'Check Again' : 'Check Server'}
         </Button>
       </div>
-      {(result?.message || problem) && <p className="mt-1.5 text-small text-ink-2">{result?.message ?? problem}</p>}
+      <p role="status" className="mt-1.5 text-small text-ink-2 select-text empty:hidden">
+        {result?.message ?? problem}
+      </p>
       {result?.log && (
         <pre className="mt-2 max-h-[120px] overflow-auto rounded-control bg-well px-2 py-1.5 font-mono text-caption whitespace-pre-wrap text-ink-2 select-text">
           {result.log}

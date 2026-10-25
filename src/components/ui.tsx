@@ -59,7 +59,7 @@ export function Footer({ leading, error, errorId, children }: { leading?: ReactN
   return (
     <footer className="flex flex-wrap items-center gap-2 bg-card-muted px-5 py-3 hair-t">
       {leading}
-      <p id={errorId} role="alert" className={`min-w-0 text-small text-problem ${error ? 'order-first basis-full' : 'flex-1'}`}>
+      <p id={errorId} role="alert" className={`min-w-0 text-small text-problem select-text ${error ? 'order-first basis-full' : 'flex-1'}`}>
         {error}
       </p>
       {error && <span aria-hidden="true" className="flex-1" />}
@@ -345,9 +345,17 @@ export {
 
 /**
  * Profile colours: blues, purples, cyans and greys only, because red, amber and green belong
- * to status and a profile tag must never read as a verdict.
+ * to status and a profile tag must never read as a verdict. A dot (or a chip's ring) says which
+ * profile, so each holds 3:1 (WCAG 1.4.11) on every surface it sits on, in light and in dark: the
+ * card, muted card, well and raised surface, its own header wash, the selected row's tint and a
+ * chip's fill. One hex serves both themes, so each sits in the narrow band of lightness (OKLCH
+ * L about 0.60 to 0.63) that clears the white card and the dark chip fill at once; `ui.test.ts`
+ * measures every one. Sky is its own value, darker than the mark's lit route (`mark-lit`).
  */
-const PROFILE_COLORS = ['#4f7cf0', '#c45ab8', '#1f9fbf', '#7a5af0', '#6577a8', '#4aa3e8', '#a35bdb', '#8a8f99']
+const PROFILE_COLORS = ['#4f7cf0', '#c45ab8', '#038eac', '#8669ff', '#7082b4', '#3187cd', '#a860e1', '#7e838d']
+
+/** How much of a profile's colour fills a Used by chip that's on, over the card. */
+export const PROFILE_FILL = 16
 
 const hash = (id: string) => {
   let h = 0
@@ -375,7 +383,14 @@ export function profileColors(ids: string[]): Map<string, string> {
 const DOT_SIZE = { 2: 'size-2', 2.5: 'size-2.5', 3: 'size-3' }
 
 export function ProfileDot({ color, size = 2.5, className = '' }: { color: string; size?: keyof typeof DOT_SIZE; className?: string }) {
-  return <span aria-hidden="true" className={`inline-block ${DOT_SIZE[size]} shrink-0 rounded-full ${className}`} style={{ background: color }} />
+  // Forced colours would paint the dot in the page's background and lose which profile it is: it keeps its own colour, ringed in the text colour around it (HighlightText inside a pressed chip).
+  return (
+    <span
+      aria-hidden="true"
+      className={`inline-block ${DOT_SIZE[size]} shrink-0 rounded-full forced-colors:forced-color-adjust-none forced-colors:border forced-colors:border-current ${className}`}
+      style={{ background: color }}
+    />
+  )
 }
 
 export type Tone = 'ok' | 'warn' | 'problem' | 'neutral' | 'pending'

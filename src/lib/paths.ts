@@ -15,6 +15,12 @@ export const triggerBase = (raw: string, home: string) => {
   return path.length > 1 ? path.replace(/\/+$/, '') : path
 }
 
+/**
+ * Whether a trigger's base (from `triggerBase`) is one the backend accepts (`config::trigger_base`): absolute, with no `..` and no
+ * wildcard left past the trailing one. The others are never matched, so there's nothing of theirs to show or to check against.
+ */
+export const isValidBase = (base: string) => base.startsWith('/') && !base.includes('*') && !base.split('/').includes('..')
+
 /** Whether `child` is strictly inside `parent` (both already normalized). */
 export const isInside = (child: string, parent: string) => child !== parent && child.startsWith(parent === '/' ? '/' : `${parent}/`)
 

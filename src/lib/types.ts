@@ -281,8 +281,8 @@ export interface ConfigFault {
   path: string | null
 }
 
-/** `commands::Place`: one of EnvRouter's own places to show in the file manager. `mcpFiles`: the folder a profile's MCP files are rendered into. */
-export type Place = { kind: 'config' } | { kind: 'root' } | { kind: 'mcpFiles'; profileId: string }
+/** `commands::Place`: one of EnvRouter's own places to show in the file manager. `mcpFiles`: the folder a profile's MCP files are rendered into. `trigger`: a trigger folder of a saved profile, or one inside it (an absolute path the backend holds to the config's triggers). */
+export type Place = { kind: 'config' } | { kind: 'root' } | { kind: 'mcpFiles'; profileId: string } | { kind: 'trigger'; folder: string }
 
 /**
  * `help::Link`: a page of the project's repository on GitHub, named by its key in `helpLinks.json`. The window names it; the backend

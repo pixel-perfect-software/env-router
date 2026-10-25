@@ -29,6 +29,7 @@ import { plural } from '../lib/text'
 import { withAgents } from '../lib/tools'
 import type { ConfigState, ImportCandidate, McpServer } from '../lib/types'
 import { useDebounced } from '../lib/useDebounced'
+import { useRoving } from '../lib/useRoving'
 import { LocalIcon, OpenIcon, RemoteIcon, SignInIcon } from './icons'
 import { ServerMark } from './ServerMark'
 import { Button, CheckBox, ChevronIcon, CloseIcon, Footer, IconButton, LockIcon, Mark, SearchField, Segmented, StatusTile } from './ui'
@@ -98,6 +99,8 @@ export function CatalogView({
   const search = useRef<HTMLInputElement>(null)
   useEffect(() => search.current?.focus(), [])
   const entries = filterCatalog(catalog(home), filter)
+  // Arrow keys move through the entries; Tab takes the list as one stop.
+  const rove = useRoving(entries.map((entry) => entry.name))
   // Said once typing has paused, not at every keystroke.
   const announced = useDebounced(plural(entries.length, 'server', 'servers'), 400)
   const set = <K extends keyof CatalogFilter>(key: K, value: CatalogFilter[K]) => setFilter((f) => ({ ...f, [key]: value }))
@@ -155,16 +158,18 @@ export function CatalogView({
             </Button>
           </div>
         ) : (
-          <ul className="rounded-[8px] bg-well">
+          <ul className="rounded-[8px] bg-well" {...rove.container}>
             {entries.map((entry) => {
               // "In the library" only when it's the same server, not just the same name.
               const added = Object.values(library).some((server) => sameEndpoint(server, entry.server))
               const local = isLocal(entry.server)
               const [needs, needsIcon] = ACCESS[accessOf(entry)]
               return (
-                <li key={entry.name} className="[&+&]:hair-t">
+                <li key={entry.name} data-rove-id={entry.name} className="[&+&]:hair-t">
                   <button
                     type="button"
+                    data-rove
+                    tabIndex={rove.tabIndex(entry.name)}
                     onClick={() => onPick(draftFromCatalog(freeName(entry.name, names), entry.server, entry.secrets ?? {}))}
                     className="group/row flex w-full items-start gap-2.5 rounded-control px-3 py-2 text-left hover:bg-[color-mix(in_srgb,var(--er-ink)_4%,transparent)]"
                   >
