@@ -86,7 +86,8 @@ impl Fixture {
 }
 
 /// Writes a script that's run straight away. The bytes go to a side file and `cp` copies them into
-/// place (see `copy_executable`).
+/// place (see `copy_executable`). This crate can't use `envrouter_ops::shims`, which installs the
+/// shim the same way.
 fn write_executable(path: &Path, contents: &str) {
     let source = path.with_extension("src");
     fs::write(&source, contents).unwrap();
@@ -94,9 +95,10 @@ fn write_executable(path: &Path, contents: &str) {
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
 }
 
-/// Copies an executable that's run straight away with `cp`, never `fs::copy`, so this process
-/// never holds it open for writing: on Linux, a test thread that forks meanwhile would inherit
-/// that handle, and running the file would fail with "Text file busy" until the fork execs.
+/// Copies an executable that's run straight away with a child `cp`, never `fs::copy`, so this
+/// process never holds it open for writing: on Linux, a test thread that forks meanwhile would
+/// inherit that handle, and running the file would fail with "Text file busy" until the fork
+/// execs.
 fn copy_executable(from: &Path, to: &Path) {
     let copied = Command::new("cp").arg(from).arg(to).status().unwrap();
     assert!(copied.success());

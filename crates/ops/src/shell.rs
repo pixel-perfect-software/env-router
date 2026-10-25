@@ -1188,31 +1188,21 @@ mod tests {
         let home = fs::canonicalize(root.path()).unwrap();
         fs::create_dir_all(home.join("work/app")).unwrap();
         fs::create_dir_all(home.join("bin")).unwrap();
-        // The fake tool and the shim are copied into place by `cp`, never written by this
-        // process (as `shims::install_binary` does), so no fork of this process can hold them
-        // open for writing when they run (Linux refuses that with "Text file busy").
-        let copy_executable = |from: &Path, to: &Path| {
-            fs::create_dir_all(to.parent().unwrap()).unwrap();
-            let copied = std::process::Command::new("cp")
-                .arg(from)
-                .arg(to)
-                .status()
-                .unwrap();
-            assert!(copied.success());
-            fs::set_permissions(to, fs::Permissions::from_mode(0o755)).unwrap();
-        };
-        fs::write(
-            home.join("bin/claude.src"),
+        // The fake tool and the shim are installed the way the app installs a shim, by a child
+        // `dd`, so no fork of this process can hold them open for writing when they run (Linux
+        // refuses that with "Text file busy").
+        shims::write_executable(
+            &home.join("bin/claude"),
             "#!/bin/sh\necho REAL CLAUDE RAN\n",
-        )
-        .unwrap();
-        copy_executable(&home.join("bin/claude.src"), &home.join("bin/claude"));
+        );
 
         let config = config();
-        copy_executable(
-            Path::new(env!("ENVROUTER_STAGED_SHIM")),
+        shims::install_file_with(
             &paths::shim_binary(&home),
-        );
+            Path::new(env!("ENVROUTER_STAGED_SHIM")),
+            false,
+        )
+        .unwrap();
         shims::sync(&home, &config).unwrap();
         config::save(&paths::root(&home), &config).unwrap();
         fs::write(

@@ -448,6 +448,31 @@ fn write_through_temp(path: &Path, contents: &[u8], mode: Option<u32>) -> Result
     written.map_err(io_err)
 }
 
+/// The next temp name beside `path`: this process's id and a counter, so no two writers share one.
+fn temp_candidate(path: &Path) -> PathBuf {
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(format!(
+        ".envrouter-tmp.{}.{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    tmp.into()
+}
+
+/// A temp name beside `path` that nothing exists at, for a writer that can't open the file
+/// itself (a child process fills it). Same names as [`write_atomic`]'s temp files.
+pub fn unused_temp_name(path: &Path) -> PathBuf {
+    loop {
+        let tmp = temp_candidate(path);
+        // Left by a crash of a process that had this id.
+        // Any other error isn't "taken", and the writer reports it.
+        if fs::symlink_metadata(&tmp).is_err() {
+            return tmp;
+        }
+    }
+}
+
 /// A new file beside `path` that no other writer can have open. With one fixed temp name, the
 /// CLI's `install` and the app's could share a file: the second `O_TRUNC` cut the first's
 /// half-written shim, and a truncated shim breaks every agent launch.
@@ -459,14 +484,8 @@ fn create_temp(
     )]
     mode: Option<u32>,
 ) -> io::Result<(PathBuf, File)> {
-    static NEXT: AtomicU32 = AtomicU32::new(0);
     loop {
-        let mut tmp = path.as_os_str().to_owned();
-        tmp.push(format!(
-            ".envrouter-tmp.{}.{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
+        let tmp = temp_candidate(path);
         let mut options = File::options();
         options.write(true).create_new(true);
         #[cfg(unix)]
@@ -475,7 +494,7 @@ fn create_temp(
             options.mode(mode);
         }
         match options.open(&tmp) {
-            Ok(file) => return Ok((tmp.into(), file)),
+            Ok(file) => return Ok((tmp, file)),
             // Left by a crash of a process that had this id.
             Err(err) if err.kind() == ErrorKind::AlreadyExists => {}
             Err(err) => return Err(err),

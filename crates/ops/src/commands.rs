@@ -918,25 +918,13 @@ mod tests {
         assert!(cli_installs(home), "no shim yet");
         let shim = paths::shim_binary(home);
         std::fs::create_dir_all(shim.parent().unwrap()).unwrap();
-        // Every shim here is copied into place by `cp`, never written by this process (as
-        // `shims::install_binary` does), so no thread here holds it open for writing when it
-        // runs: on Linux, a test thread that forks meanwhile inherits that handle, and running
-        // the shim fails with "Text file busy" until the fork execs.
+        // Installed the way the app installs one, by a child `dd`: this process never holds a
+        // shim open for writing, so a thread of this test run that forks meanwhile can't make
+        // running it fail with "Text file busy" on Linux.
         let install = |source: &Path| {
-            let copied = std::process::Command::new("cp")
-                .arg(source)
-                .arg(&shim)
-                .status()
-                .unwrap();
-            assert!(copied.success());
-            std::fs::set_permissions(&shim, std::os::unix::fs::PermissionsExt::from_mode(0o755))
-                .unwrap();
+            crate::shims::install_file_with(&shim, source, false).unwrap();
         };
-        let install_script = |script: &str| {
-            let source = shim.with_extension("src");
-            std::fs::write(&source, script).unwrap();
-            install(&source);
-        };
+        let install_script = |script: &str| crate::shims::write_executable(&shim, script);
         // A shim from 0.7.0 or earlier doesn't know the question: it exits 2, as 0.6.0's does.
         // One that answers an older version is older too.
         for old in [
