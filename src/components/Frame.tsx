@@ -50,6 +50,7 @@ export function Frame({
   onContextMenu,
   onFolderMenu,
   menuFolder,
+  missingAgents,
   onOpenServer,
 }: {
   profiles: Profile[]
@@ -64,6 +65,8 @@ export function Frame({
   onFolderMenu: (folder: string, anchor: HTMLElement) => void
   /** The folder whose menu is open, if any: its button stays in view while it is. */
   menuFolder: string | null
+  /** The offered agents a new terminal doesn't find on its PATH; a card's line for one says so. */
+  missingAgents: string[]
   /** A server name in a card's footer opens that server in the Servers view. */
   onOpenServer: (name: string) => void
 }) {
@@ -86,6 +89,7 @@ export function Frame({
           onContextMenu={(folder, event) => onContextMenu(profile, folder, event)}
           onFolderMenu={onFolderMenu}
           menuFolder={menuFolder}
+          missingAgents={missingAgents}
           onOpenServer={onOpenServer}
         />
       ))}
@@ -108,6 +112,7 @@ function ProfileCard({
   onContextMenu,
   onFolderMenu,
   menuFolder,
+  missingAgents,
   onOpenServer,
 }: {
   profile: Profile
@@ -122,6 +127,7 @@ function ProfileCard({
   onContextMenu: (folder: string | null, event: MouseEvent) => void
   onFolderMenu: (folder: string, anchor: HTMLElement) => void
   menuFolder: string | null
+  missingAgents: string[]
   onOpenServer: (name: string) => void
 }) {
   // Other profiles' triggers inside each of this profile's triggers.
@@ -218,15 +224,25 @@ function ProfileCard({
         )}
         {/* One line per thing the profile hands out: an agent's mark and its config folder, then the plug and its MCP servers. */}
         <dl className="grid grid-cols-[14px_minmax(0,1fr)] items-center gap-x-2 gap-y-1 text-small">
-          {routedTools(profile).map(([command, path]) => (
-            <div key={command} className="contents" title={`${toolLabel(command)} uses ${tildify(path, home)}`}>
-              <dt className="text-ink-2">
-                <AgentMark command={command} />
-                <span className="sr-only">{toolLabel(command)}</span>
-              </dt>
-              <dd className="truncate font-mono text-ink select-text">{tildify(path, home)}</dd>
-            </div>
-          ))}
+          {routedTools(profile).map(([command, path]) => {
+            const missing = missingAgents.includes(command)
+            return (
+              <div key={command} className="contents" title={`${toolLabel(command)} uses ${tildify(path, home)}${missing ? ' (not installed)' : ''}`}>
+                <dt className="text-ink-2">
+                  <AgentMark command={command} />
+                  <span className="sr-only">{toolLabel(command)}</span>
+                </dt>
+                {missing ? (
+                  <dd className="flex min-w-0 items-baseline gap-1.5">
+                    <span className="min-w-0 truncate font-mono text-ink select-text">{tildify(path, home)}</span>
+                    <span className="shrink-0 text-caption text-ink-2 italic">Not installed</span>
+                  </dd>
+                ) : (
+                  <dd className="truncate font-mono text-ink select-text">{tildify(path, home)}</dd>
+                )}
+              </div>
+            )
+          })}
           {servers.length > 0 && (
             <div className="contents" title={`MCP servers: ${servers.join(', ')}`}>
               <dt className="text-ink-2">

@@ -1,17 +1,18 @@
 //! Puts the shims directory first on PATH in the user's shells, through a marked block at
 //! the end of each startup file, and checks the result in a real shell.
 
+use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{ErrorKind, Read, Seek, Write};
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use envrouter_core::config::{self, ConfigState};
 use envrouter_core::platform::{self, Platform};
+use envrouter_core::programs::is_executable;
 use envrouter_core::{mcp, paths, resolve, Error, Result, EXIT_TOOL_NOT_FOUND};
 use serde::{Deserialize, Serialize};
 
@@ -136,32 +137,75 @@ impl Shell {
         format!("{BEGIN}\n{NOTE}\n{body}\n{END}\n")
     }
 
+    /// The commands, in this shell's syntax, that run its prompt hooks once as drawing the first
+    /// prompt would (mise and direnv change PATH there). Hook output is discarded: a terminal
+    /// title has no newline and would run into the next line. `cd` runs zsh's chpwd hooks; each
+    /// prompt runs precmd's. PROMPT_COMMAND is a string, or an array from bash 5.1; `[@]` reads
+    /// both. Prompt hooks in fish are `--on-event fish_prompt` functions. Both a folder check and
+    /// the login PATH ([`login_shell_report`]) run these, so their answers agree.
+    fn prompt_hooks(self) -> &'static str {
+        match self {
+            Shell::Zsh => {
+                r"for __envrouter_hook in chpwd $chpwd_functions precmd $precmd_functions; do (( $+functions[$__envrouter_hook] )) && $__envrouter_hook >/dev/null; done"
+            }
+            Shell::Bash => {
+                r#"for __envrouter_hook in "${PROMPT_COMMAND[@]}"; do eval "$__envrouter_hook" >/dev/null; done"#
+            }
+            Shell::Fish => "emit fish_prompt >/dev/null",
+        }
+    }
+
     /// One command, in this shell's syntax, that prints the PATH the startup files left, runs
-    /// the prompt hooks once as drawing the first prompt would (mise and direnv change PATH
-    /// there), then prints how `tool` resolves and the PATH. Hook output is discarded: a
-    /// terminal title has no newline and would run into the next line.
+    /// the prompt hooks once, then prints how `tool` resolves and the PATH.
     /// `tool` has passed `is_command_name`, so it's safe to interpolate.
     fn probe(self, tool: &str) -> String {
+        let hooks = self.prompt_hooks();
         match self {
             // `whence -v` names the file a function came from: "claude is a shell function
-            // from /Users/me/.zshrc". `cd` runs the chpwd hooks; each prompt runs precmd's.
-            // `check_folder` runs this as a script file, not with `-c`: only a script's
-            // commands run at the shell's top level, and direnv's hook does nothing elsewhere.
+            // from /Users/me/.zshrc". A zsh probe runs as a script file, not with `-c` (see
+            // `start`): only a script's commands run at the shell's top level, and direnv's hook
+            // does nothing elsewhere.
             Shell::Zsh => format!(
-                "print -r -- \"{STARTUP_PATH}$PATH\"; for __envrouter_hook in chpwd $chpwd_functions precmd $precmd_functions; do (( $+functions[$__envrouter_hook] )) && $__envrouter_hook >/dev/null; done; print -r -- \"{KIND}$(whence -w -- {tool})\"; print -r -- \"{ORIGIN}$(whence -v -- {tool})\"; print -r -- \"{ALIAS}${{aliases[{tool}]}}\"; print -r -- \"{PATH_MARK}$PATH\""
+                "print -r -- \"{STARTUP_PATH}$PATH\"; {hooks}; print -r -- \"{KIND}$(whence -w -- {tool})\"; print -r -- \"{ORIGIN}$(whence -v -- {tool})\"; print -r -- \"{ALIAS}${{aliases[{tool}]}}\"; print -r -- \"{PATH_MARK}$PATH\""
             ),
-            // PROMPT_COMMAND is a string, or an array from bash 5.1; `[@]` reads both. With
-            // extdebug, `declare -F` prints "claude 12 /Users/me/.bashrc".
+            // With extdebug, `declare -F` prints "claude 12 /Users/me/.bashrc".
             Shell::Bash => format!(
-                "printf '%s\\n' \"{STARTUP_PATH}$PATH\"; for __envrouter_hook in \"${{PROMPT_COMMAND[@]}}\"; do eval \"$__envrouter_hook\" >/dev/null; done; printf '%s\\n' \"{KIND}$(type -t -- {tool})\" \"{ORIGIN}$(shopt -s extdebug; declare -F -- {tool} 2>/dev/null)\" \"{ALIAS}$(alias -- {tool} 2>/dev/null)\" \"{PATH_MARK}$PATH\""
+                "printf '%s\\n' \"{STARTUP_PATH}$PATH\"; {hooks}; printf '%s\\n' \"{KIND}$(type -t -- {tool})\" \"{ORIGIN}$(shopt -s extdebug; declare -F -- {tool} 2>/dev/null)\" \"{ALIAS}$(alias -- {tool} 2>/dev/null)\" \"{PATH_MARK}$PATH\""
             ),
-            // Prompt hooks are `--on-event fish_prompt` functions. An empty command
-            // substitution would drop the whole argument in fish, so each value goes through
-            // a variable.
+            // An empty command substitution would drop the whole argument in fish, so each
+            // value goes through a variable.
             Shell::Fish => format!(
-                "set -l startup (string join : $PATH); emit fish_prompt >/dev/null; set -l kind (type -t {tool} 2>/dev/null); set -l origin (functions --details {tool} 2>/dev/null); printf '%s\\n' \"{STARTUP_PATH}$startup\" \"{KIND}$kind\" \"{ORIGIN}$origin\" \"{PATH_MARK}\"(string join : $PATH)"
+                "set -l startup (string join : $PATH); {hooks}; set -l kind (type -t {tool} 2>/dev/null); set -l origin (functions --details {tool} 2>/dev/null); printf '%s\\n' \"{STARTUP_PATH}$startup\" \"{KIND}$kind\" \"{ORIGIN}$origin\" \"{PATH_MARK}\"(string join : $PATH)"
             ),
         }
+    }
+
+    /// Starts this shell the way a new terminal window does, in `cwd`, to run `script`, and waits
+    /// for it up to 15 seconds. Not in the app's environment: launched from a terminal (as in
+    /// development), its PATH may already contain the shims.
+    fn start(self, home: &Path, cwd: &Path, script: &str) -> Result<Finished> {
+        let binary = self
+            .binary()
+            .ok_or_else(|| Error::Invalid(format!("{} isn't installed.", self.name())))?;
+        let mut command = Command::new(binary);
+        command.args(terminal_flags(Platform::current()));
+        // zsh reads the script from a file (see `probe`), which lives until the shell exits.
+        let _file = match self {
+            Shell::Zsh => {
+                let temp_err = |err| Error::Command(format!("temp file: {err}"));
+                let mut file = tempfile::NamedTempFile::new().map_err(temp_err)?;
+                file.write_all(script.as_bytes()).map_err(temp_err)?;
+                command.arg(file.path());
+                Some(file)
+            }
+            Shell::Bash | Shell::Fish => {
+                command.args(["-c", script]);
+                None
+            }
+        };
+        command.current_dir(cwd);
+        fresh_env(&mut command, home);
+        run(command, Duration::from_secs(15))
     }
 
     /// What an alias named `tool` expands to, from the probe's alias line: zsh prints the
@@ -447,6 +491,8 @@ const ORIGIN: &str = "__ENVROUTER_ORIGIN__=";
 const ALIAS: &str = "__ENVROUTER_ALIAS__=";
 /// PATH as the startup files left it, before any prompt hook ran.
 const STARTUP_PATH: &str = "__ENVROUTER_STARTUP_PATH__=";
+/// The kind of the program word an alias starts with, in the login report's run.
+const WORD: &str = "__ENVROUTER_WORD__=";
 const ZDOTDIR_MARK: &str = "__ENVROUTER_ZDOTDIR__=";
 
 /// What running `tool` in `folder` would do in a fresh terminal window.
@@ -496,42 +542,286 @@ pub enum FolderCheck {
     ShimFailed { message: String },
 }
 
-/// What [`login_path`] last found, and for which home.
-static LOGIN_PATH: Mutex<Option<(PathBuf, String)>> = Mutex::new(None);
+/// What a new terminal's shell said about itself, from one run.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LoginReport {
+    /// The PATH after its startup files and prompt hooks.
+    pub path: String,
+    /// Which of the commands asked about (`login_shell_report`) it runs a function for. What a
+    /// function runs can't be known without running it, so a caller takes one as there. An alias
+    /// whose value the shell wouldn't give is counted here too, since nothing says it isn't.
+    pub functions: Vec<String>,
+    /// Which it runs an alias for, and what the alias says (`alias claude='FOO=1 claude --x'`),
+    /// so a caller can see whether what it runs is there. zsh and bash only: fish's aliases are
+    /// functions, which a check can't see through.
+    pub aliases: BTreeMap<String, String>,
+    /// For each alias, the program word it starts with and what the shell calls it (`builtin`,
+    /// `function`, `command`, `none`…), so an alias to a builtin or to a function of the user's
+    /// counts without a program of that name. Empty where the shell can't say (bash before 4).
+    pub alias_words: BTreeMap<String, (String, String)>,
+}
 
-/// The PATH a new terminal window gets from the user's shell, after its startup files. An app
-/// opened from Finder or a `.desktop` file may have a bare PATH, so MCP server checks start
-/// `npx` and the like with this one. Kept until [`forget_login_path`] (the window gaining
-/// focus); a failure is reported, not kept.
+/// The words an alias may start with that aren't its program: a `VAR=value` assignment is
+/// matched on its own. What follows them is what the alias runs.
+pub const ALIAS_PREFIXES: [&str; 7] = [
+    "command",
+    "builtin",
+    "noglob",
+    "nocorrect",
+    "exec",
+    "time",
+    "-",
+];
+
+/// What [`login_shell_report`] last found for a home, and whether a run is under way.
+#[derive(Default)]
+struct Slot {
+    running: bool,
+    /// Counts the runs that have ended, so one waiting for the run under way can tell it from
+    /// another wake-up (the condition variable serves every home, and may wake with nothing new).
+    ended: u64,
+    kept: Option<Kept>,
+}
+
+struct Kept {
+    shell: Shell,
+    /// The commands the run was asked about.
+    commands: Vec<String>,
+    /// The report, or why there isn't one (kept as it was, kind and all).
+    outcome: Result<LoginReport>,
+    at: Instant,
+}
+
+/// By home, so a scratch home in a test never meets another's (or the real one's) answer.
+static LOGIN_REPORTS: Mutex<BTreeMap<PathBuf, Slot>> = Mutex::new(BTreeMap::new());
+/// Told when a run under way finishes, for whoever is waiting to share it.
+static LOGIN_REPORT_DONE: Condvar = Condvar::new();
+
+/// How long a login shell's answer is believed. Running it runs every startup file the user has
+/// (version managers, prompt themes, update checks), and the window asks whenever it gains focus,
+/// so it can't be asked each time; but its answer changes only when someone edits a startup file
+/// or something a startup file sources (`nvm alias`, `~/.cargo/env`), which no list of files can
+/// follow. Three minutes: a window switched back to a few times in a sitting costs one run, and
+/// someone who installs an agent that adds its folder to a startup file sees it in the window
+/// within a coffee. A program that lands in a folder already on PATH shows at once: the walk along
+/// PATH is done afresh each time. A server check asks for a PATH no older than [`LOGIN_PATH_FOR_A_CHECK`].
+const LOGIN_REPORT_TTL: Duration = Duration::from_secs(180);
+
+/// How long a failed ask (a shell that hung to its timeout, say) is believed, so a window that
+/// refocuses doesn't start a hanging shell back to back.
+pub(crate) const LOGIN_REPORT_FAILURE_TTL: Duration = Duration::from_secs(60);
+
+/// The PATH a new terminal window gets from the user's shell, after its startup files and prompt
+/// hooks, as it was kept (see [`login_shell_report`]) or asked for now. An app opened from Finder
+/// or a `.desktop` file may have a bare PATH, so MCP server checks start `npx` and the like with
+/// this one.
 pub fn login_path(home: &Path) -> Result<String> {
-    let mut cache = LOGIN_PATH
+    login_shell_report(home, &[]).map(|report| report.path)
+}
+
+/// How old the PATH a server check starts its server with may be. A check is something the user
+/// asked for, so it doesn't take a PATH from minutes ago, but a few checks in a row (trying a
+/// server, fixing its command, trying again) needn't each run every startup file.
+pub const LOGIN_PATH_FOR_A_CHECK: Duration = Duration::from_secs(30);
+
+/// [`login_path`], but run again if what is kept is older than `max_age`, for the commands it
+/// was kept for as well, so the agents' answer isn't lost to it.
+pub fn login_path_recent(home: &Path, max_age: Duration) -> Result<String> {
+    report_of(home, &[], Some(max_age)).map(|report| report.path)
+}
+
+/// One run of the user's login shell the way a new terminal starts it: its PATH, and for each of
+/// `commands` whether it's a function or an alias there. Kept per home (see
+/// [`LOGIN_REPORT_TTL`]); an ask about a command the kept run wasn't asked about runs again,
+/// about those and the kept ones.
+pub fn login_shell_report(home: &Path, commands: &[String]) -> Result<LoginReport> {
+    report_of(home, commands, None)
+}
+
+fn report_of(
+    home: &Path,
+    commands: &[String],
+    newer_than: Option<Duration>,
+) -> Result<LoginReport> {
+    let shell = login_shell_kind();
+    cached_report(
+        home,
+        shell,
+        commands,
+        (LOGIN_REPORT_TTL, LOGIN_REPORT_FAILURE_TTL),
+        newer_than,
+        |commands| ask_login_shell(shell, home, commands),
+    )
+}
+
+/// The cache around the question. `ask` is given the commands to ask about, `commands` and the
+/// ones kept; it runs when nothing believed answers for `commands`:
+/// - a success is believed for the first TTL, when the kept run was asked about all of `commands`
+///   and, if `newer_than` is given, is younger than that;
+/// - a failure is believed for the second TTL whatever `commands` are (a shell that just hung
+///   isn't started again for a longer list), unless `newer_than` is given: that is a click, and it
+///   may retry.
+///
+/// Only one run is under way for a home: whoever asks meanwhile waits for it to end, then looks
+/// at what it found as any ask would. The cache isn't locked while the shell runs.
+fn cached_report(
+    home: &Path,
+    shell: Shell,
+    commands: &[String],
+    (ttl, failure_ttl): (Duration, Duration),
+    newer_than: Option<Duration>,
+    ask: impl FnOnce(&[String]) -> Result<LoginReport>,
+) -> Result<LoginReport> {
+    let commands: Vec<String> = commands
+        .iter()
+        .filter(|command| config::is_command_name(command))
+        .cloned()
+        .collect();
+    // The run this ask is waiting for the end of, if it is waiting.
+    let mut waiting_for: Option<u64> = None;
+    let mut cache = LOGIN_REPORTS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some((cached_home, path)) = cache.as_ref() {
-        if cached_home == home {
-            return Ok(path.clone());
+    let asked = loop {
+        let slot = cache.entry(home.to_path_buf()).or_default();
+        if let Some(ended) = waiting_for.take() {
+            if slot.running && slot.ended == ended {
+                waiting_for = Some(ended);
+                cache = LOGIN_REPORT_DONE
+                    .wait(cache)
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                continue;
+            }
+        }
+        if let Some(kept) = &slot.kept {
+            let age = kept.at.elapsed();
+            let believed = kept.shell == shell
+                && match &kept.outcome {
+                    Ok(_) => {
+                        age < ttl
+                            && commands.iter().all(|c| kept.commands.contains(c))
+                            && newer_than.is_none_or(|max| age < max)
+                    }
+                    Err(_) => age < failure_ttl && newer_than.is_none(),
+                };
+            if believed {
+                return clone_outcome(&kept.outcome);
+            }
+        }
+        if slot.running {
+            waiting_for = Some(slot.ended);
+            continue;
+        }
+        slot.running = true;
+        let mut all = slot
+            .kept
+            .as_ref()
+            .map_or_else(Vec::new, |kept| kept.commands.clone());
+        for command in &commands {
+            if !all.contains(command) {
+                all.push(command.clone());
+            }
+        }
+        break all;
+    };
+    drop(cache);
+    // However the run ends, a panic included, whoever waits for it is let go.
+    let finish = RunDone(home);
+    let outcome = ask(&asked);
+    let result = clone_outcome(&outcome);
+    finish.with(Kept {
+        shell,
+        commands: asked,
+        outcome,
+        at: Instant::now(),
+    });
+    result
+}
+
+fn clone_outcome(outcome: &Result<LoginReport>) -> Result<LoginReport> {
+    match outcome {
+        Ok(report) => Ok(report.clone()),
+        Err(err) => Err(err.replay()),
+    }
+}
+
+/// Ends a run in `LOGIN_REPORTS`: puts what it found (if anything) in its slot, and frees it.
+struct RunDone<'a>(&'a Path);
+
+impl RunDone<'_> {
+    fn with(self, kept: Kept) {
+        self.end(Some(kept));
+    }
+
+    fn end(&self, kept: Option<Kept>) {
+        let mut cache = LOGIN_REPORTS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let slot = cache.entry(self.0.to_path_buf()).or_default();
+        slot.running = false;
+        slot.ended += 1;
+        if kept.is_some() {
+            slot.kept = kept;
+        }
+        LOGIN_REPORT_DONE.notify_all();
+    }
+}
+
+impl Drop for RunDone<'_> {
+    fn drop(&mut self) {
+        // Reached with nothing found only when the run panicked before `with`.
+        if std::thread::panicking() {
+            self.end(None);
         }
     }
-    let platform = Platform::current();
-    let shell = Shell::ALL
-        .into_iter()
-        .find(|&s| status(s, home).is_default)
-        .or_else(|| Shell::from_name(platform.default_shell_name()))
-        .unwrap_or(Shell::Bash);
-    let binary = shell
-        .binary()
-        .ok_or_else(|| Error::Invalid(format!("{} isn't installed.", shell.name())))?;
-    let print = match shell {
-        Shell::Fish => format!("printf '%s\\n' \"{PATH_MARK}\"(string join : $PATH)"),
-        Shell::Zsh | Shell::Bash => format!("printf '%s\\n' \"{PATH_MARK}$PATH\""),
+}
+
+/// Whether the shell a new terminal runs is fish, whose aliases are functions. For tests that
+/// have to expect what the machine's own shell makes of an alias.
+#[cfg(test)]
+pub(crate) fn login_shell_kind_is_fish() -> bool {
+    login_shell_kind() == Shell::Fish
+}
+
+/// The shell a new terminal window runs: the user's login shell, else the platform's usual one.
+fn login_shell_kind() -> Shell {
+    login_shell()
+        .and_then(|login| {
+            login
+                .file_name()
+                .and_then(|name| name.to_str())
+                .and_then(Shell::from_name)
+        })
+        .or_else(|| Shell::from_name(Platform::current().default_shell_name()))
+        .unwrap_or(Shell::Bash)
+}
+
+/// Runs `shell` as a new terminal does, prompt hooks included (as `check_folder` runs them, or
+/// a mise or direnv PATH would read differently here), and reports its PATH and how each of
+/// `commands` resolves. `commands` have passed `is_command_name`, so they're safe to put in a
+/// script.
+fn ask_login_shell(shell: Shell, home: &Path, commands: &[String]) -> Result<LoginReport> {
+    let list = commands.join(" ");
+    let hooks = shell.prompt_hooks();
+    // The words an alias may start with that aren't the program (`FOO=1`, `noglob`), as a `case`
+    // pattern: what the shell then calls the first word is the program, whose kind is asked too.
+    let skipped = ALIAS_PREFIXES.join("|");
+    // Per command, in order: "<command>: <kind>" as the shell words it (`whence -w`, `type -t`);
+    // for zsh and bash what an alias says, in the form `Shell::alias_expansion` reads; and for an
+    // alias the kind of its program word ("<command> <word>: <kind>"): zsh splits the value as
+    // the shell would (`(z)`), bash by blanks, from `BASH_ALIASES` (4.0 and later).
+    let script = match shell {
+        Shell::Fish => format!(
+            "{hooks}; printf '%s\\n' \"{PATH_MARK}\"(string join : $PATH); for __c in {list}; set -l __k (type -t $__c 2>/dev/null); printf '%s\\n' \"{KIND}$__c: $__k\"; end"
+        ),
+        Shell::Zsh => format!(
+            "{hooks}; print -r -- \"{PATH_MARK}$PATH\"; for __c in {list}; do print -r -- \"{KIND}$(whence -w -- $__c)\"; print -r -- \"{ALIAS}${{aliases[$__c]}}\"; for __w in ${{(z)aliases[$__c]}}; do case $__w in *=*|{skipped}) ;; *) print -r -- \"{WORD}$__c $(whence -w -- $__w)\"; break ;; esac; done; done"
+        ),
+        Shell::Bash => format!(
+            "{hooks}; printf '%s\\n' \"{PATH_MARK}$PATH\"; for __c in {list}; do printf '%s\\n' \"{KIND}$__c: $(type -t -- $__c)\" \"{ALIAS}$(alias -- $__c 2>/dev/null)\"; read -ra __ws <<< \"${{BASH_ALIASES[$__c]}}\"; for __w in \"${{__ws[@]}}\"; do case $__w in *=*|{skipped}) ;; *) printf '%s\\n' \"{WORD}$__c $__w: $(type -t -- $__w)\"; break ;; esac; done; done"
+        ),
     };
-    let mut command = Command::new(binary);
-    command
-        .args(terminal_flags(platform))
-        .args(["-c", &print])
-        .current_dir(home);
-    fresh_env(&mut command, home);
-    let output = run(command, Duration::from_secs(15))?;
+    let output = shell.start(home, home, &script)?;
     let path = output
         .stdout
         .lines()
@@ -546,16 +836,50 @@ pub fn login_path(home: &Path) -> Result<String> {
                 output.stderr.trim()
             ))
         })?;
-    *cache = Some((home.to_path_buf(), path.clone()));
-    Ok(path)
-}
-
-/// Makes the next [`login_path`] ask the shell again: the user may have changed their startup
-/// files since. Before, the first answer stood until the app quit.
-pub fn forget_login_path() {
-    *LOGIN_PATH
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    // The lines come in the order they were printed, each command's alias and word after its
+    // kind. A marker may follow output a startup file printed without a newline.
+    let mut kinds: Vec<(String, String)> = Vec::new();
+    let mut aliases = BTreeMap::new();
+    let mut alias_words = BTreeMap::new();
+    for line in output.stdout.lines() {
+        if let Some((_, said)) = line.split_once(KIND) {
+            if let Some((command, kind)) = said.split_once(": ") {
+                kinds.push((command.to_string(), kind.trim().to_string()));
+            }
+        } else if let Some((_, said)) = line.split_once(ALIAS) {
+            if let Some((command, _)) = kinds.last() {
+                if let Some(value) = shell.alias_expansion(said, command) {
+                    aliases.insert(command.clone(), value);
+                }
+            }
+        } else if let Some((_, said)) = line.split_once(WORD) {
+            // "<command> <word>: <kind>"
+            if let Some((command, rest)) = said.split_once(' ') {
+                if let Some((word, kind)) = rest.rsplit_once(": ") {
+                    alias_words.insert(
+                        command.to_string(),
+                        (word.to_string(), kind.trim().to_string()),
+                    );
+                }
+            }
+        }
+    }
+    let functions = kinds
+        .into_iter()
+        .filter(|(command, kind)| match kind.as_str() {
+            "function" => true,
+            // An alias the shell gave no value for: nothing says it isn't there.
+            "alias" => !aliases.contains_key(command),
+            _ => false,
+        })
+        .map(|(command, _)| command)
+        .collect();
+    Ok(LoginReport {
+        path,
+        functions,
+        aliases,
+        alias_words,
+    })
 }
 
 /// Starts the shell the way a new terminal window does (interactive, and a login shell where
@@ -574,31 +898,7 @@ pub fn check_folder(shell: Shell, home: &Path, folder: &Path, tool: &str) -> Res
             folder.display()
         )));
     }
-    let binary = shell
-        .binary()
-        .ok_or_else(|| Error::Invalid(format!("{} isn't installed.", shell.name())))?;
-    let probe = shell.probe(tool);
-    let mut command = Command::new(binary);
-    command.args(terminal_flags(Platform::current()));
-    // zsh reads the probe from a file (see `probe`), which lives until the shell exits.
-    let _script = match shell {
-        Shell::Zsh => {
-            let temp_err = |err| Error::Command(format!("temp file: {err}"));
-            let mut script = tempfile::NamedTempFile::new().map_err(temp_err)?;
-            script.write_all(probe.as_bytes()).map_err(temp_err)?;
-            command.arg(script.path());
-            Some(script)
-        }
-        Shell::Bash | Shell::Fish => {
-            command.args(["-c", &probe]);
-            None
-        }
-    };
-    // Not the app's environment: launched from a terminal (as in development), its PATH may
-    // already contain the shims.
-    command.current_dir(folder);
-    fresh_env(&mut command, home);
-    let output = run(command, Duration::from_secs(15))?;
+    let output = shell.start(home, folder, &shell.probe(tool))?;
 
     // A marker may follow output a startup file printed without a newline.
     let field = |mark: &str| {
@@ -826,10 +1126,6 @@ fn first_on_path(path: &str, tool: &str) -> Option<PathBuf> {
         .find(|candidate| is_executable(candidate))
 }
 
-fn is_executable(path: &Path) -> bool {
-    fs::metadata(path).is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
-}
-
 fn read_all(file: &mut File) -> String {
     let mut bytes = Vec::new();
     let _ = file.rewind().and_then(|()| file.read_to_end(&mut bytes));
@@ -842,15 +1138,223 @@ mod tests {
     use crate::shims;
     use envrouter_core::config::{Profile, ToolConfig};
 
-    /// The window gaining focus forgets the PATH a new terminal gets, so a check after the user
-    /// edited their startup files asks the shell again instead of using the app's first answer.
+    fn report(path: &str, functions: &[String]) -> Result<LoginReport> {
+        Ok(LoginReport {
+            path: path.into(),
+            functions: functions.to_vec(),
+            aliases: BTreeMap::new(),
+            alias_words: BTreeMap::new(),
+        })
+    }
+
+    fn names(commands: &[&str]) -> Vec<String> {
+        commands.iter().map(|c| (*c).to_string()).collect()
+    }
+
+    const THIRTY: Duration = Duration::from_secs(30);
+    const LONG: (Duration, Duration) = (Duration::from_secs(60), Duration::from_secs(60));
+
+    /// The login shell runs every startup file the user has, so its answer is kept for a while
+    /// instead of asked on every focus; time, or an explicit ask, makes it run again.
     #[test]
-    fn focus_forgets_the_login_path() {
-        let home = PathBuf::from("/nonexistent/login-path-test-home");
-        *LOGIN_PATH.lock().unwrap() = Some((home.clone(), "/old/bin".into()));
-        assert_eq!(login_path(&home).unwrap(), "/old/bin", "kept until focus");
-        forget_login_path();
-        assert!(LOGIN_PATH.lock().unwrap().is_none());
+    fn the_login_report_is_kept_until_it_expires_or_is_older_than_asked_for() {
+        use std::cell::Cell;
+        let scratch = tempfile::tempdir().unwrap();
+        let home = scratch.path();
+        let asked = Cell::new(0);
+        let path = |ttl, newer_than| {
+            cached_report(home, Shell::Bash, &[], ttl, newer_than, |_| {
+                asked.set(asked.get() + 1);
+                report(&format!("/bin{}", asked.get()), &[])
+            })
+            .unwrap()
+            .path
+        };
+
+        assert_eq!(path(LONG, None), "/bin1");
+        assert_eq!(path(LONG, None), "/bin1");
+        assert_eq!(path((Duration::ZERO, Duration::ZERO), None), "/bin2");
+        // Younger than asked for is kept; not younger (nothing is younger than none) runs again.
+        assert_eq!(path(LONG, Some(Duration::from_secs(30))), "/bin2");
+        assert_eq!(path(LONG, Some(Duration::ZERO)), "/bin3");
+        assert_eq!(path(LONG, None), "/bin3");
+    }
+
+    /// A kept run answers only for the commands it was asked about; one more is a new run, for
+    /// it and the kept ones, and so is an explicit ask, which mustn't lose the agents' answer
+    /// for a report that names none.
+    #[test]
+    fn a_new_run_is_asked_about_the_commands_kept_as_well() {
+        use std::cell::RefCell;
+        let scratch = tempfile::tempdir().unwrap();
+        let home = scratch.path();
+        let runs: RefCell<Vec<Vec<String>>> = RefCell::new(Vec::new());
+        let ask = |commands: &[&str], newer_than| {
+            cached_report(
+                home,
+                Shell::Bash,
+                &names(commands),
+                LONG,
+                newer_than,
+                |all| {
+                    runs.borrow_mut().push(all.to_vec());
+                    report("/bin", all)
+                },
+            )
+            .unwrap()
+            .functions
+        };
+
+        ask(&["claude"], None);
+        ask(&["claude"], None);
+        ask(&[], None);
+        assert_eq!(runs.borrow().len(), 1);
+        assert_eq!(ask(&["copilot"], None), ["claude", "copilot"]);
+        assert_eq!(ask(&[], Some(Duration::ZERO)), ["claude", "copilot"]);
+        assert_eq!(runs.borrow().len(), 3);
+    }
+
+    /// A shell that failed (hung to its timeout, say) isn't started again back to back, whatever
+    /// commands are asked about, but a minute on it is, and a click may retry it at once. The
+    /// failure comes back as what it was, not as a generic one.
+    #[test]
+    fn a_failed_login_report_is_believed_for_a_while_and_keeps_its_kind() {
+        let scratch = tempfile::tempdir().unwrap();
+        let home = scratch.path();
+        let fail = |commands: &[&str], failure_ttl, newer_than, asks: &mut u32| {
+            cached_report(
+                home,
+                Shell::Bash,
+                &names(commands),
+                (Duration::from_secs(60), failure_ttl),
+                newer_than,
+                |_| {
+                    *asks += 1;
+                    Err(Error::Invalid("bash isn't installed.".into()))
+                },
+            )
+            .unwrap_err()
+        };
+        let minute = Duration::from_secs(60);
+        let mut asks = 0;
+        fail(&["claude"], minute, None, &mut asks);
+        let again = fail(&["claude", "copilot"], minute, None, &mut asks);
+        assert!(
+            matches!(again, Error::Invalid(ref m) if m == "bash isn't installed."),
+            "{again:?}"
+        );
+        assert_eq!(asks, 1, "a longer list doesn't start the shell again");
+        fail(
+            &["claude"],
+            minute,
+            Some(Duration::from_secs(30)),
+            &mut asks,
+        );
+        assert_eq!(asks, 2, "a click retries");
+        fail(&["claude"], Duration::ZERO, None, &mut asks);
+        assert_eq!(asks, 3, "a minute on it is believed no more");
+    }
+
+    /// The cache isn't locked while the shell runs, or an explicit check would queue behind a
+    /// slow one (and, asked from inside it as here, never return).
+    #[test]
+    fn the_login_report_cache_is_not_locked_while_the_shell_runs() {
+        let (one, two) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let answer = cached_report(one.path(), Shell::Bash, &[], LONG, None, |_| {
+            let other = cached_report(two.path(), Shell::Bash, &[], LONG, None, |_| {
+                report("/other", &[])
+            });
+            assert_eq!(other.unwrap().path, "/other");
+            report("/one", &[])
+        });
+        assert_eq!(answer.unwrap().path, "/one");
+    }
+
+    /// An ask that waits for a run under way takes what that run found, not an older report it is
+    /// woken to (the condition variable serves every home, so another home's run ending wakes it
+    /// with nothing new).
+    #[test]
+    fn an_ask_waiting_for_a_run_is_not_given_an_older_report_when_woken_early() {
+        use std::sync::mpsc;
+        let (one, other) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (home, other) = (one.path(), other.path());
+        let young = Duration::from_millis(100);
+        let old_report = || {
+            cached_report(home, Shell::Bash, &[], LONG, None, |_| report("/old", &[])).unwrap();
+        };
+        old_report();
+        std::thread::sleep(Duration::from_millis(150));
+        let (release, gate) = mpsc::channel::<()>();
+        std::thread::scope(|scope| {
+            // A run for `home` is under way, and the kept report is older than `young`.
+            let running = scope.spawn(move || {
+                cached_report(home, Shell::Bash, &[], LONG, Some(young), |_| {
+                    gate.recv().ok();
+                    report("/new", &[])
+                })
+            });
+            while !LOGIN_REPORTS
+                .lock()
+                .unwrap()
+                .get(home)
+                .is_some_and(|slot| slot.running)
+            {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            let waiter = scope.spawn(move || {
+                cached_report(home, Shell::Bash, &[], LONG, Some(young), |_| {
+                    report("/own", &[])
+                })
+            });
+            std::thread::sleep(Duration::from_millis(50));
+            // Another home's run ends, waking everyone waiting.
+            cached_report(other, Shell::Bash, &[], LONG, None, |_| {
+                report("/elsewhere", &[])
+            })
+            .unwrap();
+            std::thread::sleep(Duration::from_millis(50));
+            assert!(!waiter.is_finished(), "it went on with the old report");
+            release.send(()).unwrap();
+            assert_eq!(running.join().unwrap().unwrap().path, "/new");
+            assert_eq!(waiter.join().unwrap().unwrap().path, "/new");
+        });
+    }
+
+    /// Asks that come while a run is under way share it, explicit ones included, instead of each
+    /// starting a shell.
+    #[test]
+    fn asks_during_a_run_share_it() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::mpsc;
+        let scratch = tempfile::tempdir().unwrap();
+        let home = scratch.path().to_path_buf();
+        let runs = AtomicUsize::new(0);
+        let (release, gate) = mpsc::channel::<()>();
+        let (home, runs) = (&home, &runs);
+        std::thread::scope(|scope| {
+            let first = scope.spawn(move || {
+                cached_report(home, Shell::Bash, &[], LONG, Some(THIRTY), |_| {
+                    runs.fetch_add(1, Ordering::SeqCst);
+                    gate.recv().ok();
+                    report("/shared", &[])
+                })
+            });
+            // Wait until the first ask is running its shell.
+            while runs.load(Ordering::SeqCst) == 0 {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            let second = scope.spawn(move || {
+                cached_report(home, Shell::Bash, &[], LONG, Some(THIRTY), |_| {
+                    runs.fetch_add(1, Ordering::SeqCst);
+                    report("/second", &[])
+                })
+            });
+            std::thread::sleep(Duration::from_millis(100));
+            release.send(()).unwrap();
+            assert_eq!(first.join().unwrap().unwrap().path, "/shared");
+            assert_eq!(second.join().unwrap().unwrap().path, "/shared");
+        });
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
     }
 
     /// The file a new terminal's bash reads first in an empty home on this platform:

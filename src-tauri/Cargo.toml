@@ -22,6 +22,7 @@ serde.workspace = true
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-window-state = "2"
 
 # The macOS traffic lights (`traffic_lights.rs`). Tauri depends on the same versions already.
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -6,7 +6,10 @@ mod error;
 pub mod mcp;
 pub mod paths;
 pub mod platform;
+#[cfg(unix)]
+pub mod programs;
 pub mod resolve;
+pub mod watcher;
 
 pub use error::{Error, ErrorKind, Result};
 

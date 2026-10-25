@@ -186,7 +186,8 @@ and then `target/release/envrouter install`. The first build takes a few minutes
 1. **Create a profile** (⌘N; Ctrl+N on Linux). Give it a name, add its trigger folders with
    **Add Folder…**, and set a config folder for each agent you want to route, such as
    `~/.claude-work`. EnvRouter creates missing config folders inside your home folder when you
-   save.
+   save. An agent a new terminal can't find on its `PATH` is still offered, marked **Not
+   installed** (with its vendor's install line), so you can set it up first.
 2. **Turn on your shell.** Click the shell status in the toolbar (the `zsh` and `bash` dots) and
    switch on the shells you use. This adds a marked block to the end of each startup file that
    puts EnvRouter's shims first on `PATH`.
@@ -280,7 +281,10 @@ EnvRouter. **Duplicate** in the editor's footer starts a new server from this on
 secret fields empty; **Delete…** removes it from the library and from every profile.
 
 On macOS, EnvRouter lives in the menu bar: closing the window only hides it; quit from the menu
-bar icon. On Linux, closing the window quits; routing keeps working without it.
+bar icon. On Linux, closing the window quits; routing keeps working without it. The window opens
+where you left it, at the size you left it, on the view (Profiles or MCP Servers) you left it
+on. The menu bar's menu carries **Check Last Folder** (the folder you last checked in the
+window; greyed out until there is one) and the version.
 
 **Settings…** (⌘, on macOS, Ctrl+, on Linux) opens the Shells panel: EnvRouter has no
 Preferences window, since shells are the one setting. The Shells panel also links to the
@@ -296,7 +300,7 @@ folder its MCP files are written to.
 
 | Command | Does |
 |---|---|
-| `envrouter` or `envrouter status` | The shim, each shell and editor, and the config |
+| `envrouter` or `envrouter status` | The shim, each shell and editor, and the config. `--agents` also says which agents a new terminal doesn't find (an `Agents` line, or `missingAgents` in `--json`), by running your login shell; without it nothing runs one, and `missingAgents` is null |
 | `envrouter install` | Installs the shim, the secrets helper and the CLI into `~/.envrouter/bin`, and a shim per agent |
 | `envrouter shell on\|off <zsh\|bash\|fish>` | Adds or removes the block in that shell's startup files |
 | `envrouter editor on\|off <editor> [--agent <command>]` | Routes an editor extension (`code`, `cursor`, `remote-code` for the VS Code Server, …) |
@@ -414,6 +418,8 @@ after resolving symlinks and letter case, and a trigger covers its whole subtree
 | `~/.envrouter/shims/` | One symlink per routed command |
 | `~/.envrouter/mcp/` | Rendered MCP server files per profile and agent (readable only by you) |
 | `~/.envrouter/mcp-tools.json` | Tool lists from server checks |
+| `~/.envrouter/last-folder.json` | The folder you last checked, for the menu bar's **Check Last Folder** |
+| `~/Library/Application Support/com.tylerrobertson.envrouter/.window-state.json` (macOS), `~/.config/com.tylerrobertson.envrouter/.window-state.json` (Linux) | The window's size and position, written when the app quits. The view it was left on is kept in the window's own web storage |
 | "EnvRouter MCP secrets" in the system's store | Secret values you've entered, once there are any: in the login Keychain on macOS, the keyring on Linux, the Windows Credential Manager from WSL |
 | Shell startup files | A block between `# >>> envrouter >>>` and `# <<< envrouter <<<` in `~/.zshrc` (or `$ZDOTDIR/.zshrc`); for bash, `~/.bashrc` on a Linux desktop, or the login file (and `~/.bashrc`) on macOS and in WSL; or fish's `config.fish` |
 | An editor's settings | `claudeCode.claudeProcessWrapper`, once you turn the editor on in **Editors…** |
@@ -477,15 +483,16 @@ It does five things, in this order:
    and the folder it points at is named and left.
 5. Deletes the folders the window's webview keeps for itself (page data and caches). On macOS:
    `~/Library/WebKit/com.tylerrobertson.envrouter`, `~/Library/Caches/com.tylerrobertson.envrouter` and
-   `~/Library/Preferences/com.tylerrobertson.envrouter.plist` (asking the system to forget those
+   `~/Library/Application Support/com.tylerrobertson.envrouter` (where the window's size and position
+   are kept) and `~/Library/Preferences/com.tylerrobertson.envrouter.plist` (asking the system to forget those
    preferences first, with `defaults delete`, so it can't write them back), plus `HTTPStorages` and
    `Saved Application State` entries of that name, if the system made any. On Linux:
    `~/.local/share/com.tylerrobertson.envrouter` (Tauri's local data folder, which holds the webview's
-   storage and cache both). The command does this itself, since it only runs while the window is
+   storage and cache both) and `~/.config/com.tylerrobertson.envrouter` (the window's size and position). The command does this itself, since it only runs while the window is
    closed. The window's own uninstall can't while its webview is using them, so it deletes them as it
    quits, once everything else has finished. This step never fails the uninstall: a folder it can't
    delete is named ("Uninstalled, but this is left behind"), and so is one outside your home folder,
-   which it won't touch (`XDG_DATA_HOME` pointing elsewhere on Linux).
+   which it won't touch (`XDG_DATA_HOME` or `XDG_CONFIG_HOME` pointing elsewhere on Linux).
 
 If anything in steps 1 and 2 can't be done (a settings file you can't write, or one it can't read
 that names the shim), it does the rest of those two steps and stops before step 3, so no editor is

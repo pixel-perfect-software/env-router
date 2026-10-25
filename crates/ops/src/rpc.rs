@@ -12,6 +12,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use envrouter_core::config::{ConfigState, IdeHook, McpServer};
+use envrouter_core::platform::XdgHomes;
 use envrouter_core::{Error, ErrorKind, Result};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -77,8 +78,13 @@ pub struct Session<'a> {
     home: &'a Path,
     /// Where an uninstall deletes the secrets: the platform's, except in tests.
     store: &'a dyn Store,
+    /// Which agents a new terminal has nothing to run for: the login shell's, except in tests.
+    probe: AgentProbe,
     uninstalled: bool,
 }
+
+/// [`commands::setup_status_using`]'s probe.
+pub(crate) type AgentProbe = fn(&Path) -> Option<Vec<String>>;
 
 impl<'a> Session<'a> {
     pub fn new(home: &'a Path) -> Self {
@@ -86,9 +92,14 @@ impl<'a> Session<'a> {
     }
 
     pub(crate) fn with_store(home: &'a Path, store: &'a dyn Store) -> Self {
+        Self::with_seams(home, store, commands::probe_agents)
+    }
+
+    pub(crate) fn with_seams(home: &'a Path, store: &'a dyn Store, probe: AgentProbe) -> Self {
         Self {
             home,
             store,
+            probe,
             uninstalled: false,
         }
     }
@@ -113,7 +124,7 @@ impl<'a> Session<'a> {
         } else if request.command == "uninstall" {
             self.uninstall(request.args)
         } else {
-            dispatch(self.home, &request.command, request.args).await
+            dispatch(self.home, &request.command, request.args, self.probe).await
         };
         match result {
             Ok(value) => Response {
@@ -145,20 +156,19 @@ impl<'a> Session<'a> {
     fn uninstall(&mut self, args: Value) -> Result<Value> {
         let UninstallArgs { dry_run } = parse(args)?;
         let exe = shims::current_exe()?;
-        let xdg_data_home = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from);
         let report = commands::uninstall_with(
             self.home,
             dry_run,
             &Caller::Cli { exe },
             self.store,
-            xdg_data_home.as_deref(),
+            &XdgHomes::from_env(),
         )?;
         self.uninstalled = report.finished();
         to_value(report)
     }
 }
 
-async fn dispatch(home: &Path, command: &str, args: Value) -> Result<Value> {
+async fn dispatch(home: &Path, command: &str, args: Value, probe: AgentProbe) -> Result<Value> {
     match command {
         "get_config" => to_value(commands::get_config(home)?),
         "save_config" => {
@@ -175,7 +185,16 @@ async fn dispatch(home: &Path, command: &str, args: Value) -> Result<Value> {
             )?)
         }
         "reset_unreadable_config" => to_value(commands::reset_unreadable_config(home)?),
-        "get_setup_status" => to_value(commands::setup_status(home)?),
+        // The window's 1 s wait and kept answer: a call waits for the shell only that long, so
+        // the lines queued behind it aren't held up, and `missingAgents` is null if it hasn't
+        // answered. The session is one long-lived process, so the answer, found meanwhile, is
+        // kept for the calls after it.
+        "get_setup_status" => to_value(commands::setup_status_using(
+            home,
+            commands::AGENTS_WAIT,
+            || {},
+            probe,
+        )?),
         "set_shell_integration" => {
             let ShellSwitch { shell, enabled } = parse(args)?;
             to_value(commands::set_shell_integration(home, shell, enabled)?)
@@ -217,7 +236,7 @@ async fn dispatch(home: &Path, command: &str, args: Value) -> Result<Value> {
                 server,
                 secrets,
             } = parse(args)?;
-            let path = shell::login_path(home)?;
+            let path = shell::login_path_recent(home, shell::LOGIN_PATH_FOR_A_CHECK)?;
             to_value(commands::check_mcp_server(home, &path, &name, &server, &secrets).await?)
         }
         "npm_dist_tags" => {
@@ -332,7 +351,10 @@ mod tests {
             .build()
             .unwrap();
         serde_json::to_value(
-            runtime.block_on(Session::with_store(home, &FakeStore::default()).handle_line(line)),
+            runtime.block_on(
+                Session::with_seams(home, &FakeStore::default(), |_| Some(vec!["claude".into()]))
+                    .handle_line(line),
+            ),
         )
         .unwrap()
     }
@@ -373,6 +395,8 @@ mod tests {
             problem.is_some_and(|p| p.is_null() || p.is_string()),
             "{setup}"
         );
+        // What the probe said, which is a stub: no test here starts a login shell.
+        assert_eq!(setup["ok"]["missingAgents"], json!(["claude"]), "{setup}");
 
         // The shape `Pasted` has in src/lib/types.ts.
         let pasted = answer(

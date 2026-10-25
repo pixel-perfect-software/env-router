@@ -36,11 +36,13 @@ import {
   confirmStartOver,
   confirmUninstall,
   tellBackedUp,
+  tellLastFolderNotChecked,
   tellRevealFailed,
   tellUninstalled,
 } from './lib/confirm'
 import { accentsOf, docketHasFix, type Health, healthOf } from './lib/health'
 import helpLinks from './lib/helpLinks.json'
+import { readView, type View, writeView } from './lib/lastView'
 import { hasMcpFiles, profilesUsing, withoutServer, withServer, withUsedBy } from './lib/mcp'
 import { tildify } from './lib/paths'
 import { guessPlatform, PlatformContext, platformInfo } from './lib/platform'
@@ -50,7 +52,7 @@ import { hasUnsaved } from './lib/unsaved'
 import { useConfigStore } from './lib/useConfigStore'
 import { useFolderCheck } from './lib/useFolderCheck'
 import { useFolderDrop } from './lib/useFolderDrop'
-import { useShortcuts } from './lib/useShortcuts'
+import { type Shortcuts, useShortcuts } from './lib/useShortcuts'
 import type { VerdictAction } from './lib/verdict'
 
 /** The error banner's title when an uninstall is what stopped. */
@@ -100,10 +102,11 @@ export default function App() {
   const [editing, setEditing] = useState<string | 'new' | null>(null)
   // What a new profile starts from when it's a copy; gone once the inspector closes.
   const [template, setTemplate] = useState<Profile | null>(null)
-  // The window's two places. A dev-only `?view=servers` opens on the second, for review.
-  const [view, setViewState] = useState<'profiles' | 'servers'>(() =>
-    import.meta.env.DEV && new URLSearchParams(location.search).get('view') === 'servers' ? 'servers' : 'profiles',
-  )
+  // The window's two places: the one it was left on. A dev-only `?view=profiles|servers` opens on one, for review.
+  const [view, setViewState] = useState<View>(() => {
+    const asked = import.meta.env.DEV ? new URLSearchParams(location.search).get('view') : null
+    return asked === 'profiles' || asked === 'servers' ? asked : readView()
+  })
   const [serverDetail, setServerDetail] = useState<Detail>({ kind: 'none' })
   // Whether the server editor holds unsaved edits, for leaving it from outside the Servers view.
   const serverDirty = useRef(false)
@@ -232,11 +235,21 @@ export default function App() {
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [inspecting, load, refreshSetup])
+  // The backend learned which agents a new terminal finds after the status that asked had stopped waiting: ask again, not at the next focus.
+  useEffect(() => {
+    const unlisten = listen('setup-changed', () => {
+      if (!uninstalling.current) refreshSetup()
+    })
+    return () => {
+      unlisten.then((stop) => stop())
+    }
+  }, [refreshSetup])
 
-  const setView = (next: 'profiles' | 'servers') => {
+  const setView = (next: View) => {
     setShellsOpen(false)
     setEditorsOpen(false)
     setViewState(next)
+    writeView(next)
   }
   /**
    * Opens a server in the Servers view, from a card's footer. Unsaved edits to another server
@@ -261,10 +274,25 @@ export default function App() {
     runCheck(picked, defaultShell(), null)
   }
 
+  // A request from the menu bar can arrive before config.json is read (the first show after a hidden launch): it waits for that, rather
+  // than being declined for a window that is only starting.
+  // It runs against the shortcuts of the render that has the config, not the one that was too early.
+  const afterLoad = useRef<((now: Shortcuts) => void) | null>(null)
+  const loading = config === null && loadError === null
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only the end of loading runs it, with that render's shortcuts
+  useEffect(() => {
+    if (loading || !afterLoad.current) return
+    const run = afterLoad.current
+    afterLoad.current = null
+    run(shortcuts)
+  }, [loading])
+
   // While the inspector is open a check stands down, as it does for a folder dropped on the window.
   const shortcuts = {
     checkFolder: () => {
-      if (!inspecting) pickAndCheck()
+      if (inspecting) return
+      if (loading) afterLoad.current = (now) => now.checkFolder()
+      else pickAndCheck()
     },
     newProfile: () => {
       if (!config) return
@@ -279,11 +307,32 @@ export default function App() {
       setEditorsOpen(false)
       setShellsOpen(true)
     },
-    view: (next: 'profiles' | 'servers') => {
+    view: (next: View) => {
       if (!inspecting) setView(next)
+    },
+    // The menu bar's Check Last Folder stands down as a dropped folder does. It has brought the window forward for it, so a click the
+    // window can't act on says why rather than doing nothing.
+    checkLastFolder: (folder: string) => {
+      if (uninstalling.current) return
+      if (loading) {
+        afterLoad.current = (now) => now.checkLastFolder(folder)
+        return
+      }
+      if (inspecting) {
+        tellLastFolderNotChecked('Close the profile editor, then choose Check Last Folder again.').catch(() => {})
+        return
+      }
+      if (!canCheck) {
+        tellLastFolderNotChecked("config.json can't be read, so there's nothing to check the folder against.").catch(() => {})
+        return
+      }
+      setView('profiles')
+      runCheck(folder, defaultShell(), null)
     },
   }
   const platform = platformInfo(setup?.platform ?? guessPlatform(), setup ?? undefined)
+  // Offered all the same: an agent can be set up before it's installed. They're marked where they're offered, unless an editor carries them.
+  const missing = setup?.missingAgents ?? []
 
   // The app asks before quitting only while an editor holds unsaved edits (`src-tauri/src/quit.rs`).
   useEffect(() => {
@@ -802,7 +851,12 @@ export default function App() {
           {view === 'profiles' && (
             <>
               {welcome && health.kind === 'setup' ? (
-                <Welcome shell={health.shell?.shell ?? 'your shell'} primary={!inspecting} onNewProfile={() => setEditing('new')} />
+                <Welcome
+                  shell={health.shell?.shell ?? 'your shell'}
+                  primary={!inspecting}
+                  missingAgents={missing}
+                  onNewProfile={() => setEditing('new')}
+                />
               ) : (
                 // A stable gutter on both sides: the scrollbar coming and going (a check result rising) never reflows the cards.
                 <main className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable_both-edges] [mask-image:linear-gradient(to_bottom,transparent,black_10px,black_calc(100%-18px),transparent)]">
@@ -817,6 +871,7 @@ export default function App() {
                       onContextMenu={showSlotMenu}
                       onFolderMenu={showFolderMenu}
                       menuFolder={menuFolder}
+                      missingAgents={missing}
                       onOpenServer={openServer}
                     />
                   )}
@@ -853,6 +908,7 @@ export default function App() {
             home={home}
             library={config.mcpServers}
             tools={mcpTools}
+            missingAgents={missing}
             onCancel={() => setEditing(null)}
             onRevealMcp={editing === 'new' ? undefined : () => revealPlace({ kind: 'mcpFiles', profileId: editingId })}
             onShowServers={() => {

@@ -9,7 +9,18 @@ import { SetupSteps } from './Health'
 import { Button } from './ui'
 
 /** `primary`: off while the inspector is open over it, so its Save stays the window's one accent button. */
-export function Welcome({ shell, primary, onNewProfile }: { shell: string; primary: boolean; onNewProfile: () => void }) {
+export function Welcome({
+  shell,
+  primary,
+  missingAgents,
+  onNewProfile,
+}: {
+  shell: string
+  primary: boolean
+  /** The offered agents a new terminal doesn't find on its PATH. */
+  missingAgents: string[]
+  onNewProfile: () => void
+}) {
   const platform = usePlatform()
   const commands = KNOWN_TOOLS.map((t) => t.command)
   return (
@@ -27,6 +38,7 @@ export function Welcome({ shell, primary, onNewProfile }: { shell: string; prima
             <span key={command}>
               {i > 0 && (i === commands.length - 1 ? ' and ' : ', ')}
               <code className="font-mono text-small text-ink">{command}</code>
+              {missingAgents.includes(command) && <span className="text-small text-ink-2 italic"> (not installed)</span>}
             </span>
           ))}{' '}
           use that profile's account and MCP servers; everywhere else, their own defaults.

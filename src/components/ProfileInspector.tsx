@@ -30,6 +30,7 @@ export function ProfileInspector({
   home,
   library,
   tools,
+  missingAgents,
   onCancel,
   onSave,
   onDelete,
@@ -48,6 +49,8 @@ export function ProfileInspector({
   library: Record<string, McpServer>
   /** Each server's tools, where a check has listed them. */
   tools: Record<string, ToolInfo[]>
+  /** The offered agents a new terminal doesn't find on its PATH: still offered, marked. */
+  missingAgents: string[]
   onCancel: () => void
   /** Closes the inspector for the MCP Servers view, where the library is built. */
   onShowServers: () => void
@@ -313,6 +316,11 @@ export function ProfileInspector({
                     <AgentMark command={tool.command} className="text-ink-2" />
                     <span className="font-medium">{tool.label}</span>
                     <code className="font-mono text-caption text-ink-2">{tool.envVar}</code>
+                    {missingAgents.includes(tool.command) && (
+                      <span title="Not found on a new terminal's PATH, nor in an editor" className="ml-auto text-caption text-ink-2 italic">
+                        Not installed
+                      </span>
+                    )}
                   </label>
                   <div className="flex items-center gap-1.5">
                     <TextField
@@ -329,6 +337,12 @@ export function ProfileInspector({
                   {tool.note && (
                     <p id={`tool-${tool.command}-note`} className="mt-1 text-caption text-ink-2">
                       {tool.note}
+                    </p>
+                  )}
+                  {/* The vendor's own installer, to copy: the same line the check's "isn't installed" verdict gives. */}
+                  {tool.install && missingAgents.includes(tool.command) && (
+                    <p className="mt-1 text-caption text-ink-2">
+                      Install it with <code className="font-mono break-all text-ink select-text">{tool.install}</code>
                     </p>
                   )}
                 </li>

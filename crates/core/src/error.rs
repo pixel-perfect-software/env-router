@@ -37,6 +37,27 @@ pub enum ErrorKind {
 }
 
 impl Error {
+    /// The same error again, for a caller that keeps a failure to hand out more than once (a
+    /// cache): the same variant and message. The source of an `Io` or `Json` is rebuilt from its
+    /// kind and text, since those errors can't be cloned.
+    #[must_use]
+    pub fn replay(&self) -> Self {
+        match self {
+            Self::NoHome => Self::NoHome,
+            Self::Io { path, source } => Self::Io {
+                path: path.clone(),
+                source: std::io::Error::new(source.kind(), source.to_string()),
+            },
+            Self::Json { path, source } => Self::Json {
+                path: path.clone(),
+                source: <serde_json::Error as serde::de::Error>::custom(source.to_string()),
+            },
+            Self::Invalid(message) => Self::Invalid(message.clone()),
+            Self::Command(message) => Self::Command(message.clone()),
+            Self::SecretStore(message) => Self::SecretStore(message.clone()),
+        }
+    }
+
     pub fn kind(&self) -> ErrorKind {
         match self {
             Self::Json { .. } => ErrorKind::Parse,

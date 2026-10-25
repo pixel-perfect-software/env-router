@@ -11,12 +11,16 @@ env-router/
 │   │   ├── src/mcp.rs         # renders per-profile MCP files + launch manifests; what the shim injects
 │   │   ├── src/agents.rs      # the agent registry (src/lib/agents.json, include_str!) and with_agents, so the CLI fills config.agents
 │   │   ├── src/platform.rs    # what differs per system: terminal login shells, new-terminal PATH, config dirs, opener
+│   │   ├── src/programs.rs    # finding the real program behind a command (the shim's search, shared with the window's installed check)
+│   │   ├── src/watcher.rs     # Watcher: one probe thread at a time, a bounded wait, the last answer kept (the secret store check and the agent probe)
 │   │   ├── src/paths.rs       # ~/.envrouter layout: shims/, bin/ (shim, helpers, CLI), config.json, mcp/
 │   │   └── src/error.rs       # Error enum, serialized to the frontend as a message string
 │   ├── ops/                   # the backend with no UI, for the app and the CLI
 │   │   ├── src/commands.rs    # the body of every window command (below)
 │   │   ├── src/rpc.rs         # those commands by name as JSON lines: `envrouter rpc`
 │   │   ├── src/shell.rs       # startup-file blocks for zsh/bash/fish, check_folder, preview, login_path
+│   │   ├── src/installed.rs   # which agents a new terminal has nothing to run for and no editor carries (SetupStatus.missingAgents): the login shell's PATH, aliases and functions, kept 3 minutes
+│   │   ├── src/last_folder.rs # the folder the window last checked, for the menu bar's Check Last Folder
 │   │   ├── src/shims.rs       # installs the shim and helpers; syncs one symlink per tool
 │   │   ├── src/uninstall.rs   # uninstall: shell blocks, editor wrappers, the secret item, ~/.envrouter, the app's webview folders (the app deletes its own as it exits, `finish_uninstall`), in that order (a problem before the secrets stops the run), the commands that remove the app and CLI, and the app's lock the CLI's uninstall checks
 │   │   ├── src/editors.rs     # points an agent extension's process-wrapper setting at the shim (desktop editors and remote servers)
@@ -26,7 +30,6 @@ env-router/
 │   ├── cli/                   # `envrouter`: status, install, shell, editor, check, explain, apply, secret, uninstall, rpc
 │   ├── keychain/              # MCP secrets in one item of the platform's store; envrouter-keychain helper bin (the shim runs it, never links it)
 │   │   ├── src/store/         # macos.rs (Keychain), linux.rs → secret_service.rs or wsl.rs, windows.rs (Credential Manager), unavailable.rs
-│   │   ├── src/checker.rs     # one-thread, timed "is the store usable" check behind setup_status (Linux and WSL)
 │   │   └── tests/store.rs     # round trip through the real store; ignored by default, run by CI on Linux
 │   ├── shim/
 │   │   ├── src/main.rs        # the shim: route, find the real binary, exec; wrapper mode for editors; ENVROUTER_EXPLAIN mode
@@ -35,7 +38,7 @@ env-router/
 ├── src-tauri/                 # the desktop app
 │   ├── build.rs               # stages the shim and helper for bundle.externalBin
 │   ├── src/lib.rs             # Tauri commands (wrappers over ops::commands), app setup, and the `Gate` every home() call goes through (it counts commands in flight, so an uninstall can wait for them, then turn the rest away) and the app's `app.lock`
-│   ├── src/tray.rs            # menu bar icon and menu; on macOS close-to-hide and the Dock icon only while open
+│   ├── src/tray.rs            # menu bar icon and menu (Check Last Folder, the version line); on macOS close-to-hide and the Dock icon only while open
 │   ├── src/menu.rs            # macOS menu bar: Settings… after About, EnvRouter's own Quit, the Help menu's links
 │   ├── src/help.rs            # the two help links (docs, report an issue) as a fixed list under the repository; the only addresses EnvRouter opens
 │   ├── capabilities/default.json  # core, plus the three dialog/opener calls the window makes; no fs
@@ -53,7 +56,7 @@ env-router/
 │   ├── lib/                   # api.ts (typed commands), types.ts (wire types), agents.json (the agent registry: variables, MCP descriptors, editor hooks, logo marks; also read by crates/core/src/agents.rs), tools.ts (KNOWN_TOOLS from it, withAgents), platform.ts (usePlatform: shortcuts, store name),
 │   │                          # mcp.ts (server drafts, rename/remove, secret locking), mcpCatalog.ts (well-known servers), serverLogo.ts (logo matching),
 │   │                          # verdict.ts (check wording, tested in verdict.test.ts), health.ts (the health line and the one-accent rule, tested in health.test.ts), paths.ts, text.ts (plural, listOf), confirm.ts,
-│   │                          # hooks the window composes: useConfigStore.ts (load, save and its merge loop), useFolderCheck.ts, useShortcuts.ts, useFolderDrop.ts
+│   │                          # lastView.ts (the view the window opens on), hooks the window composes: useConfigStore.ts (load, save and its merge loop), useFolderCheck.ts, useShortcuts.ts, useFolderDrop.ts
 │   └── dev/mockTauri.ts       # dev-only browser mock (?scenario=, ?platform=, ?check= and more; see docs/contributing.md); never bundled; mockTauri.test.ts pins it, and App.test.tsx boots it
 ├── packaging/homebrew/        # cask and CLI formula templates; render.sh fills them from a release's SHA256SUMS
 ├── packaging/notices/         # `pnpm notices`: render.mjs and cargo-about's about.toml write THIRD-PARTY-NOTICES.txt for releases
@@ -81,7 +84,7 @@ env-router/
 Created on the user's machine at runtime: `~/.envrouter/config.json`, `~/.envrouter/bin/` (the
 shim, `envrouter-keychain`, the `envrouter` CLI when installed from a release archive, and on
 Linux `envrouter-keychain.exe` for WSL), `~/.envrouter/shims/<tool>` (symlinks), and
-`~/.envrouter/mcp/<profile id>/<command>/` (rendered MCP server files and `launch.json`), plus an
+`~/.envrouter/mcp/<profile id>/<command>/` (rendered MCP server files and `launch.json`), `~/.envrouter/last-folder.json`, plus an
 "EnvRouter MCP secrets" item in the platform's store once a secret is saved (the login Keychain,
 the Secret Service, or the Windows Credential Manager as `EnvRouter MCP secrets:wsl:<distro>:<home>#<n>`).
 The app also adds a marked block to the end of `~/.zshrc` (or `$ZDOTDIR/.zshrc`), bash's files
@@ -97,7 +100,7 @@ command of the same name and arguments.
 |---|---|
 | `get_config` | Reads the config, creating an empty one if it's missing |
 | `save_config(payload, secrets)` | Validates, stores new MCP secrets in the platform's store (pruning unused ones), saves, installs the shim, renders the MCP files, syncs the symlinks |
-| `get_setup_status` | The platform and its store's name, whether the shim is installed, plus per-shell availability, default shell and block status |
+| `get_setup_status` | The platform and its store's name, whether the shim is installed, plus per-shell availability, default shell and block status, and which agents a new terminal doesn't find (`missingAgents`, null while unknown) |
 | `set_shell_integration(shell, enabled)` | Adds or removes the startup-file block |
 | `get_editor_status(hooks)` | Each VS Code-family editor's (and remote server's) state for each agent's extension hook (from `agents.json`) |
 | `set_editor_integration(editor, command, hook, enabled)` | Sets or clears the extension's process-wrapper setting in the editor's settings, keeping comments; never replaces someone else's wrapper |
@@ -113,7 +116,7 @@ command of the same name and arguments.
 ## Tech stack
 | Concern | Choice |
 |---|---|
-| App shell | Tauri 2 with plugins: dialog, opener |
+| App shell | Tauri 2 with plugins: dialog, opener, window-state |
 | Backend | Rust 2021 edition, Cargo workspace, serde / serde_json / thiserror; clap (CLI); jsonc-parser (editor settings); secret-service (Linux), windows-sys (Windows) |
 | Frontend | React 19, TypeScript 7, Vite 8 |
 | Styling | Tailwind CSS 4 via `@tailwindcss/vite` |
