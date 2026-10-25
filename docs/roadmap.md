@@ -191,7 +191,7 @@ CLI over an older shim leaves agents routed.
    CycloneDX SBOM as a release asset.
 9. **Homebrew templates and the containers are untested, with nits.** `ci.yml:47-48` skips
    `packaging/homebrew/**`; the formula has a redundant `version`, no `livecheck` and no Intel
-   URL; the cask's `zap` misses `~/Library/Preferences/com.tylerrobertson.envrouter.plist`.
+   URL; the cask's `zap` misses the app's `~/Library/Preferences/<identifier>.plist`.
    Fix: a CI step that renders with dummy sums and runs `brew style`; fix the nits.
 10. **The rust job's apt step takes up to nine minutes, and `libxdo-dev` isn't needed.**
     `ci.yml:106` measured 532 s, 356 s, 193 s across recent runs against a 20-minute timeout;

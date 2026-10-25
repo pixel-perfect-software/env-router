@@ -8,24 +8,6 @@ import { KNOWN_TOOLS } from './tools'
 import type { ConfigState, SetupStatus, Shell } from './types'
 import { verdictOf } from './verdict'
 
-const CHECKED_KEY = 'envrouter.checkedOnce'
-
-/** Per-viewer convenience: whether first-run's third step has been done on this Mac. */
-const readChecked = () => {
-  try {
-    return localStorage.getItem(CHECKED_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-const writeChecked = () => {
-  try {
-    localStorage.setItem(CHECKED_KEY, '1')
-  } catch {
-    // Storage unavailable: first-run just shows its last step again next launch.
-  }
-}
-
 /**
  * The folder check: the docket's result, the slip filed on the map, and what the check found
  * blocking a shell. A check is asked of `config` and `home` as they are when `runCheck` is called.
@@ -34,7 +16,8 @@ export function useFolderCheck(config: ConfigState | null, setup: SetupStatus | 
   const [check, setCheck] = useState<CheckState | null>(null)
   const [slip, setSlip] = useState<Slip | null>(null)
   const [blocked, setBlocked] = useState<Blocked | null>(null)
-  const [checkedOnce, setCheckedOnce] = useState(readChecked)
+  // Routed in this window. Earlier ones are the backend's to remember (`SetupStatus.checkedBefore`), so a changed bundle identifier doesn't lose them.
+  const [checkedOnce, setCheckedOnce] = useState(false)
   const checkKey = useRef(0)
   // A check reads the shell's status when its result arrives, not when it started: a switch may have flipped meanwhile.
   const latestSetup = useRef(setup)
@@ -79,7 +62,6 @@ export function useFolderCheck(config: ConfigState | null, setup: SetupStatus | 
       else setBlocked((b) => (b && b.shell === shell && b.tool === tool ? null : b))
       if (result.status === 'routed') {
         setCheckedOnce(true)
-        writeChecked()
       }
     } catch (err) {
       if (key !== checkKey.current) return

@@ -81,3 +81,10 @@ pub fn mcp_retired(home: &Path) -> PathBuf {
 pub fn last_folder(home: &Path) -> PathBuf {
     root(home).join("last-folder.json")
 }
+
+/// Present once a folder check has come back routed, which first-run's last step waits for. A file
+/// of its own because the window's `localStorage` goes with its bundle identifier. An uninstall
+/// removes it with the rest.
+pub fn checked_once(home: &Path) -> PathBuf {
+    root(home).join("checked-once")
+}

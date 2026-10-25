@@ -322,18 +322,33 @@ pub struct AppData {
     /// Folders that would be the app's if they exist but lie outside the home folder, which an
     /// environment variable pointed at: named, never deleted.
     pub outside: Vec<PathBuf>,
-    /// The preferences domain the system caches (see [`Store::forget_preferences`]).
-    pub preferences: Option<&'static str>,
+    /// The preferences domains the system caches (see [`Store::forget_preferences`]).
+    pub preferences: Vec<&'static str>,
 }
 
 impl AppData {
     /// What `platform` keeps for the app under `home`. `xdg` is what the caller read of
     /// `$XDG_DATA_HOME` and `$XDG_CONFIG_HOME`, which the platform code only trusts inside `home`.
     pub fn of(platform: Platform, home: &Path, xdg: &XdgHomes) -> Self {
+        Self::for_identifiers(platform, home, xdg, &platform::ALL_APP_IDENTIFIERS)
+    }
+
+    /// The same for the identifiers earlier releases were bundled under alone, which the first
+    /// launch under the current one clears.
+    pub fn legacy(platform: Platform, home: &Path, xdg: &XdgHomes) -> Self {
+        Self::for_identifiers(platform, home, xdg, &platform::LEGACY_APP_IDENTIFIERS)
+    }
+
+    fn for_identifiers(
+        platform: Platform,
+        home: &Path,
+        xdg: &XdgHomes,
+        ids: &[&'static str],
+    ) -> Self {
         Self {
-            delete: platform::app_data_dirs(platform, home),
-            outside: platform::app_dirs_outside_home(platform, home, xdg),
-            preferences: platform::preferences_domain(platform),
+            delete: platform::app_data_dirs(platform, home, ids),
+            outside: platform::app_dirs_outside_home(platform, home, xdg, ids),
+            preferences: platform::preferences_domains(platform, ids),
         }
     }
 
@@ -341,7 +356,7 @@ impl AppData {
     pub fn named_only(self) -> Self {
         Self {
             delete: Vec::new(),
-            preferences: None,
+            preferences: Vec::new(),
             ..self
         }
     }
@@ -354,6 +369,29 @@ pub fn remove_app_data(home: &Path, xdg: &XdgHomes) -> Vec<String> {
     // The uninstall's report already named these.
     app_data.outside.clear();
     app_data_step(&app_data, false, &Keychain, &mut Vec::new()).1
+}
+
+/// What the first launch under a new bundle identifier deletes of the old one's, with the store
+/// that forgets the old preferences: a sentence for each folder it couldn't delete, for each one
+/// outside the home folder that it won't touch, and for each link it deleted without its target.
+/// The preferences are forgotten whether or not their file is still there, since the system may
+/// hold them without it.
+pub(crate) fn remove_legacy_with(
+    platform: Platform,
+    home: &Path,
+    xdg: &XdgHomes,
+    store: &dyn Store,
+) -> Vec<String> {
+    let app_data = AppData::legacy(platform, home, xdg);
+    let mut left = Vec::new();
+    let (_, mut sentences) = app_data_step(&app_data, false, store, &mut left);
+    sentences.extend(left.into_iter().map(|link| {
+        format!(
+            "Left `{}` alone: `{}` was a link to it, and only the link was deleted.",
+            link.target, link.link
+        )
+    }));
+    sentences
 }
 
 /// Every editor, for every setting an agent's hook names: the registry's, and those of a saved
@@ -463,13 +501,19 @@ fn app_data_step(
 ) -> (Vec<String>, Vec<String>) {
     let mut found = Vec::new();
     let mut sentences = Vec::new();
-    let plist = app_data.preferences.map(|domain| format!("{domain}.plist"));
+    let plists: Vec<(String, &str)> = app_data
+        .preferences
+        .iter()
+        .map(|&domain| (format!("{domain}.plist"), domain))
+        .collect();
     for folder in &app_data.delete {
-        let is_plist = plist
-            .as_deref()
-            .is_some_and(|name| folder.file_name().is_some_and(|file| file == name));
-        let was_there = is_plist && fs::symlink_metadata(folder).is_ok();
-        if let Some(domain) = app_data.preferences.filter(|_| is_plist && !dry_run) {
+        let domain = folder.file_name().and_then(|file| {
+            plists
+                .iter()
+                .find_map(|(name, domain)| (file == name.as_str()).then_some(*domain))
+        });
+        let was_there = domain.is_some() && fs::symlink_metadata(folder).is_ok();
+        if let Some(domain) = domain.filter(|_| !dry_run) {
             store.forget_preferences(domain);
         }
         match remove_entry(folder, dry_run, left) {
@@ -1066,12 +1110,45 @@ mod tests {
             }]
         );
         // The system's copy of the preferences is told to forget them, not just the plist deleted.
-        assert_eq!(*store.forgotten.borrow(), [platform::APP_IDENTIFIER]);
+        assert_eq!(
+            *store.forgotten.borrow(),
+            [
+                platform::APP_IDENTIFIER,
+                platform::LEGACY_APP_IDENTIFIERS[0]
+            ]
+        );
 
         // Run again: nothing left to find, and nothing wrong with that.
         let again = run(h, false, &FakeStore::default(), &app_data).unwrap();
         assert!(again.finished(), "{again:?}");
         assert!(again.app_data.is_empty() && again.app_data_left.is_empty());
+    }
+
+    /// What an earlier release left under its own identifier goes with the current one's.
+    #[test]
+    fn an_uninstall_clears_the_legacy_identifiers_folders_too() {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path();
+        let legacy = AppData::legacy(Platform::MacOs, h, &XdgHomes::default()).delete;
+        for folder in &legacy {
+            fs::create_dir_all(folder).unwrap();
+        }
+        let store = FakeStore::default();
+
+        let report = run(
+            h,
+            false,
+            &store,
+            &AppData::of(Platform::MacOs, h, &XdgHomes::default()),
+        )
+        .unwrap();
+
+        assert_eq!(report.app_data.len(), legacy.len(), "{report:?}");
+        assert!(legacy.iter().all(|folder| !folder.exists()));
+        assert!(store
+            .forgotten
+            .borrow()
+            .contains(&platform::LEGACY_APP_IDENTIFIERS[0].to_string()));
     }
 
     /// The preferences plist counts as there if the system removed it when it was asked to forget
@@ -1090,8 +1167,10 @@ mod tests {
             fn delete(&self, _: &Path) -> Result<()> {
                 Ok(())
             }
-            fn forget_preferences(&self, _: &str) {
-                fs::remove_file(&self.0).unwrap();
+            fn forget_preferences(&self, domain: &str) {
+                if domain == platform::APP_IDENTIFIER {
+                    fs::remove_file(&self.0).unwrap();
+                }
             }
         }
         let home = tempfile::tempdir().unwrap();
@@ -1155,6 +1234,9 @@ mod tests {
     fn outside_xdg_folders_are_named_and_left() {
         let home = tempfile::tempdir().unwrap();
         let (data, config) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let ids = platform::ALL_APP_IDENTIFIERS;
+        let named_in = |dir: &Path| ids.iter().map(|id| dir.join(id)).collect::<Vec<_>>();
+        // The current identifier's folders are there; the legacy ones are named all the same.
         let theirs = [data.path(), config.path()].map(|dir| dir.join(platform::APP_IDENTIFIER));
         for folder in &theirs {
             fs::create_dir_all(folder).unwrap();
@@ -1164,7 +1246,10 @@ mod tests {
             config: Some(config.path().to_path_buf()),
         };
         let named = AppData::of(Platform::Linux, home.path(), &xdg);
-        assert_eq!(named.outside, theirs);
+        assert_eq!(
+            named.outside,
+            [named_in(data.path()), named_in(config.path())].concat()
+        );
 
         for app_data in [
             named,
@@ -1200,7 +1285,7 @@ mod tests {
         };
         let home = tempfile::tempdir().unwrap();
         let h = home.path();
-        let folders = platform::app_data_dirs(platform, h);
+        let folders = platform::app_data_dirs(platform, h, &platform::ALL_APP_IDENTIFIERS);
         for folder in &folders {
             fs::create_dir_all(folder).unwrap();
         }
@@ -1332,7 +1417,7 @@ mod tests {
                 reason: "no keyring".into(),
             },
             folder: FolderStep::WouldDelete,
-            app_data: vec!["/h/.local/share/com.tylerrobertson.envrouter".into()],
+            app_data: vec!["/h/.local/share/ca.pixel-perfect.envrouter".into()],
             app_data_left: vec!["Couldn't delete `/h/x`: busy. Delete it yourself.".into()],
             left: vec![Left {
                 link: "/h/.envrouter".into(),
@@ -1347,7 +1432,7 @@ mod tests {
         assert_eq!(SECRETS_ITEM, "EnvRouter MCP secrets");
         assert_eq!(
             serde_json::to_string(&report).unwrap(),
-            r#"{"dryRun":false,"shellFiles":["/h/.zshrc"],"editorFiles":[{"editor":"codeInsiders","settingsFile":"/s.json","setting":"claudeCode.claudeProcessWrapper"}],"secrets":{"status":"unreachable","reason":"no keyring"},"folder":"wouldDelete","appData":["/h/.local/share/com.tylerrobertson.envrouter"],"appDataLeft":["Couldn't delete `/h/x`: busy. Delete it yourself."],"left":[{"link":"/h/.envrouter","target":"/dotfiles"}],"problems":["Stopped."],"removeNext":[{"what":"cli","command":"brew uninstall envrouter-cli"}]}"#
+            r#"{"dryRun":false,"shellFiles":["/h/.zshrc"],"editorFiles":[{"editor":"codeInsiders","settingsFile":"/s.json","setting":"claudeCode.claudeProcessWrapper"}],"secrets":{"status":"unreachable","reason":"no keyring"},"folder":"wouldDelete","appData":["/h/.local/share/ca.pixel-perfect.envrouter"],"appDataLeft":["Couldn't delete `/h/x`: busy. Delete it yourself."],"left":[{"link":"/h/.envrouter","target":"/dotfiles"}],"problems":["Stopped."],"removeNext":[{"what":"cli","command":"brew uninstall envrouter-cli"}]}"#
         );
         for (step, json) in [
             (SecretsStep::Deleted, r#"{"status":"deleted"}"#),

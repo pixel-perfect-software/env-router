@@ -28,10 +28,21 @@ cask "envrouter" do
         writable_paths: ["{{appdir}}/EnvRouter.app"]
   end
 
-  uninstall quit: "com.tylerrobertson.envrouter"
+  # The first id is the current bundle identifier, the second the one before it, which an
+  # older install still running under it would carry.
+  uninstall quit: [
+    "ca.pixel-perfect.envrouter",
+    "com.tylerrobertson.envrouter",
+  ]
 
   zap trash: [
     "~/.envrouter",
+    "~/Library/Application Support/ca.pixel-perfect.envrouter",
+    "~/Library/Caches/ca.pixel-perfect.envrouter",
+    "~/Library/HTTPStorages/ca.pixel-perfect.envrouter",
+    "~/Library/Preferences/ca.pixel-perfect.envrouter.plist",
+    "~/Library/Saved Application State/ca.pixel-perfect.envrouter.savedState",
+    "~/Library/WebKit/ca.pixel-perfect.envrouter",
     "~/Library/Application Support/com.tylerrobertson.envrouter",
     "~/Library/Caches/com.tylerrobertson.envrouter",
     "~/Library/HTTPStorages/com.tylerrobertson.envrouter",

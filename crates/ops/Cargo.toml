@@ -14,7 +14,7 @@ serde_json.workspace = true
 tempfile.workspace = true
 http = "1"
 jsonc-parser = { version = "0.34", features = ["cst", "serde"] }
-nix = { workspace = true, features = ["signal"] }
+nix = { workspace = true, features = ["signal", "user"] }
 # What rmcp spawns servers with; used directly so a check can signal a server's process group.
 process-wrap = { version = "10", default-features = false, features = ["tokio1", "process-group", "kill-on-drop"] }
 rmcp = { version = "3.5", default-features = false, features = [

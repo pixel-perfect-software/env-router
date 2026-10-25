@@ -145,6 +145,74 @@ pub fn app_removal(platform: Platform, found: &AppFound) -> Option<String> {
     }
 }
 
+/// Whether `exe`, the path of a running executable, is the desktop app: `envrouter-app` on
+/// Linux and WSL (`mainBinaryName` in `tauri.linux.conf.json`), `envrouter` inside the `.app`
+/// bundle on macOS. The CLI, the shim and the helpers are not.
+pub fn is_app_binary(platform: Platform, exe: &str) -> bool {
+    match platform {
+        Platform::Linux | Platform::Wsl => exe.ends_with("/envrouter-app"),
+        Platform::MacOs => exe.ends_with(".app/Contents/MacOS/envrouter"),
+        // No release has run there yet.
+        Platform::Windows => false,
+    }
+}
+
+/// The processes `uid` runs, as (pid, path of the executable), the way the system lists them:
+/// `/proc` on Linux and WSL (a process other users own, or that can't be read, is left out), `ps`
+/// on macOS. Another user's copy of the app is not in the way of this user's files. `Err` says why
+/// they couldn't be listed.
+pub fn user_processes(platform: Platform, uid: u32) -> Result<Vec<(u32, String)>, String> {
+    match platform {
+        #[cfg(unix)]
+        Platform::Linux | Platform::Wsl => processes_in_proc(uid),
+        Platform::MacOs => processes_from_ps(uid),
+        _ => Ok(Vec::new()),
+    }
+}
+
+#[cfg(unix)]
+fn processes_in_proc(uid: u32) -> Result<Vec<(u32, String)>, String> {
+    use std::os::unix::fs::MetadataExt;
+
+    let entries = fs::read_dir("/proc").map_err(|err| format!("couldn't read /proc: {err}"))?;
+    let mut found = Vec::new();
+    for entry in entries.flatten() {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse().ok())
+        else {
+            continue;
+        };
+        // A process that has just ended, or isn't readable, isn't this user's running app.
+        if fs::metadata(entry.path()).is_ok_and(|meta| meta.uid() == uid) {
+            if let Ok(exe) = fs::read_link(entry.path().join("exe")) {
+                let exe = exe.to_string_lossy();
+                found.push((pid, exe.trim_end_matches(" (deleted)").to_string()));
+            }
+        }
+    }
+    Ok(found)
+}
+
+fn processes_from_ps(uid: u32) -> Result<Vec<(u32, String)>, String> {
+    let output = std::process::Command::new("/bin/ps")
+        .args(["-U", &uid.to_string(), "-x", "-o", "pid=,comm="])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|err| format!("couldn't run ps: {err}"))?;
+    if !output.status.success() {
+        return Err(format!("ps failed: {}", output.status));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let (pid, exe) = line.trim_start().split_once(' ')?;
+            Some((pid.parse().ok()?, exe.trim().to_string()))
+        })
+        .collect())
+}
+
 /// `text` in double quotes for a POSIX shell, to paste into a terminal.
 pub fn shell_quote(text: &str) -> String {
     let mut quoted = String::from("\"");
@@ -191,21 +259,34 @@ fn xdg_dir(home: &Path, var: &str, default: &[&str]) -> PathBuf {
 
 /// The bundle identifier in `src-tauri/tauri.conf.json`. macOS names the folders the webview and
 /// the system keep for the app after it.
-pub const APP_IDENTIFIER: &str = "com.tylerrobertson.envrouter";
+pub const APP_IDENTIFIER: &str = "ca.pixel-perfect.envrouter";
+
+/// The identifiers earlier releases were bundled under, newest first. Their folders are cleaned
+/// up: an uninstall deletes them too, and the first launch under [`APP_IDENTIFIER`] deletes them,
+/// both through [`app_data_dirs`], since the webview keys its storage by identifier and nothing
+/// in them carries over. The cask's `uninstall quit:` and `zap` list them as well (a test keeps
+/// the three in step). This is the one place the old name is written in the code.
+pub const LEGACY_APP_IDENTIFIERS: [&str; 1] = ["com.tylerrobertson.envrouter"];
+
+/// [`APP_IDENTIFIER`], then every one of [`LEGACY_APP_IDENTIFIERS`]: what an uninstall clears. A
+/// test keeps it in step with the two.
+pub const ALL_APP_IDENTIFIERS: [&str; 2] = [APP_IDENTIFIER, LEGACY_APP_IDENTIFIERS[0]];
 
 /// The folders the desktop app's webview and the system keep for it under `home`, whether or not
-/// they exist now. Tauri's `app_data_dir`, `app_cache_dir` and `app_log_dir` are never made: the
-/// app asks for none of them. Its `app_config_dir` (`<config dir>/<identifier>`, see
-/// [`app_config_dir`]) holds the window-state plugin's `.window-state.json`, written when the
-/// app exits, and is listed too: last on macOS and Windows, and on Linux after the data folders,
+/// they exist now, for each of the identifiers `ids` in turn ([`ALL_APP_IDENTIFIERS`] for an
+/// uninstall, [`LEGACY_APP_IDENTIFIERS`] for the first launch). Tauri's
+/// `app_data_dir`, `app_cache_dir` and `app_log_dir` are never made: the app asks for none of
+/// them. Its `app_config_dir` (`<config dir>/<identifier>`, see [`app_config_dir`]) holds the
+/// window-state plugin's `.window-state.json`, written when the app exits, and is listed too:
+/// last of an identifier's folders on macOS and Windows, and on Linux after the data folders,
 /// with `~/.config` itself after `$XDG_CONFIG_HOME`.
 ///
 /// - macOS: WKWebView's default store keeps its data in `~/Library/WebKit/<identifier>` and its
 ///   caches in `~/Library/Caches/<identifier>`, and the open panel leaves `NSNavLastRootDirectory`
 ///   and the like in `~/Library/Preferences/<identifier>.plist` (these three were made by the
 ///   built app). `HTTPStorages` and `Saved Application State` are the other places the system
-///   names after an identifier. The cask's `zap` stanza lists the same six, the config folder
-///   among them.
+///   names after an identifier. The cask's `zap` stanza lists the same six per identifier, the
+///   config folder among them.
 /// - Linux and WSL, Windows: Tauri gives the webview `app_local_data_dir` as its data folder
 ///   (`manager/webview.rs`: "in `windows`, we need to force a data_directory", on Linux too), which
 ///   is `<local data dir>/<identifier>`, and wry points WebKitGTK's data and cache at it, so
@@ -214,37 +295,39 @@ pub const APP_IDENTIFIER: &str = "com.tylerrobertson.envrouter";
 ///   The local data dir is `$XDG_DATA_HOME` or `~/.local/share` on Linux, read from the
 ///   environment the app started in, which this one may not share, so the default under `home`
 ///   counts too; and `~/AppData/Local` on Windows.
-pub fn app_data_dirs(platform: Platform, home: &Path) -> Vec<PathBuf> {
-    let mut dirs = match platform {
-        Platform::MacOs => {
-            let library = home.join("Library");
-            vec![
-                library.join("WebKit").join(APP_IDENTIFIER),
-                library.join("Caches").join(APP_IDENTIFIER),
-                library.join("HTTPStorages").join(APP_IDENTIFIER),
-                library
-                    .join("Saved Application State")
-                    .join(format!("{APP_IDENTIFIER}.savedState")),
-                library
-                    .join("Preferences")
-                    .join(format!("{APP_IDENTIFIER}.plist")),
-                app_config_dir(platform, home).join(APP_IDENTIFIER),
-            ]
-        }
-        Platform::Linux | Platform::Wsl => vec![
-            xdg_dir(home, "XDG_DATA_HOME", &LINUX_DATA_DIR).join(APP_IDENTIFIER),
-            home.join(LINUX_DATA_DIR.iter().collect::<PathBuf>())
-                .join(APP_IDENTIFIER),
-            app_config_dir(platform, home).join(APP_IDENTIFIER),
-            home.join(".config").join(APP_IDENTIFIER),
-        ],
-        Platform::Windows => vec![
-            home.join("AppData").join("Local").join(APP_IDENTIFIER),
-            app_config_dir(platform, home).join(APP_IDENTIFIER),
-        ],
-    };
-    dirs.dedup();
-    dirs
+pub fn app_data_dirs(platform: Platform, home: &Path, ids: &[&str]) -> Vec<PathBuf> {
+    ids.iter()
+        .flat_map(|id| {
+            let mut dirs = match platform {
+                Platform::MacOs => {
+                    let library = home.join("Library");
+                    vec![
+                        library.join("WebKit").join(id),
+                        library.join("Caches").join(id),
+                        library.join("HTTPStorages").join(id),
+                        library
+                            .join("Saved Application State")
+                            .join(format!("{id}.savedState")),
+                        library.join("Preferences").join(format!("{id}.plist")),
+                        app_config_dir(platform, home).join(id),
+                    ]
+                }
+                Platform::Linux | Platform::Wsl => vec![
+                    xdg_dir(home, "XDG_DATA_HOME", &LINUX_DATA_DIR).join(id),
+                    home.join(LINUX_DATA_DIR.iter().collect::<PathBuf>())
+                        .join(id),
+                    app_config_dir(platform, home).join(id),
+                    home.join(".config").join(id),
+                ],
+                Platform::Windows => vec![
+                    home.join("AppData").join("Local").join(id),
+                    app_config_dir(platform, home).join(id),
+                ],
+            };
+            dirs.dedup();
+            dirs
+        })
+        .collect()
 }
 
 /// `~/.local/share`, as path components.
@@ -271,26 +354,35 @@ impl XdgHomes {
     }
 }
 
-/// The folders Linux would keep the app's data and config in if `xdg` pointed outside `home`:
-/// [`app_data_dirs`] leaves such a folder alone, since a path from the environment doesn't get to
-/// name what is deleted, but an uninstall can say it is there. A variable that's unset, relative
-/// (glib ignores those too) or inside `home` names none.
-pub fn app_dirs_outside_home(platform: Platform, home: &Path, xdg: &XdgHomes) -> Vec<PathBuf> {
+/// The folders Linux would keep the app's data and config in, for the identifiers `ids`, if `xdg`
+/// pointed outside `home`: [`app_data_dirs`] leaves such a folder alone, since a path from the
+/// environment doesn't get to name what is deleted, but an uninstall can say it is there. A
+/// variable that's unset, relative (glib ignores those too) or inside `home` names none.
+pub fn app_dirs_outside_home(
+    platform: Platform,
+    home: &Path,
+    xdg: &XdgHomes,
+    ids: &[&str],
+) -> Vec<PathBuf> {
     match platform {
         Platform::Linux | Platform::Wsl => [&xdg.data, &xdg.config]
             .into_iter()
             .flatten()
             .filter(|dir| dir.is_absolute() && !dir.starts_with(home))
-            .map(|dir| dir.join(APP_IDENTIFIER))
+            .flat_map(|dir| ids.iter().map(|id| dir.join(id)))
             .collect(),
         Platform::MacOs | Platform::Windows => Vec::new(),
     }
 }
 
-/// The preferences domain whose cached copy the system keeps, so that deleting its plist isn't
-/// enough: `cfprefsd` can write it back. Only macOS has one.
-pub fn preferences_domain(platform: Platform) -> Option<&'static str> {
-    (platform == Platform::MacOs).then_some(APP_IDENTIFIER)
+/// The preferences domains among the identifiers `ids` whose cached copy the system keeps, so
+/// that deleting a plist isn't enough: `cfprefsd` can write it back. Only macOS has any.
+pub fn preferences_domains(platform: Platform, ids: &[&'static str]) -> Vec<&'static str> {
+    if platform == Platform::MacOs {
+        ids.to_vec()
+    } else {
+        Vec::new()
+    }
 }
 
 /// The command that opens a text file in the user's editor, followed by the file.
@@ -455,14 +547,11 @@ mod tests {
         assert_eq!(app_config_dir(Platform::Linux, home), home.join(".config"));
     }
 
-    #[test]
-    fn the_apps_folders_are_named_under_the_given_home() {
-        let home = Path::new("/scratch/home");
-        let id = APP_IDENTIFIER;
+    /// The folders of one identifier, as each platform keeps them, written out by hand.
+    fn folders_of(platform: Platform, home: &Path, id: &str) -> Vec<PathBuf> {
         let library = home.join("Library");
-        assert_eq!(
-            app_data_dirs(Platform::MacOs, home),
-            [
+        match platform {
+            Platform::MacOs => vec![
                 library.join("WebKit").join(id),
                 library.join("Caches").join(id),
                 library.join("HTTPStorages").join(id),
@@ -471,29 +560,53 @@ mod tests {
                     .join(format!("{id}.savedState")),
                 library.join("Preferences").join(format!("{id}.plist")),
                 library.join("Application Support").join(id),
-            ]
-        );
-        // Whatever XDG_DATA_HOME this test runs with, it isn't inside the scratch home, so it
-        // counts for nothing and the default isn't listed twice.
-        let linux = [
-            home.join(".local").join("share").join(id),
-            home.join(".config").join(id),
-        ];
-        assert_eq!(app_data_dirs(Platform::Linux, home), linux);
-        assert_eq!(app_data_dirs(Platform::Wsl, home), linux);
-        assert_eq!(
-            app_data_dirs(Platform::Windows, home),
-            [
+            ],
+            // Whatever XDG_DATA_HOME this test runs with, it isn't inside the scratch home, so it
+            // counts for nothing and the default isn't listed twice.
+            Platform::Linux | Platform::Wsl => vec![
+                home.join(".local").join("share").join(id),
+                home.join(".config").join(id),
+            ],
+            Platform::Windows => vec![
                 home.join("AppData").join("Local").join(id),
-                home.join("AppData").join("Roaming").join(id)
-            ]
+                home.join("AppData").join("Roaming").join(id),
+            ],
+        }
+    }
+
+    /// The folders are those of the identifiers asked for, in that order: an uninstall asks for
+    /// every one the app has had, the first launch for the legacy ones alone.
+    #[test]
+    fn the_apps_folders_are_named_under_the_given_home_for_the_identifiers_asked_for() {
+        let home = Path::new("/scratch/home");
+        let legacy_id = LEGACY_APP_IDENTIFIERS[0];
+        for platform in [
+            Platform::MacOs,
+            Platform::Linux,
+            Platform::Wsl,
+            Platform::Windows,
+        ] {
+            let legacy = folders_of(platform, home, legacy_id);
+            assert_eq!(
+                app_data_dirs(platform, home, &LEGACY_APP_IDENTIFIERS),
+                legacy
+            );
+            assert_eq!(
+                app_data_dirs(platform, home, &ALL_APP_IDENTIFIERS),
+                [folders_of(platform, home, APP_IDENTIFIER), legacy].concat(),
+                "{platform:?}"
+            );
+        }
+        assert_eq!(
+            preferences_domains(Platform::MacOs, &ALL_APP_IDENTIFIERS),
+            [APP_IDENTIFIER, legacy_id]
         );
+        assert!(preferences_domains(Platform::Linux, &ALL_APP_IDENTIFIERS).is_empty());
     }
 
     #[test]
     fn an_xdg_folder_outside_the_home_is_named_but_never_listed_for_deletion() {
         let home = Path::new("/scratch/home");
-        let id = APP_IDENTIFIER;
         let outside = |platform, data: Option<&str>, config: Option<&str>| {
             app_dirs_outside_home(
                 platform,
@@ -502,13 +615,16 @@ mod tests {
                     data: data.map(PathBuf::from),
                     config: config.map(PathBuf::from),
                 },
+                &ALL_APP_IDENTIFIERS,
             )
         };
-        assert_eq!(
-            outside(Platform::Linux, Some("/data"), Some("/conf")),
-            [Path::new("/data").join(id), Path::new("/conf").join(id)]
-        );
-        assert_eq!(outside(Platform::Wsl, None, Some("/conf")).len(), 1);
+        let mut both = Vec::new();
+        for dir in ["/data", "/conf"] {
+            both.push(Path::new(dir).join(APP_IDENTIFIER));
+            both.push(Path::new(dir).join(LEGACY_APP_IDENTIFIERS[0]));
+        }
+        assert_eq!(outside(Platform::Linux, Some("/data"), Some("/conf")), both);
+        assert_eq!(outside(Platform::Wsl, None, Some("/conf")), both[2..]);
         assert!(outside(Platform::Linux, Some("/scratch/home/data"), Some("conf")).is_empty());
         assert!(outside(Platform::Linux, None, None).is_empty());
         assert!(outside(Platform::MacOs, Some("/data"), Some("/conf")).is_empty());
@@ -516,27 +632,79 @@ mod tests {
 
     /// The names come from the app's config and the cask; this is what keeps them in step.
     #[test]
-    fn the_names_and_the_casks_zap_list_match_the_apps_config() {
+    fn the_names_and_the_casks_lists_match_the_apps_config() {
         let config = |text: &str| serde_json::from_str::<serde_json::Value>(text).unwrap();
         let tauri = config(include_str!("../../../src-tauri/tauri.conf.json"));
         assert_eq!(tauri["identifier"], APP_IDENTIFIER);
 
         let cask = include_str!("../../../packaging/homebrew/envrouter.rb.in");
-        let zap = cask.split("zap trash: [").nth(1).unwrap();
-        let mut zapped: Vec<&str> = zap
-            .split(']')
-            .next()
-            .unwrap()
-            .split('"')
+        // The quoted entries of the list that starts after `opening`.
+        let list = |opening: &str| -> Vec<&str> {
+            let body = cask.split(opening).nth(1).unwrap();
+            body.split(']')
+                .next()
+                .unwrap()
+                .split('"')
+                .skip(1)
+                .step_by(2)
+                .collect()
+        };
+
+        let mut quit = list("uninstall quit: [");
+        let mut identifiers = ALL_APP_IDENTIFIERS.to_vec();
+        quit.sort_unstable();
+        identifiers.sort_unstable();
+        assert_eq!(quit, identifiers);
+        assert_eq!(ALL_APP_IDENTIFIERS[..1], [APP_IDENTIFIER]);
+        assert_eq!(ALL_APP_IDENTIFIERS[1..], LEGACY_APP_IDENTIFIERS);
+
+        let mut zapped: Vec<&str> = list("zap trash: [")
+            .into_iter()
             .filter(|entry| entry.starts_with("~/Library/"))
             .collect();
-        let mut removed: Vec<String> = app_data_dirs(Platform::MacOs, Path::new("~"))
-            .iter()
-            .map(|dir| dir.display().to_string())
-            .collect();
+        let mut removed: Vec<String> =
+            app_data_dirs(Platform::MacOs, Path::new("~"), &ALL_APP_IDENTIFIERS)
+                .iter()
+                .map(|dir| dir.display().to_string())
+                .collect();
         zapped.sort_unstable();
         removed.sort_unstable();
         assert_eq!(zapped, removed);
+    }
+
+    #[test]
+    fn the_app_binary_is_told_from_the_cli_and_the_shim() {
+        let linux = "/tmp/.mount_EnvRouAbc/usr/bin/envrouter-app";
+        let mac = "/Applications/EnvRouter.app/Contents/MacOS/envrouter";
+        assert!(is_app_binary(Platform::Linux, linux) && is_app_binary(Platform::Wsl, linux));
+        assert!(is_app_binary(Platform::MacOs, mac));
+        for exe in [
+            "/opt/homebrew/bin/envrouter",
+            "/x/envrouter-shim",
+            "/x/envrouter-keychain",
+        ] {
+            assert!(!is_app_binary(Platform::Linux, exe) && !is_app_binary(Platform::MacOs, exe));
+        }
+        assert!(!is_app_binary(Platform::MacOs, linux) && !is_app_binary(Platform::Linux, mac));
+    }
+
+    /// Only the given user's processes: this one's own is in its list, and not in another user's.
+    #[cfg(unix)]
+    #[test]
+    fn lists_the_given_users_processes_only() {
+        use std::os::unix::fs::MetadataExt;
+
+        let platform = Platform::current();
+        let own = std::process::id();
+        let uid = fs::metadata(std::env::current_exe().unwrap())
+            .unwrap()
+            .uid();
+        let listed = |uid| user_processes(platform, uid);
+        assert!(listed(uid).unwrap().iter().any(|(pid, _)| *pid == own));
+        // A uid nobody has: an empty list, or ps saying so, never this process.
+        assert!(
+            !listed(uid ^ 0x7fff_0000).is_ok_and(|list| list.iter().any(|(pid, _)| *pid == own))
+        );
     }
 
     #[test]

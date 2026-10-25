@@ -28,6 +28,7 @@ const setupOf = (shells: ShellStatus[], shimInstalled = true): SetupStatus => ({
   shimPath: `${HOME}/.envrouter/bin/envrouter-shim`,
   shells,
   missingAgents: null,
+  checkedBefore: false,
 })
 
 const zshOn = shell('zsh', true, { isDefault: true })
@@ -133,6 +134,10 @@ describe('healthOf', () => {
     it('step 3: check a folder, once any shell is on and nothing has been checked', () => {
       expect(health({ checkedOnce: false })).toEqual({ kind: 'setup', step: 3, shell: zshOn })
       expect(health({ checkedOnce: false, setup: setupOf([zshOff, bashOn]) })).toEqual({ kind: 'setup', step: 3, shell: zshOff })
+    })
+
+    it("has no step 3 when the backend says a check was done before this window's storage began", () => {
+      expect(health({ checkedOnce: false, setup: { ...setupOf([zshOn]), checkedBefore: true } })).toEqual({ kind: 'ok', on: ['zsh'] })
     })
   })
 

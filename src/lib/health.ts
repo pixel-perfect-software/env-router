@@ -60,16 +60,18 @@ export function healthOf(
   if (actionError) return { kind: 'error', message: actionError, dismissible: true }
   if (saveWarning) return { kind: 'warning', message: saveWarning }
   if (!config || !setup) return { kind: 'loading' }
+  // The window's own storage, or the backend's word for it when a new bundle identifier started that storage empty.
+  const checkedBefore = checkedOnce || setup.checkedBefore
   const available = setup.shells.filter((s) => s.available)
   const login = available.find((s) => s.isDefault) ?? available[0]
   const on = available.filter((s) => s.installed).map((s) => s.shell)
 
   if (config.profiles.length === 0) return { kind: 'setup', step: 1, shell: login }
-  if (on.length === 0 && login) return checkedOnce ? { kind: 'off', shell: login } : { kind: 'setup', step: 2, shell: login }
+  if (on.length === 0 && login) return checkedBefore ? { kind: 'off', shell: login } : { kind: 'setup', step: 2, shell: login }
   if (!setup.shimInstalled) return { kind: 'shim', path: setup.shimPath }
   // What a real shell reported outranks what the config and startup files suggest.
   if (blocked && on.includes(blocked.shell)) return { kind: 'blocked', ...blocked }
-  if (!checkedOnce) return { kind: 'setup', step: 3, shell: login }
+  if (!checkedBefore) return { kind: 'setup', step: 3, shell: login }
   if (login && !login.installed) return { kind: 'partial', on, shell: login }
   return { kind: 'ok', on }
 }

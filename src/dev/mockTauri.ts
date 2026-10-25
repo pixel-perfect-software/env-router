@@ -310,6 +310,8 @@ const setup: Omit<SetupStatus, 'shimInstalled'> = {
   revealVerb,
   shimsDir: `${HOME}/.envrouter/shims`,
   shimPath: SHIM,
+  // `checked_once`: a populated install has had a folder come back routed.
+  checkedBefore: populated,
   // `shell::status`, with bash's files as `bash_startup_files` picks them for each platform.
   shells: macos
     ? [
@@ -423,13 +425,6 @@ const agentFiles: Record<string, unknown> = populated
       },
     }
   : {}
-
-try {
-  if (populated) localStorage.setItem('envrouter.checkedOnce', '1')
-  else localStorage.removeItem('envrouter.checkedOnce')
-} catch {
-  // Storage unavailable; first-run state still renders.
-}
 
 /** Longest-prefix owner, as the Rust resolver decides it. */
 const owner = (cfg: ConfigState, folder: string) => {

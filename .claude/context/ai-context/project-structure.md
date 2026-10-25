@@ -21,6 +21,7 @@ env-router/
 │   │   ├── src/shell.rs       # startup-file blocks for zsh/bash/fish, check_folder, preview, login_path
 │   │   ├── src/installed.rs   # which agents a new terminal has nothing to run for and no editor carries (SetupStatus.missingAgents): the login shell's PATH, aliases and functions, kept 3 minutes
 │   │   ├── src/last_folder.rs # the folder the window last checked, for the menu bar's Check Last Folder
+│   │   ├── src/legacy_identifier.rs # first launch under a new bundle identifier: carries the window's frame over, deletes the old identifier's webview folders
 │   │   ├── src/shims.rs       # installs the shim and helpers; syncs one symlink per tool
 │   │   ├── src/uninstall.rs   # uninstall: shell blocks, editor wrappers, the secret item, ~/.envrouter, the app's webview folders (the app deletes its own as it exits, `finish_uninstall`), in that order (a problem before the secrets stops the run), the commands that remove the app and CLI, and the app's lock the CLI's uninstall checks
 │   │   ├── src/editors.rs     # points an agent extension's process-wrapper setting at the shim (desktop editors and remote servers)
@@ -42,7 +43,7 @@ env-router/
 │   ├── src/menu.rs            # macOS menu bar: Settings… after About, EnvRouter's own Quit, the Help menu's links
 │   ├── src/help.rs            # the two help links (docs, report an issue) as a fixed list under the repository; the only addresses EnvRouter opens
 │   ├── capabilities/default.json  # core, plus the three dialog/opener calls the window makes; no fs
-│   ├── tauri.conf.json        # id com.tylerrobertson.envrouter, CSP, externalBin, an .app bundle signed ad hoc
+│   ├── tauri.conf.json        # id ca.pixel-perfect.envrouter, CSP, externalBin, an .app bundle signed ad hoc
 │   ├── tauri.linux.conf.json  # Linux: binary envrouter-app, native decorations, opaque window, .deb and AppImage
 │   ├── icons/                 # app icon and menu bar glyph: SVG sources plus the PNGs and icon.icns rendered from them
 │   └── binaries/, gen/        # generated, gitignored

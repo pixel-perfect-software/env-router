@@ -464,6 +464,22 @@ fn remove_block(text: &str) -> String {
     text
 }
 
+/// Whether a whole block is in any of the usual startup files directly under `home`, by reading
+/// them: no shell is asked, unlike [`status`], which asks zsh where its folder is. A `ZDOTDIR`
+/// elsewhere isn't looked in, so this can say no where `status` says yes.
+pub fn block_in_home_files(home: &Path) -> bool {
+    [
+        ".zshrc",
+        ".bashrc",
+        ".bash_profile",
+        ".bash_login",
+        ".profile",
+        ".config/fish/config.fish",
+    ]
+    .iter()
+    .any(|file| fs::read_to_string(home.join(file)).is_ok_and(|text| block_range(&text).is_some()))
+}
+
 /// Byte range of the block, from the start of the BEGIN line through the END line's newline.
 /// The range starts at the last BEGIN before the END: if an earlier block lost its END line,
 /// the user's own lines between that orphan and a later block must never be taken for ours.

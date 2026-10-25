@@ -972,11 +972,11 @@ mod tests {
 
         // A folder the webview left is something to delete even when nothing else is set up.
         let mut left_over = plan(&[], FolderStep::Absent);
-        left_over.app_data = vec!["/home/sam/.local/share/com.tylerrobertson.envrouter".into()];
+        left_over.app_data = vec!["/home/sam/.local/share/ca.pixel-perfect.envrouter".into()];
         let lines = uninstall_lines(&left_over, home);
         assert!(
             lines.contains(
-                &"Would delete EnvRouter's app data: ~/.local/share/com.tylerrobertson.envrouter"
+                &"Would delete EnvRouter's app data: ~/.local/share/ca.pixel-perfect.envrouter"
                     .into()
             ),
             "{lines:?}"
