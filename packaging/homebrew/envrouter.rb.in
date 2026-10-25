@@ -38,16 +38,16 @@ cask "envrouter" do
   zap trash: [
     "~/.envrouter",
     "~/Library/Application Support/ca.pixel-perfect.envrouter",
-    "~/Library/Caches/ca.pixel-perfect.envrouter",
-    "~/Library/HTTPStorages/ca.pixel-perfect.envrouter",
-    "~/Library/Preferences/ca.pixel-perfect.envrouter.plist",
-    "~/Library/Saved Application State/ca.pixel-perfect.envrouter.savedState",
-    "~/Library/WebKit/ca.pixel-perfect.envrouter",
     "~/Library/Application Support/com.tylerrobertson.envrouter",
+    "~/Library/Caches/ca.pixel-perfect.envrouter",
     "~/Library/Caches/com.tylerrobertson.envrouter",
+    "~/Library/HTTPStorages/ca.pixel-perfect.envrouter",
     "~/Library/HTTPStorages/com.tylerrobertson.envrouter",
+    "~/Library/Preferences/ca.pixel-perfect.envrouter.plist",
     "~/Library/Preferences/com.tylerrobertson.envrouter.plist",
+    "~/Library/Saved Application State/ca.pixel-perfect.envrouter.savedState",
     "~/Library/Saved Application State/com.tylerrobertson.envrouter.savedState",
+    "~/Library/WebKit/ca.pixel-perfect.envrouter",
     "~/Library/WebKit/com.tylerrobertson.envrouter",
   ]
 
