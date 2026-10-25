@@ -360,10 +360,13 @@ describe('the server list', () => {
     expect(actions.getAttribute('aria-expanded')).toBe('true')
   })
 
-  it('names who loads a server on the whole row, since the dots under the … can’t be hovered', async () => {
+  it('names a server in full and who loads it on the whole row, since the name truncates and the dots under the … can’t be hovered', async () => {
     await openServers()
-    expect(row('playwright').getAttribute('title')).toBe('Used by Personal, Scratch')
-    expect(row('slow').getAttribute('title')).toBeNull()
+    expect(row('playwright').getAttribute('title')).toBe('playwright · Used by Personal, Scratch')
+    expect(row('slow').getAttribute('title')).toBe('slow')
+    // Assistive tech gets who uses it as the description, not the name again, which the tooltip repeats for sighted users.
+    expect(document.getElementById(row('playwright').getAttribute('aria-describedby') ?? '')?.textContent).toBe('Used by Personal, Scratch')
+    expect(row('slow').hasAttribute('aria-describedby')).toBe(false)
   })
 
   it('presses the … only when it opened the menu, not for a right-click', async () => {
@@ -820,6 +823,22 @@ describe('focus', () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: /^postgres/ })))
   })
 
+  it('wraps Tab inside the profile editor, since the page behind it is out of reach', async () => {
+    const user = await open('?scenario=populated')
+    await user.click(await screen.findByRole('button', { name: 'Edit Personal' }))
+    const save = inspector().getByRole('button', { name: 'Save' })
+    const close = inspector().getByRole('button', { name: 'Close' })
+    // Something after Save that Tab never lands on (taken out of the order) is no end of the dialog.
+    const skipped = document.createElement('button')
+    skipped.tabIndex = -1
+    screen.getByRole('dialog').append(skipped)
+    save.focus()
+    await user.tab()
+    expect(document.activeElement).toBe(close)
+    await user.tab({ shift: true })
+    expect(document.activeElement).toBe(save)
+  })
+
   it('stays on a switch while it turns a shell on or off', async () => {
     const user = await open('?scenario=populated')
     await user.click(await screen.findByRole('button', { name: /Shells/ }))
@@ -1239,5 +1258,343 @@ describe("the menu bar's Check Last Folder, when the window can't do it", () => 
     await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1))
     expect(confirm.mock.calls[0][0]).toMatch(/Close the profile editor/)
     expect(screen.queryByText('Routed to Work')).toBeNull()
+  })
+})
+
+describe('arrow keys in a list', () => {
+  const openServers = async () => {
+    const user = await open('?scenario=mcp')
+    await user.click(await screen.findByRole('button', { name: 'MCP Servers' }))
+    return user
+  }
+  /** The controls a list's arrow keys move between, and the ones in the Tab order. */
+  const stops = (items: HTMLElement[]) => items.filter((item) => item.tabIndex === 0)
+
+  it('move through the server list, Home and End too, which is one Tab stop that Tab leaves', async () => {
+    const user = await openServers()
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-server]'))
+    expect(rows).toHaveLength(6)
+    expect(stops(rows)).toEqual([rows[0]])
+
+    rows[0].focus()
+    await user.keyboard('{ArrowDown}{ArrowDown}')
+    expect(document.activeElement).toBe(rows[2])
+    await user.keyboard('{End}{ArrowDown}')
+    expect(document.activeElement).toBe(rows[5])
+    await user.keyboard('{Home}{ArrowUp}')
+    expect(document.activeElement).toBe(rows[0])
+
+    // With a server open the stop returns to its row when focus is elsewhere, but while focus is in the list the stop is where it is, so Tab
+    // goes on to that row's menu button and then out, not to the open server's row.
+    await user.click(rows[1])
+    await user.keyboard('{End}')
+    expect(stops(rows)).toEqual([rows[5]])
+    await user.tab()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: `Actions for ${rows[5].dataset.server}` }))
+    await user.tab()
+    expect(screen.getByRole('complementary', { name: 'MCP servers' }).contains(document.activeElement)).toBe(false)
+
+    // Back in, Tab lands where the user last was, not on the open server. A click that leaves no focus (WebKit's) moves it too.
+    expect(stops(rows)).toEqual([rows[5]])
+    fireEvent.click(rows[1])
+    expect(stops(rows)).toEqual([rows[1]])
+  })
+
+  it('move between the profile cards and New Profile, down a row to the card that sits under it, with every one still in the Tab order', async () => {
+    await open('?scenario=populated')
+    const personal = await screen.findByRole('button', { name: 'Personal' })
+    const targets = Array.from(document.querySelectorAll<HTMLElement>('[data-card-target]'))
+    expect(targets).toHaveLength(5)
+    expect(targets.map((target) => target.tabIndex)).toEqual([0, 0, 0, 0, 0])
+
+    personal.focus()
+    fireEvent.keyDown(personal, { key: 'ArrowRight' })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Work' }))
+    fireEvent.keyDown(document.activeElement as Element, { key: 'End' })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /New Profile/ }))
+    fireEvent.keyDown(document.activeElement as Element, { key: 'Home' })
+    expect(document.activeElement).toBe(personal)
+
+    // happy-dom lays nothing out: three columns, as a 900px window has, with each card's name 40px below its card's top (the header) and
+    // New Profile, which is its own card, at the top. Measuring the names' tops would take Down from Personal to New Profile, which is
+    // nearer the top of the second row than Scratch's name is.
+    const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-card]'))
+    const place = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const card = this.closest<HTMLElement>('[data-card]')
+      const at = card ? cards.indexOf(card) : -1
+      return { left: (at % 3) * 300, top: Math.floor(at / 3) * 200 + (card && card !== this ? 40 : 0) } as DOMRect
+    })
+    try {
+      const press = (key: string) => fireEvent.keyDown(document.activeElement as Element, { key })
+      press('ArrowDown')
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Scratch' }))
+      press('ArrowUp')
+      expect(document.activeElement).toBe(personal)
+      fireEvent.keyDown(screen.getByRole('button', { name: 'Work' }), { key: 'ArrowDown' })
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: /New Profile/ }))
+    } finally {
+      place.mockRestore()
+    }
+  })
+
+  it('move through the catalog', async () => {
+    const user = await openServers()
+    await user.click(screen.getByRole('button', { name: 'Add from Catalog' }))
+    const entries = Array.from(within(await screen.findByRole('region', { name: 'Server catalog' })).getAllByRole('button')).filter((b) =>
+      b.hasAttribute('data-rove'),
+    )
+    expect(entries.length).toBeGreaterThan(5)
+    expect(stops(entries)).toEqual([entries[0]])
+
+    entries[0].focus()
+    await user.keyboard('{ArrowDown}')
+    expect(document.activeElement).toBe(entries[1])
+    await user.keyboard('{End}')
+    expect(document.activeElement).toBe(entries[entries.length - 1])
+  })
+})
+
+describe('⌘S', () => {
+  const press = () => fireEvent.keyDown(window, { key: 's', metaKey: true })
+  const saves = (invoked: ReturnType<typeof spyOnInvoke>) => invoked.mock.calls.filter(([command]) => command === 'save_config').length
+
+  it('saves the open editor, from a checkbox or a chip as well as a text field', async () => {
+    const user = await open('?scenario=mcp')
+    const invoked = spyOnInvoke()
+    await user.click(await screen.findByRole('button', { name: 'Edit Personal' }))
+    await user.click(inspector().getByRole('checkbox', { name: /github/ }))
+    press()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(saves(invoked)).toBe(1)
+
+    await user.click(screen.getByRole('button', { name: 'MCP Servers' }))
+    await user.click(screen.getByRole('button', { name: /^linear/ }))
+    await user.click(within(screen.getByRole('form', { name: 'Edit linear' })).getByRole('button', { name: 'Personal' }))
+    press()
+    await waitFor(() => expect(saves(invoked)).toBe(2))
+  })
+
+  it('does nothing without an editor to save: none open, a server nobody changed, or one hidden behind Profiles', async () => {
+    const user = await open('?scenario=mcp')
+    await screen.findByText(/Routing is on in zsh/)
+    const invoked = spyOnInvoke()
+    press()
+
+    await user.click(screen.getByRole('button', { name: 'MCP Servers' }))
+    press()
+    await user.click(screen.getByRole('button', { name: /^linear/ }))
+    press()
+
+    await user.click(within(screen.getByRole('form', { name: 'Edit linear' })).getByRole('button', { name: 'Personal' }))
+    await user.click(screen.getByRole('button', { name: 'Profiles' }))
+    press()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(saves(invoked)).toBe(0)
+  })
+})
+
+describe('⌘N', () => {
+  it('is a new profile on Profiles and a new server on Servers, without leaving the view', async () => {
+    const user = await open('?scenario=mcp')
+    await screen.findByText(/Routing is on in zsh/)
+    fireEvent.keyDown(window, { key: 'n', metaKey: true })
+    expect(await screen.findByRole('dialog', { name: 'New profile' })).toBeTruthy()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await user.click(screen.getByRole('button', { name: 'MCP Servers' }))
+    fireEvent.keyDown(window, { key: 'n', metaKey: true })
+    expect(await screen.findByRole('form', { name: 'New MCP server' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'MCP Servers' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('and Add by Hand leave a blank server that is already open as it is, with its draft, and focus its name', async () => {
+    const confirm = vi.fn().mockReturnValue(false)
+    vi.stubGlobal('confirm', confirm)
+    const user = await open('?scenario=mcp&view=servers')
+    await user.click(await screen.findByRole('button', { name: 'Add by Hand' }))
+    const name = within(screen.getByRole('form', { name: 'New MCP server' })).getByLabelText('Name') as HTMLInputElement
+    await user.type(name, 'draft')
+
+    for (const ask of [
+      () => user.click(screen.getByRole('button', { name: 'Add by Hand' })),
+      async () => fireEvent.keyDown(window, { key: 'n', metaKey: true }),
+    ]) {
+      name.blur()
+      await ask()
+      expect(document.activeElement).toBe(name)
+      expect(name.value).toBe('draft')
+    }
+    expect(confirm).not.toHaveBeenCalled()
+  })
+})
+
+describe('error text', () => {
+  it('can be selected, in the banner and in an editor’s footer, since it is what gets pasted into a report', async () => {
+    const user = await open('?scenario=mcp&fail=status')
+    const detail = (await screen.findByText(/No such file or directory/)).closest('p')
+    expect(detail?.classList.contains('select-text')).toBe(true)
+
+    await user.click(screen.getByRole('button', { name: 'MCP Servers' }))
+    await user.click(screen.getByRole('button', { name: 'Add by Hand' }))
+    await user.click(within(screen.getByRole('form', { name: 'New MCP server' })).getByRole('button', { name: 'Save' }))
+    expect((await screen.findByRole('alert')).classList.contains('select-text')).toBe(true)
+  })
+})
+
+describe("a server's tools", () => {
+  it('announce only their headline when a check answers, not the whole list again', async () => {
+    const user = await open('?scenario=mcp&view=servers')
+    await user.click(await screen.findByRole('button', { name: /^github/ }))
+    await user.click(await screen.findByRole('button', { name: 'Show all 9 tools' }))
+    const live = '[aria-live], [role="status"], [role="alert"], [role="log"]'
+    expect(screen.getByText('9 tools').closest(live)).not.toBeNull()
+    expect(document.getElementById('server-tools')?.closest(live)).toBeNull()
+
+    // A check that can't run says why in the same way: the reason is announced with the headline.
+    await user.click(screen.getByRole('button', { name: 'Add by Hand' }))
+    await user.click(within(screen.getByRole('form', { name: 'New MCP server' })).getByRole('button', { name: 'Check Server' }))
+    expect((await screen.findByText("Can't check yet")).closest(live)).not.toBeNull()
+    const reason = document.querySelector('[role="status"].select-text')
+    expect(reason?.textContent).toBeTruthy()
+  })
+})
+
+describe("a server's Used by dots", () => {
+  it('count the profiles they have no room for, since colour alone says neither who nor how many', async () => {
+    await open('?scenario=mcp&view=servers')
+    const linear = await screen.findByRole('button', { name: /^linear/ })
+    expect(within(linear).queryByText(/^\+/)).toBeNull()
+
+    // Five profiles load it: three dots, then "+2".
+    window.__mockEditConfig((c) => ({
+      ...c,
+      profiles: [...c.profiles, { id: 'p5', name: 'Extra', triggerPaths: [], tools: {}, mcpServers: {} }].map((p) => ({
+        ...p,
+        mcpServers: { ...p.mcpServers, linear: { disabledTools: [] } },
+      })),
+    }))
+    window.dispatchEvent(new Event('focus'))
+    expect(await within(linear).findByText('+2')).toBeTruthy()
+  })
+})
+
+describe('Check Folder… when the window cannot do it', () => {
+  it('says why for ⌘O and the menu bar while the profile editor is open, as Check Last Folder does', async () => {
+    const confirm = vi.fn().mockReturnValue(true)
+    vi.stubGlobal('confirm', confirm)
+    const user = await open('?scenario=populated')
+    await user.click(await screen.findByRole('button', { name: 'Edit Personal' }))
+    fireEvent.keyDown(window, { key: 'o', metaKey: true })
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1))
+    await window.__mockMenuRequest({ kind: 'checkFolder' })
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2))
+    for (const [message] of confirm.mock.calls) expect(message).toMatch(/Close the profile editor/)
+  })
+
+  it('says why when config.json cannot be read, since there is nothing to check a folder against', async () => {
+    const confirm = vi.fn().mockReturnValue(true)
+    vi.stubGlobal('confirm', confirm)
+    await open('?scenario=broken')
+    await screen.findByRole('button', { name: 'Open config.json' })
+    fireEvent.keyDown(window, { key: 'o', metaKey: true })
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1))
+    expect(confirm.mock.calls[0][0]).toMatch(/config\.json can't be read/)
+  })
+})
+
+describe('a profile card’s context menu', () => {
+  it('hangs under the focused control for the context-menu key, and opens at the pointer for a right-click', async () => {
+    const user = await open('?scenario=populated')
+    const invoked = spyOnInvoke()
+    const pencil = await screen.findByRole('button', { name: 'Edit Work' })
+    // The context-menu key sends a `contextmenu` with no right button, from the focused control: WebKit says button 0, Chromium -1 (and
+    // coordinates at the control's centre, which a pointer's menu would open at, covering it).
+    fireEvent.contextMenu(pencil, { button: -1, detail: 0, clientX: 40, clientY: 12 })
+    await screen.findByRole('menu')
+    await user.keyboard('{Escape}')
+    await user.pointer({ keys: '[MouseRight]', target: pencil })
+    await screen.findByRole('menu')
+    const popped = invoked.mock.calls
+      .filter(([command]) => command === 'plugin:menu|popup')
+      .map(([, args]) => JSON.parse(JSON.stringify((args as { at?: unknown }).at ?? null)))
+    // happy-dom lays nothing out, so the control sits at the origin.
+    expect(popped).toEqual([{ Logical: { x: 0, y: 0 } }, null])
+  })
+
+  it('opens at the pointer for a long-press, whatever button it reports, since a pointer was just down on that control', async () => {
+    const user = await open('?scenario=populated')
+    const invoked = spyOnInvoke()
+    const pencil = await screen.findByRole('button', { name: 'Edit Work' })
+    fireEvent.pointerDown(pencil, { pointerType: 'touch' })
+    fireEvent.contextMenu(pencil, { button: 0 })
+    await screen.findByRole('menu')
+    await user.keyboard('{Escape}')
+    const popped = invoked.mock.calls.filter(([command]) => command === 'plugin:menu|popup').map(([, args]) => (args as { at?: unknown }).at ?? null)
+    expect(popped).toEqual([null])
+  })
+})
+
+describe('revealing a trigger folder', () => {
+  const reveal = async (search: string) => {
+    const user = await open(search)
+    const invoked = spyOnInvoke()
+    await user.click(await screen.findByRole('button', { name: 'Actions for ~/notes' }))
+    await user.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Reveal in Finder' }))
+    return invoked
+  }
+
+  it('asks the backend, which holds it to the trigger folders, not the opener plugin', async () => {
+    const invoked = await reveal('?scenario=populated')
+    await waitFor(() => expect(invoked).toHaveBeenCalledWith('reveal_place', { place: { kind: 'trigger', folder: '/Users/sam/notes' } }, undefined))
+    expect(invoked.mock.calls.map(([command]) => command)).not.toContain('plugin:opener|reveal_item_in_dir')
+  })
+
+  it('says in a sentence, with the folder in the title and set as a value, when it is gone', async () => {
+    await reveal('?scenario=populated&gone=~/notes')
+    // The path is a value in the title as it is in the detail.
+    const title = await screen.findByText(/^Couldn't show/)
+    expect(title.textContent).toBe("Couldn't show ~/notes")
+    expect(title.querySelector('code')?.textContent).toBe('~/notes')
+    expect(title.parentElement?.textContent).toContain("There's no ~/notes any more. It may have been moved or deleted.")
+  })
+})
+
+describe('a trigger the backend does not accept', () => {
+  it('has no Reveal in its folder menu, since there is nothing of it to show', async () => {
+    const user = await open('?scenario=populated')
+    await screen.findByRole('button', { name: 'Actions for ~/notes' })
+    window.__mockEditConfig((c) => ({
+      ...c,
+      profiles: c.profiles.map((p) => (p.id === 'p1' ? { ...p, triggerPaths: [...p.triggerPaths, '~/a*b'] } : p)),
+    }))
+    window.dispatchEvent(new Event('focus'))
+    await user.click(await screen.findByRole('button', { name: 'Actions for ~/a*b' }))
+    const items = within(await screen.findByRole('menu')).getAllByRole('menuitem')
+    expect(items.map((item) => item.textContent)).toEqual(['Check This Folder'])
+  })
+})
+
+describe('a profile saved from a verdict', () => {
+  it('asks about the folder that led there again, so the docket shows the new verdict', async () => {
+    const user = await open('?scenario=unrouted')
+    await screen.findByText(/Routing is on in zsh/)
+    await window.__mockDrop('/Users/sam/dev/api', 400, 300)
+    await user.click(await screen.findByRole('button', { name: 'Edit Personal…' }, { timeout: 3000 }))
+    await user.type(inspector().getByLabelText(/Claude Code/), '~/.claude-personal')
+    await user.click(inspector().getByRole('button', { name: 'Save' }))
+    await screen.findByText('Routed to Personal', undefined, { timeout: 4000 })
+  })
+
+  it('asks again after the profile it opened is deleted, too', async () => {
+    vi.stubGlobal('confirm', () => true)
+    const user = await open('?scenario=unrouted')
+    await screen.findByText(/Routing is on in zsh/)
+    await window.__mockDrop('/Users/sam/dev/api', 400, 300)
+    await user.click(await screen.findByRole('button', { name: 'Edit Personal…' }, { timeout: 3000 }))
+    await user.click(inspector().getByRole('button', { name: /^Delete/ }))
+    // Nothing owns the folder now: the new check files it under Everywhere else, where the old one had filed it in Personal.
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Everywhere else' }).textContent).toContain('~/dev/api'), { timeout: 4000 })
   })
 })

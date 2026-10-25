@@ -2,7 +2,6 @@ import { LogicalPosition } from '@tauri-apps/api/dpi'
 import { listen } from '@tauri-apps/api/event'
 import { Menu, type MenuOptions } from '@tauri-apps/api/menu'
 import { open } from '@tauri-apps/plugin-dialog'
-import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { type MouseEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Docket } from './components/Docket'
 import { type DropTarget, Frame } from './components/Frame'
@@ -36,6 +35,7 @@ import {
   confirmStartOver,
   confirmUninstall,
   tellBackedUp,
+  tellFolderNotChecked,
   tellLastFolderNotChecked,
   tellRevealFailed,
   tellUninstalled,
@@ -44,8 +44,8 @@ import { accentsOf, docketHasFix, type Health, healthOf } from './lib/health'
 import helpLinks from './lib/helpLinks.json'
 import { readView, type View, writeView } from './lib/lastView'
 import { hasMcpFiles, profilesUsing, withoutServer, withServer, withUsedBy } from './lib/mcp'
-import { tildify } from './lib/paths'
-import { guessPlatform, PlatformContext, platformInfo } from './lib/platform'
+import { isValidBase, tildify } from './lib/paths'
+import { guessPlatform, isKeyboardContextMenu, PlatformContext, platformInfo } from './lib/platform'
 import { ideHooks, KNOWN_TOOLS, toolByCommand } from './lib/tools'
 import type { ConfigState, Editor, EditorStatus, HelpLink, Place, Profile, RevealFailed, Shell, ToolInfo } from './lib/types'
 import { hasUnsaved } from './lib/unsaved'
@@ -64,7 +64,6 @@ const UNINSTALLED = 'EnvRouter is uninstalled'
 /** What a failed one-off action was doing, as data, so Try Again asks for the same thing against the window as it is by then. */
 type Retry =
   | { kind: 'verdict'; action: VerdictAction; shell: Shell }
-  | { kind: 'reveal'; path: string }
   | { kind: 'place'; place: Place }
   | { kind: 'help'; link: HelpLink }
   | { kind: 'deleteProfile'; profileId: string }
@@ -72,22 +71,28 @@ type Retry =
   | { kind: 'uninstall' }
   | { kind: 'quit' }
 
-/** The error banner's title when showing one of EnvRouter's places failed. */
-const placeTitle = (place: Place) =>
-  place.kind === 'config' ? "Couldn't show config.json" : place.kind === 'root' ? "Couldn't open ~/.envrouter" : "Couldn't show the MCP folder"
+/** The error banner's title when showing one of EnvRouter's places, or a trigger folder, failed. `mono`: a backticked path, which the banner sets as a value, as its detail does. */
+const placeTitle = (place: Place, home: string, mono = false) =>
+  place.kind === 'config'
+    ? "Couldn't show config.json"
+    : place.kind === 'root'
+      ? "Couldn't open ~/.envrouter"
+      : place.kind === 'trigger'
+        ? `Couldn't show ${mono ? `\`${place.folder}\`` : tildify(place.folder, home)}`
+        : "Couldn't show the MCP folder"
 
 /** The same when opening a help link failed. */
 const helpTitle = (link: HelpLink) => `Couldn't open ${helpLinks[link].label}`
 
 /** The error banner's title for what a failed action was doing, when the banner says which it was; otherwise it has the generic one. */
-const bannerTitle = (retry: Retry | null): string | undefined => {
+const bannerTitle = (retry: Retry | null, home: string): string | undefined => {
   switch (retry?.kind) {
     case 'uninstall':
       return STOPPED
     case 'quit':
       return UNINSTALLED
     case 'place':
-      return placeTitle(retry.place)
+      return placeTitle(retry.place, home, true)
     case 'help':
       return helpTitle(retry.link)
     default:
@@ -96,12 +101,15 @@ const bannerTitle = (retry: Retry | null): string | undefined => {
 }
 
 /** The failures whose Try Again keeps its banner up, busy, until the answer, rather than clearing it (`startUninstall`, `retryReveal`). */
-const KEEPS_BANNER: ReadonlySet<Retry['kind']> = new Set(['uninstall', 'reveal', 'place', 'help'])
+const KEEPS_BANNER: ReadonlySet<Retry['kind']> = new Set(['uninstall', 'place', 'help'])
 
 export default function App() {
   const [editing, setEditing] = useState<string | 'new' | null>(null)
   // What a new profile starts from when it's a copy; gone once the inspector closes.
   const [template, setTemplate] = useState<Profile | null>(null)
+  // The check a verdict's Edit X… or New Profile… came from, while the inspector it opened is open, and the one asked again once that save is in.
+  const ledByCheck = useRef<{ folder: string; shell: Shell; tool: string } | null>(null)
+  const [recheck, setRecheck] = useState<{ folder: string; shell: Shell; tool: string } | null>(null)
   // The window's two places: the one it was left on. A dev-only `?view=profiles|servers` opens on one, for review.
   const [view, setViewState] = useState<View>(() => {
     const asked = import.meta.env.DEV ? new URLSearchParams(location.search).get('view') : null
@@ -211,6 +219,7 @@ export default function App() {
   useEffect(() => {
     if (editing === null) {
       setTemplate(null)
+      ledByCheck.current = null
       return
     }
     let current = true
@@ -252,16 +261,24 @@ export default function App() {
     writeView(next)
   }
   /**
-   * Opens a server in the Servers view, from a card's footer. Unsaved edits to another server
-   * ask first, as picking one from the list does; the same server comes back as it was left.
+   * Moves the Servers detail side to `next`, asking before it drops unsaved edits in the open editor, whichever way the user got there (the
+   * list, ⌘N, a card's server link). Answers whether it moved. A blank new server that's already open stays as it is, draft and all, and
+   * takes focus into its name, so ⌘N and Add by Hand do the same on it.
    */
-  const openServer = async (name: string) => {
-    const open = serverDetail.kind === 'edit' ? serverDetail.name : null
-    if (open !== name) {
-      if (serverDirty.current && !(await confirmDiscardServer(open))) return
-      serverDirty.current = false
-      setServerDetail({ kind: 'edit', name })
+  const goServer = async (next: Detail) => {
+    const open = serverDetail.kind === 'edit' ? serverDetail : null
+    if (next.kind === 'edit' && next.name === null && !next.template && open && open.name === null && !open.template) {
+      document.getElementById('server-name')?.focus()
+      return true
     }
+    if (serverDirty.current && !(await confirmDiscardServer(open?.name ?? null))) return false
+    serverDirty.current = false
+    setServerDetail(next)
+    return true
+  }
+  /** Opens a server in the Servers view, from a card's footer. The server already open comes back as it was left. */
+  const openServer = async (name: string) => {
+    if (!(serverDetail.kind === 'edit' && serverDetail.name === name) && !(await goServer({ kind: 'edit', name }))) return
     setView('servers')
   }
 
@@ -287,17 +304,41 @@ export default function App() {
     run(shortcuts)
   }, [loading])
 
-  // While the inspector is open a check stands down, as it does for a folder dropped on the window.
+  // A check the window can't start says why, as Check Last Folder does below: the menu bar has brought the window forward for it, and ⌘O
+  // would otherwise do nothing anyone can see. The titlebar's button needs no word: it is out of reach (inert) while the inspector is open.
   const shortcuts = {
     checkFolder: () => {
-      if (inspecting) return
-      if (loading) afterLoad.current = (now) => now.checkFolder()
-      else pickAndCheck()
+      if (uninstalling.current) return
+      if (loading) {
+        afterLoad.current = (now) => now.checkFolder()
+        return
+      }
+      if (inspecting) {
+        tellFolderNotChecked('Close the profile editor, then choose Check Folder… again.').catch(() => {})
+        return
+      }
+      if (!canCheck) {
+        tellFolderNotChecked("config.json can't be read, so there's nothing to check a folder against.").catch(() => {})
+        return
+      }
+      pickAndCheck()
     },
-    newProfile: () => {
+    // The view decides what's new: a profile on Profiles, a server on Servers.
+    create: () => {
       if (!config) return
+      if (view === 'servers') {
+        goServer({ kind: 'edit', name: null })
+        return
+      }
       setView('profiles')
       setEditing((e) => e ?? 'new')
+    },
+    // Presses the open editor's Save as a click would, so it is disabled while the form is clean and ignored while it saves. The inspector
+    // when it's open, else the server editor on Servers; nothing anywhere else (Profiles with no inspector, Catalog and Import).
+    save: () => {
+      if (running || uninstalling.current) return
+      const where = inspecting ? '[data-inspector] [data-save]' : view === 'servers' ? '[data-save]' : null
+      if (where) document.querySelector<HTMLButtonElement>(where)?.click()
     },
     // Settings is the Shells popover, which opens (never toggles, as the menu's item and the key can both arrive) and takes focus as its
     // button does. It stands down wherever the button does: with the inspector open, as the other shortcuts do, while an uninstall runs
@@ -372,15 +413,26 @@ export default function App() {
   const saveProfile = async (profile: Profile) => {
     if (!config) return
     const exists = config.profiles.some((p) => p.id === profile.id)
+    const led = ledByCheck.current
     await commit({ ...config, profiles: exists ? config.profiles.map((p) => (p.id === profile.id ? profile : p)) : [...config.profiles, profile] })
     if (!exists) setNewId(crypto.randomUUID())
     setEditing(null)
+    // The save dropped the shown check, but the folder it led here from is still the question: ask again, against the config just saved.
+    if (led) setRecheck(led)
   }
+  useEffect(() => {
+    if (!recheck) return
+    setRecheck(null)
+    if (!uninstalling.current) runCheck(recheck.folder, recheck.shell, null, recheck.tool)
+  }, [recheck, runCheck])
 
   const deleteProfile = async (profile: Profile) => {
     if (!config) return
+    const led = ledByCheck.current
     await commit({ ...config, profiles: config.profiles.filter((p) => p.id !== profile.id) })
     setEditing(null)
+    // As after a save: the folder that led here has a new verdict now (another profile's, or none).
+    if (led) setRecheck(led)
   }
 
   const setShell = async (shell: Shell, enabled: boolean) => {
@@ -423,8 +475,10 @@ export default function App() {
         if (check) runCheck(check.folder, shell, null, check.tool)
       } else if (action.kind === 'editProfile') {
         // A hand edit may have removed it since the check: ask again rather than open an editor for nothing.
-        if (config?.profiles.some((p) => p.id === action.profileId)) setEditing(action.profileId)
-        else if (check) runCheck(check.folder, shell, null, check.tool)
+        if (config?.profiles.some((p) => p.id === action.profileId)) {
+          if (check) ledByCheck.current = { folder: check.folder, shell, tool: check.tool }
+          setEditing(action.profileId)
+        } else if (check) runCheck(check.folder, shell, null, check.tool)
       } else if (action.kind === 'newProfile') {
         // The folder starts as the new profile's, written as the config writes one under home. When no profile sets the checked
         // agent, the profile sets it too (its variable at its default folder): that is what gives the agent a shim.
@@ -432,6 +486,7 @@ export default function App() {
           const agent = routedTools.includes(check.tool) ? undefined : toolByCommand(check.tool)
           const tools = agent ? { [agent.command]: { envVar: agent.envVar, path: agent.defaultPath } } : {}
           setTemplate({ id: newId, name: '', triggerPaths: [tildify(check.folder, home)], tools, mcpServers: {} })
+          ledByCheck.current = { folder: check.folder, shell, tool: check.tool }
         }
         setEditing('new')
       } else if (action.kind === 'recheck') {
@@ -444,9 +499,10 @@ export default function App() {
     }
   }
 
-  const reveal = (path: string) => revealItemInDir(path).catch((err) => fail(err, { kind: 'reveal', path }))
   /** One of EnvRouter's own places (the menu on a card, Try Again); the backend says where it is. */
   const showPlace = (place: Place) => revealPlace(place).catch((err) => fail(err, { kind: 'place', place }))
+  /** A trigger folder, from its menu: the backend holds it to the folders the config names, and says in a sentence when one is gone. */
+  const reveal = (folder: string) => showPlace({ kind: 'trigger', folder })
 
   // Asking again re-confirms: the window may have changed since the first answer.
   const confirmAndDelete = (profile: Profile) =>
@@ -568,7 +624,7 @@ export default function App() {
     // banner has no slot, and the open inspector keeps the banner behind its scrim, out of reach, so those are told natively.
     if (loadError && what.kind === 'config') setOpenError({ action: 'reveal', message })
     else if (loadError || setupError || inspecting)
-      tellRevealFailed(what.kind === 'help' ? helpTitle(what.link) : placeTitle(what), message).catch(() => {})
+      tellRevealFailed(what.kind === 'help' ? helpTitle(what.link) : placeTitle(what, home), message).catch(() => {})
     else {
       focusRetry.current = true
       fail(message, what.kind === 'help' ? { kind: 'help', link: what.link } : { kind: 'place', place: what })
@@ -618,7 +674,6 @@ export default function App() {
     } else if (retry) {
       if (!KEEPS_BANNER.has(retry.kind)) setActionError(null)
       if (retry.kind === 'verdict') runAction(retry.action, retry.shell)
-      else if (retry.kind === 'reveal') retryReveal(() => revealItemInDir(retry.path))
       else if (retry.kind === 'place') retryReveal(() => revealPlace(retry.place))
       else if (retry.kind === 'help') retryReveal(() => openHelp(retry.link))
       else if (retry.kind === 'uninstall') startUninstall()
@@ -636,6 +691,7 @@ export default function App() {
    * folders, since a folder belongs to one profile.
    */
   const duplicateProfile = (profile: Profile) => {
+    ledByCheck.current = null
     setTemplate({ ...profile, id: newId, name: `${profile.name} copy`, triggerPaths: [] })
     setEditing('new')
   }
@@ -643,7 +699,8 @@ export default function App() {
   /** What a folder's menus offer: asking about it, and showing it. */
   const folderItems = (folder: string) => [
     { id: 'check', text: 'Check This Folder', action: () => runCheck(folder, defaultShell(), null) },
-    { id: 'reveal', text: platform.revealLabel, action: () => reveal(folder) },
+    // A trigger the backend doesn't accept (a wildcard mid-path, a relative path in a hand-edited config) covers nothing it could show.
+    ...(isValidBase(folder) ? [{ id: 'reveal', text: platform.revealLabel, action: () => reveal(folder) }] : []),
   ]
 
   // The menu last shown. A native menu is a resource Tauri keeps until it's closed, and `popup` may resolve before an item's action
@@ -678,22 +735,28 @@ export default function App() {
 
   const showSlotMenu = async (profile: Profile, folder: string | null, event: MouseEvent) => {
     event.preventDefault()
+    // From the keyboard the menu hangs under the focused control, as a server row's does. Focus on the card itself has no control to hang from.
+    const target = event.target as HTMLElement
+    const fromKeyboard = isKeyboardContextMenu(event) && target !== event.currentTarget
     try {
-      await popupMenu([
-        { id: 'edit', text: 'Edit Profile…', action: () => setEditing(profile.id) },
-        { id: 'duplicate', text: 'Duplicate Profile…', action: () => duplicateProfile(profile) },
-        // Only a saved profile with servers has rendered files to show.
-        ...(hasMcpFiles(profile)
-          ? [{ id: 'mcp', text: platform.revealLabelOf('MCP Folder'), action: () => showPlace({ kind: 'mcpFiles', profileId: profile.id }) }]
-          : []),
-        ...(folder ? [{ item: 'Separator' as const }, ...folderItems(folder)] : []),
-        { item: 'Separator' as const },
-        {
-          id: 'delete',
-          text: 'Delete Profile…',
-          action: () => confirmAndDelete(profile),
-        },
-      ])
+      await popupMenu(
+        [
+          { id: 'edit', text: 'Edit Profile…', action: () => setEditing(profile.id) },
+          { id: 'duplicate', text: 'Duplicate Profile…', action: () => duplicateProfile(profile) },
+          // Only a saved profile with servers has rendered files to show.
+          ...(hasMcpFiles(profile)
+            ? [{ id: 'mcp', text: platform.revealLabelOf('MCP Folder'), action: () => showPlace({ kind: 'mcpFiles', profileId: profile.id }) }]
+            : []),
+          ...(folder ? [{ item: 'Separator' as const }, ...folderItems(folder)] : []),
+          { item: 'Separator' as const },
+          {
+            id: 'delete',
+            text: 'Delete Profile…',
+            action: () => confirmAndDelete(profile),
+          },
+        ],
+        fromKeyboard ? target : undefined,
+      )
     } catch {
       // No native menu (the browser preview): editing stays reachable from the slot itself.
     }
@@ -723,8 +786,8 @@ export default function App() {
     ? actionError
       ? { kind: 'error', message: actionError, dismissible: true, busy: true, title: STOPPED }
       : { kind: 'uninstalling' }
-    : reported.kind === 'error' && reported.dismissible && bannerTitle(retry)
-      ? { ...reported, title: bannerTitle(retry) }
+    : reported.kind === 'error' && reported.dismissible && bannerTitle(retry, home)
+      ? { ...reported, title: bannerTitle(retry, home) }
       : reported
   const health: Health = titled.kind === 'error' ? { ...titled, busy: titled.busy || retrying, attempt } : titled
   // In the commit that changes the banner, as the inspector's close does, so focus never sits on the body after its button goes.
@@ -833,6 +896,7 @@ export default function App() {
                 colors={profileColors(config.profiles.map((p) => p.id))}
                 detail={serverDetail}
                 onDetail={setServerDetail}
+                onGo={goServer}
                 onSave={(previous, name, server, secrets, usedBy) =>
                   commit(withUsedBy(withServer(config, previous, name, server), name, usedBy), secrets)
                 }

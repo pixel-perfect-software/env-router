@@ -77,6 +77,9 @@ export const tellRevealFailed = (title: string, reason: string) => message(reaso
 /** The native note for a Check Last Folder the window can't do now, since the menu bar has already brought it forward. */
 export const tellLastFolderNotChecked = (reason: string) => message(reason, { title: "Couldn't check the last folder", kind: 'info' })
 
+/** The same for Check Folder…, from the menu bar or ⌘O: neither shows a button that is out of reach, so a refusal says why. */
+export const tellFolderNotChecked = (reason: string) => message(reason, { title: "Couldn't check a folder", kind: 'info' })
+
 /**
  * The native confirmation before EnvRouter is uninstalled. `store` is what the secrets' home is called here ("Keychain",
  * "keyring"); the CLI's `uninstall` plan says the same things.

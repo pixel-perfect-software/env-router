@@ -258,6 +258,11 @@
     background: transparent;
   }
 
+  /* Selected error text turns neutral: red on the accent's selection wash is under 3:1 (about 2.98 in light). */
+  .text-problem::selection {
+    color: var(--er-ink);
+  }
+
   /* No one-word last lines in short prose: footers, cautions, notes. */
   p {
     text-wrap: pretty;

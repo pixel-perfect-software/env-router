@@ -7,11 +7,12 @@ import { type ReactNode, type RefObject, useCallback, useEffect, useRef, useStat
 // The mark's folder handing its tracks to three servers: an empty library's hero.
 import libraryArt from '../assets/servers-library.svg'
 import { getMcpTools } from '../lib/api'
-import { confirmDiscardServer } from '../lib/confirm'
 import { duplicateDraft, type ProfileChip, profilesUsing, type ServerDraft, serverMatches, TRANSPORTS } from '../lib/mcp'
+import { isKeyboardContextMenu } from '../lib/platform'
 import { plural, queryWords } from '../lib/text'
 import type { ConfigState, McpServer, ToolInfo } from '../lib/types'
 import { useDebounced } from '../lib/useDebounced'
+import { useRoving } from '../lib/useRoving'
 import { CatalogIcon, ImportIcon, MoreIcon, PasteIcon, TransportIcon } from './icons'
 import { ServerEditor } from './ServerEditor'
 import { ServerMark } from './ServerMark'
@@ -21,6 +22,9 @@ import { Button, ChevronIcon, IconButton, PlugIcon, PlusIcon, ProfileDot, Search
 
 /** The filter field shows once the library has more servers than this: a handful reads at a glance. */
 const FILTER_FROM = 5
+
+/** How many profile dots a server row has room for. */
+const MAX_DOTS = 4
 
 /** What the detail side shows. `name` null: a new server, blank or from `template`. */
 export type Detail =
@@ -37,6 +41,7 @@ export function ServersView({
   colors,
   detail,
   onDetail,
+  onGo,
   onSave,
   onImport,
   onConfirmDelete,
@@ -49,6 +54,8 @@ export function ServersView({
   colors: Map<string, string>
   detail: Detail
   onDetail: (detail: Detail) => void
+  /** Moves the detail side to `next`, asking before it drops unsaved edits (the window's, so ⌘N and a card's server link ask the same way). Answers whether it moved. */
+  onGo: (next: Detail) => Promise<boolean>
   onSave: (previous: string | null, name: string, server: McpServer, secrets: Record<string, string>, usedBy: string[]) => Promise<void>
   onImport: (servers: [string, McpServer][], secrets: Record<string, string>) => Promise<void>
   /** Delete…, from the editor or a row's menu: asks first, deletes, and answers whether the server went. A failure is the window's banner to show. */
@@ -90,13 +97,6 @@ export function ServersView({
   const names = Object.keys(config.mcpServers).sort((a, b) => a.localeCompare(b))
   const profiles: ProfileChip[] = config.profiles.map((p) => ({ id: p.id, name: p.name, color: colors.get(p.id) ?? '' }))
 
-  /** Moves the detail side to `next`, asking before it drops unsaved edits. Answers whether it moved. */
-  const go = async (next: Detail) => {
-    if (dirty.current && !(await confirmDiscardServer(detail.kind === 'edit' ? detail.name : null))) return false
-    dirty.current = false
-    onDetail(next)
-    return true
-  }
   const selected = detail.kind === 'edit' ? detail.name : null
 
   // The list's filter lives as long as the window, not in config.json. The view stays mounted while Profiles shows, so it holds across a trip there.
@@ -107,6 +107,8 @@ export function ServersView({
   const showFilter = names.length > FILTER_FROM || query !== ''
   const words = queryWords(query)
   const shown = names.filter((name) => serverMatches(name, config.mcpServers[name], words))
+  // Arrow keys move through the rows; Tab takes the list as one stop, at the row last used (focused or clicked), else the open server's.
+  const rove = useRoving(shown, selected)
   // Said once typing has paused, not at every keystroke.
   const announced = useDebounced(filtering ? `${plural(shown.length, 'server', 'servers')} shown` : '', 400)
   const clearFilter = () => {
@@ -114,12 +116,12 @@ export function ServersView({
     search.current?.focus()
   }
 
-  const duplicate = (name: string) => go({ kind: 'edit', name: null, template: duplicateDraft(name, config.mcpServers[name], new Set(names)) })
+  const duplicate = (name: string) => onGo({ kind: 'edit', name: null, template: duplicateDraft(name, config.mcpServers[name], new Set(names)) })
   // A click on a row's Check Server, until that server's editor takes it (once: a later remount mustn't check again, since a check is a click's).
   const [checkRequest, setCheckRequest] = useState<CheckRequest | null>(null)
   /** Checks in the editor, where the result files. The open server is checked as its form stands (edits too); another one opens first, asking about edits. */
   const check = async (name: string) => {
-    if ((detail.kind === 'edit' && detail.name === name) || (await go({ kind: 'edit', name }))) setCheckRequest({ name })
+    if ((detail.kind === 'edit' && detail.name === name) || (await onGo({ kind: 'edit', name }))) setCheckRequest({ name })
   }
   /** The row that takes a deleted server's place, for focus: the next one in the library that the filter shows, else the one before it. */
   const neighbourOf = (name: string) => {
@@ -191,28 +193,28 @@ export function ServersView({
               )}
             </span>
           </h2>
-          <IconButton id="add-server" label="Add by Hand" onClick={() => go({ kind: 'edit', name: null })}>
+          <IconButton id="add-server" label="Add by Hand" onClick={() => onGo({ kind: 'edit', name: null })}>
             <PlusIcon />
           </IconButton>
           {/* Each opens its view in the detail card, and pressed again, closes it. */}
           <IconButton
             label="Add from Catalog"
             aria-pressed={detail.kind === 'catalog'}
-            onClick={() => go(detail.kind === 'catalog' ? { kind: 'none' } : { kind: 'catalog' })}
+            onClick={() => onGo(detail.kind === 'catalog' ? { kind: 'none' } : { kind: 'catalog' })}
           >
             <CatalogIcon />
           </IconButton>
           <IconButton
             label="Import from Your Agents"
             aria-pressed={detail.kind === 'import' && !detail.pasted}
-            onClick={() => go(detail.kind === 'import' && !detail.pasted ? { kind: 'none' } : { kind: 'import' })}
+            onClick={() => onGo(detail.kind === 'import' && !detail.pasted ? { kind: 'none' } : { kind: 'import' })}
           >
             <ImportIcon />
           </IconButton>
           <IconButton
             label="Paste JSON"
             aria-pressed={detail.kind === 'paste' || (detail.kind === 'import' && Boolean(detail.pasted))}
-            onClick={() => go(detail.kind === 'paste' || (detail.kind === 'import' && detail.pasted) ? { kind: 'none' } : { kind: 'paste' })}
+            onClick={() => onGo(detail.kind === 'paste' || (detail.kind === 'import' && detail.pasted) ? { kind: 'none' } : { kind: 'paste' })}
           >
             <PasteIcon />
           </IconButton>
@@ -238,7 +240,7 @@ export function ServersView({
               </Button>
             </div>
           ) : (
-            <ul className="space-y-px">
+            <ul className="space-y-px" {...rove.container}>
               {shown.map((name) => {
                 const server = config.mcpServers[name]
                 const users = profilesUsing(config, name)
@@ -246,25 +248,28 @@ export function ServersView({
                 return (
                   <li
                     key={name}
+                    data-rove-id={name}
                     className={`group/row relative rounded-[7px] ${
                       isSelected
-                        ? 'bg-tint'
+                        ? 'bg-tint forced-colors:outline-2 forced-colors:-outline-offset-2 forced-colors:outline-[Highlight]'
                         : `hover:bg-[color-mix(in_srgb,var(--er-ink)_5%,transparent)] ${menuFor?.name === name ? 'bg-[color-mix(in_srgb,var(--er-ink)_5%,transparent)]' : ''}`
                     }`}
                   >
                     <button
                       type="button"
                       data-server={name}
+                      data-rove
+                      tabIndex={rove.tabIndex(name)}
                       aria-current={isSelected ? 'true' : undefined}
-                      // Who loads it, one hover away on the whole row (the dots under the "…" can't be hovered), and the button's description for assistive tech.
-                      title={users.length > 0 ? `Used by ${users.map((p) => p.name).join(', ')}` : undefined}
-                      onClick={() => go({ kind: 'edit', name })}
+                      // The full name (the row truncates it) and who loads it, one hover away on the whole row (the dots under the "…" can't be hovered), and the button's description for assistive tech.
+                      title={users.length > 0 ? `${name} · Used by ${users.map((p) => p.name).join(', ')}` : name}
+                      // The tooltip is for sighted users; assistive tech gets who uses it as the description, without the name again.
+                      aria-describedby={users.length > 0 ? `used-by-${name}` : undefined}
+                      onClick={() => onGo({ kind: 'edit', name })}
                       onContextMenu={(event) => {
                         event.preventDefault()
-                        // The context-menu key (or Shift+F10) sends a `contextmenu` with no right button: it opens under the row, not at a pointer that's elsewhere.
-                        // Ctrl-click on a Mac is a pointer's.
-                        const fromKeyboard = event.button === 0 && !event.ctrlKey
-                        void showMenu(name, fromKeyboard ? event.currentTarget : undefined)
+                        // The context-menu key opens it under the row, not at a pointer that's elsewhere.
+                        void showMenu(name, isKeyboardContextMenu(event) ? event.currentTarget : undefined)
                       }}
                       className="flex w-full items-center gap-2.5 rounded-[7px] px-2 py-1.5 text-left"
                     >
@@ -283,17 +288,27 @@ export function ServersView({
                         aria-hidden="true"
                         className="flex min-w-[26px] shrink-0 items-center justify-end gap-0.5 group-hover/row:opacity-0 group-has-[[aria-haspopup]:focus-visible]/row:opacity-0 group-has-[[aria-expanded=true]]/row:opacity-0"
                       >
-                        {users.slice(0, 4).map((p) => (
+                        {/* Past four, the fourth dot gives way to the count of everyone it doesn't show: colour alone can't say how many. */}
+                        {(users.length > MAX_DOTS ? users.slice(0, MAX_DOTS - 1) : users).map((p) => (
                           <ProfileDot key={p.id} color={colors.get(p.id) ?? ''} size={2} />
                         ))}
+                        {users.length > MAX_DOTS && (
+                          <span className="ml-0.5 text-caption text-ink-2 tabular-nums">+{users.length - (MAX_DOTS - 1)}</span>
+                        )}
                       </span>
                     </button>
+                    {users.length > 0 && (
+                      <span id={`used-by-${name}`} className="sr-only">
+                        Used by {users.map((p) => p.name).join(', ')}
+                      </span>
+                    )}
                     {/* The right-click menu for the keyboard, as a folder row has: quiet until the row is hovered or the button focused, and held in
                         view, pressed, while its menu is open. A sibling of the row's button, since a button can't hold one. */}
                     <IconButton
                       label={`Actions for ${name}`}
                       aria-haspopup="menu"
                       aria-expanded={menuFor?.name === name && menuFor.byButton}
+                      tabIndex={rove.tabIndex(name)}
                       className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100"
                       onClick={(event) => void showMenu(name, event.currentTarget, true)}
                     >
@@ -308,7 +323,7 @@ export function ServersView({
       </aside>
 
       <section aria-label="Server details" className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-card bg-card shadow-card">
-        {detail.kind === 'none' && <NoServer empty={names.length === 0} onPick={(next) => go(next)} />}
+        {detail.kind === 'none' && <NoServer empty={names.length === 0} onPick={(next) => onGo(next)} />}
         {detail.kind === 'catalog' && (
           <CatalogView
             home={home}

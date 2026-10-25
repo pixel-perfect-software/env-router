@@ -290,6 +290,13 @@ window; greyed out until there is one) and the version.
 Preferences window, since shells are the one setting. The Shells panel also links to the
 documentation and to **Report an Issue**; on macOS the Help menu has both.
 
+The keyboard reaches everything the pointer does. The arrow keys, Home and End move between the
+profile cards, the servers in the list and the entries in the catalog (Tab leaves the list rather
+than stepping through each one); the context-menu key (or Shift+F10) opens a card's or a row's
+menu under it. ⌘N (Ctrl+N) starts a new profile on Profiles and a new server on MCP Servers, and
+⌘S (Ctrl+S) saves whichever editor is open. When a check can't start (the profile editor is open,
+or `config.json` can't be read), EnvRouter says why instead of doing nothing.
+
 To see EnvRouter's own files, the menu bar icon's menu and the Shells panel show `config.json` in
 Finder (Files off macOS) and open `~/.envrouter`, and a profile card's right-click menu opens the
 folder its MCP files are written to.

@@ -3,7 +3,7 @@
 //! window managing another machine, such as a WSL distro, gets identical answers.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -738,10 +738,13 @@ pub enum Place {
     Root,
     /// The folder a profile's MCP files are rendered into.
     McpFiles { profile_id: String },
+    /// A trigger folder of a saved profile, or a folder inside one (a checked folder's slip files
+    /// under its trigger). Not any path: [`locate`] refuses what config.json doesn't cover.
+    Trigger { folder: String },
 }
 
-/// Where a [`Place`] is, and how to show it: a file is revealed (selected in its folder), a
-/// folder is opened.
+/// Where a [`Place`] is, and how to show it: `File` is revealed (selected in its folder, which
+/// never runs it, so a trigger folder is revealed as well), `Folder` is opened.
 #[derive(Debug, PartialEq)]
 pub enum Located {
     File(PathBuf),
@@ -781,8 +784,23 @@ fn folder(path: &Path, absent: &str, not_a_folder: &str) -> Result<PathBuf> {
     }
 }
 
-/// Finds `place` under `home`, or says why it isn't there yet (or can't be shown). It never reads config.json, so it
-/// answers while the file is unreadable, which is when someone wants to see it.
+/// Whether `folder` is a trigger folder of a saved profile, or inside one. Triggers that can't be
+/// read as folders (a wildcard in the middle) cover nothing.
+fn in_a_trigger(home: &Path, folder: &Path) -> Result<bool> {
+    let Some(config) = config::load(&paths::root(home))? else {
+        return Ok(false);
+    };
+    Ok(config
+        .profiles
+        .iter()
+        .flat_map(|profile| &profile.trigger_paths)
+        .filter_map(|raw| config::trigger_base(raw, home).ok())
+        .any(|base| folder.starts_with(base)))
+}
+
+/// Finds `place` under `home`, or says why it isn't there yet (or can't be shown). Only a
+/// trigger folder reads config.json (to hold the window to the folders it names); the others
+/// answer while the file is unreadable, which is when someone wants to see it.
 pub fn locate(home: &Path, place: &Place) -> Result<Located> {
     let root = paths::root(home);
     match place {
@@ -813,6 +831,43 @@ pub fn locate(home: &Path, place: &Place) -> Result<Located> {
                 "This profile's MCP files aren't in a folder, so EnvRouter won't open them.",
             )
             .map(Located::Folder)
+        }
+        Place::Trigger { folder } => {
+            let path = Path::new(folder);
+            // `..` would climb out of the trigger it starts in; a relative path is no trigger's folder.
+            let plain = path.is_absolute() && !path.components().any(|c| c == Component::ParentDir);
+            if !plain {
+                return Err(Error::Invalid("That isn't a valid trigger folder.".into()));
+            }
+            // The window shows what it read earlier, so say which of the ways this can fail it was.
+            match in_a_trigger(home, path) {
+                Ok(true) => {}
+                Ok(false) => {
+                    return Err(Error::Invalid(format!(
+                        "`{folder}` isn't a trigger folder any more: config.json changed since the window showed it."
+                    )));
+                }
+                Err(err) => {
+                    return Err(Error::Invalid(format!(
+                        "Couldn't check `{folder}` against config.json: {err}"
+                    )));
+                }
+            }
+            // `metadata` follows a link, so one that points at nothing reads as gone, which it is
+            // as far as the file manager can tell (it would fail with the system's own words).
+            match std::fs::metadata(path) {
+                Ok(_) => Ok(Located::File(path.to_path_buf())),
+                // The window sets a backticked path as a value, and tildifies it.
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    Err(Error::Invalid(format!(
+                        "There's no `{folder}` any more. It may have been moved or deleted."
+                    )))
+                }
+                Err(source) => Err(Error::Io {
+                    path: path.to_path_buf(),
+                    source,
+                }),
+            }
         }
     }
 }
@@ -1342,6 +1397,134 @@ mod tests {
         ));
     }
 
+    /// A trigger folder, and what is inside one (a checked folder files under its trigger), can be
+    /// shown; nothing else can, so the window still can't ask for an arbitrary path.
+    #[test]
+    fn shows_only_what_a_trigger_folder_covers() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let mut config = ConfigState::default();
+        config.profiles.push(Profile {
+            trigger_paths: vec!["~/dev/*".into(), "~/a*b".into()],
+            ..profile("p", "Work")
+        });
+        envrouter_core::config::save(&paths::root(home), &config).unwrap();
+        let trigger = |folder: &Path| Place::Trigger {
+            folder: folder.display().to_string(),
+        };
+        let dev = home.join("dev");
+        let inside = dev.join("api");
+        std::fs::create_dir_all(&inside).unwrap();
+        std::fs::create_dir(home.join("other")).unwrap();
+
+        assert_eq!(
+            locate(home, &trigger(&dev)).unwrap(),
+            Located::File(dev.clone())
+        );
+        assert_eq!(
+            locate(home, &trigger(&inside)).unwrap(),
+            Located::File(inside)
+        );
+        for folder in [home.join("other"), home.to_path_buf()] {
+            assert_eq!(
+                locate(home, &trigger(&folder)).unwrap_err().to_string(),
+                format!(
+                    "`{}` isn't a trigger folder any more: config.json changed since the window showed it.",
+                    folder.display()
+                )
+            );
+        }
+        for folder in [dev.join("..").join("other"), PathBuf::from("dev")] {
+            assert_eq!(
+                locate(home, &trigger(&folder)).unwrap_err().to_string(),
+                "That isn't a valid trigger folder.",
+                "{folder:?}"
+            );
+        }
+    }
+
+    /// A trigger folder that was moved or deleted is told in a sentence, not the system's
+    /// "No such file or directory (os error 2)", which the opener also gives when it can't reach
+    /// the file manager. The window sets the backticked path as a value.
+    #[test]
+    fn says_a_trigger_folder_is_gone() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let mut config = ConfigState::default();
+        config.profiles.push(Profile {
+            trigger_paths: vec!["~/dev".into()],
+            ..profile("p", "Work")
+        });
+        envrouter_core::config::save(&paths::root(home), &config).unwrap();
+        let gone = Place::Trigger {
+            folder: home.join("dev").display().to_string(),
+        };
+        assert_eq!(
+            locate(home, &gone).unwrap_err().to_string(),
+            format!(
+                "There's no `{}` any more. It may have been moved or deleted.",
+                home.join("dev").display()
+            )
+        );
+    }
+
+    /// With config.json unreadable the check can't be made, and that is what the refusal says, not
+    /// that the folder is no trigger.
+    #[test]
+    fn says_when_a_trigger_folder_cannot_be_checked_against_an_unreadable_config() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        std::fs::create_dir_all(paths::root(home)).unwrap();
+        std::fs::write(paths::root(home).join("config.json"), "{ not json").unwrap();
+        let folder = home.join("dev");
+        let message = locate(
+            home,
+            &Place::Trigger {
+                folder: folder.display().to_string(),
+            },
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            message.starts_with(&format!(
+                "Couldn't check `{}` against config.json: ",
+                folder.display()
+            )),
+            "{message}"
+        );
+    }
+
+    /// A trigger that is a link to nothing reads as gone, in the sentence, not as present and then
+    /// refused by the file manager in its own words.
+    #[cfg(unix)]
+    #[test]
+    fn reads_a_dangling_link_as_a_trigger_folder_that_is_gone() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let mut config = ConfigState::default();
+        config.profiles.push(Profile {
+            trigger_paths: vec!["~/link".into()],
+            ..profile("p", "Work")
+        });
+        envrouter_core::config::save(&paths::root(home), &config).unwrap();
+        let link = home.join("link");
+        std::os::unix::fs::symlink(home.join("nowhere"), &link).unwrap();
+        assert_eq!(
+            locate(
+                home,
+                &Place::Trigger {
+                    folder: link.display().to_string()
+                }
+            )
+            .unwrap_err()
+            .to_string(),
+            format!(
+                "There's no `{}` any more. It may have been moved or deleted.",
+                link.display()
+            )
+        );
+    }
+
     /// `SaveOutcome` in `src/lib/types.ts`.
     #[test]
     fn wire_format_matches_the_typescript_types() {
@@ -1359,7 +1542,7 @@ mod tests {
         assert!(changed["config"]["profiles"].is_array());
         let missing = serde_json::to_value(SaveOutcome::Missing).unwrap();
         assert_eq!(missing, serde_json::json!({ "status": "missing" }));
-        // `Place` in src/lib/types.ts, the three kinds the window sends and the tray emits.
+        // `Place` in src/lib/types.ts, the four kinds the window sends and the tray emits.
         let places = [
             (Place::Config, serde_json::json!({ "kind": "config" })),
             (Place::Root, serde_json::json!({ "kind": "root" })),
@@ -1368,6 +1551,12 @@ mod tests {
                     profile_id: "p".into(),
                 },
                 serde_json::json!({ "kind": "mcpFiles", "profileId": "p" }),
+            ),
+            (
+                Place::Trigger {
+                    folder: "/h/dev".into(),
+                },
+                serde_json::json!({ "kind": "trigger", "folder": "/h/dev" }),
             ),
         ];
         for (place, json) in places {

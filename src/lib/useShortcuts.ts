@@ -6,7 +6,10 @@ import { isShortcut, type PlatformInfo } from './platform'
 
 export interface Shortcuts {
   checkFolder: () => void
-  newProfile: () => void
+  /** ⌘N: a new profile on Profiles, a new server on Servers. */
+  create: () => void
+  /** ⌘S: the open editor's Save. */
+  save: () => void
   /** Settings…: there's no Preferences window, so it opens the Shells popover. */
   settings: () => void
   view: (next: View) => void
@@ -15,7 +18,7 @@ export interface Shortcuts {
 }
 
 /**
- * The menu bar's "Check Folder…", "Check Last Folder" and "Settings…" and the keyboard shortcuts (⌘ or Ctrl + N, O, comma, 1, 2). On
+ * The menu bar's "Check Folder…", "Check Last Folder" and "Settings…" and the keyboard shortcuts (⌘ or Ctrl + N, O, S, comma, 1, 2). On
  * macOS the menu's Settings… takes ⌘, itself and sends the event; elsewhere there's no menu, so the key does. They reach the latest
  * `shortcuts` and `platform` through a ref, so the listeners are added once.
  */
@@ -42,7 +45,10 @@ export function useShortcuts(platform: PlatformInfo, shortcuts: Shortcuts) {
       if (!isShortcut(e, platformRef.current)) return
       if (e.key === 'n') {
         e.preventDefault()
-        actions.current.newProfile()
+        actions.current.create()
+      } else if (e.key === 's') {
+        e.preventDefault()
+        actions.current.save()
       } else if (e.key === 'o') {
         e.preventDefault()
         actions.current.checkFolder()

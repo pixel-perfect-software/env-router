@@ -78,3 +78,30 @@ export const shortcutLabel = (key: string, info: PlatformInfo) => (info.isMac ? 
 /** Whether a key event is the platform's shortcut modifier on its own (⌘ on macOS, Ctrl elsewhere). */
 export const isShortcut = (e: KeyboardEvent, info: PlatformInfo) =>
   !e.altKey && (info.isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey && !e.shiftKey)
+
+// The last pointer activity (down, up or cancel), to tell a long-press's `contextmenu` from the context-menu key's: a touch or pen long-press
+// says `button` 0 and 2 depending on the engine, and the key says 0 in WebKit and -1 in Chromium, so `button` alone can't tell them apart.
+let pointer = { down: false, at: -Infinity, target: null as EventTarget | null }
+if (typeof document !== 'undefined') {
+  const note = (down: boolean) => (e: Event) => {
+    pointer = { down, at: performance.now(), target: e.target }
+  }
+  document.addEventListener('pointerdown', note(true), true)
+  document.addEventListener('pointerup', note(false), true)
+  document.addEventListener('pointercancel', note(false), true)
+}
+
+/** How long after a pointer lets go a `contextmenu` still counts as its. */
+const POINTER_GRACE_MS = 500
+
+/**
+ * Whether a `contextmenu` event came from the keyboard (the context-menu key, Shift+F10), so the menu opens under the focused control
+ * rather than at a pointer that's elsewhere. A right button, Ctrl-click on a Mac, and a pointer that is down or let go within half a
+ * second on the same control are the pointer's, whatever `button` says (a long-press); anything else is the keyboard's.
+ */
+export const isKeyboardContextMenu = (e: { button: number; ctrlKey: boolean; target: EventTarget | null }) => {
+  if (e.button === 2 || e.ctrlKey) return false
+  const near = (a: EventTarget | null, b: EventTarget | null) => a instanceof Node && b instanceof Node && (a.contains(b) || b.contains(a))
+  const recent = pointer.down || performance.now() - pointer.at < POINTER_GRACE_MS
+  return !(recent && near(pointer.target, e.target))
+}

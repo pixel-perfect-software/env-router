@@ -1,7 +1,7 @@
 // The server editor: one MCP server's form (name, transport, command or URL, arguments, environment or
 // headers, which profiles use it) with its Save, Revert, Duplicate and Delete footer.
 
-import { useEffect, useRef, useState } from 'react'
+import { type CSSProperties, useEffect, useRef, useState } from 'react'
 import { errorMessage } from '../lib/api'
 import {
   draftOf,
@@ -25,7 +25,7 @@ import { Caution, LockLegend, PairList, ValueList } from './ServerFields'
 import { ServerMark } from './ServerMark'
 import { type CheckRequest, CheckSection } from './ServerTools'
 import { VersionRow } from './ServerVersion'
-import { Button, Footer, ProfileDot, Segmented, TextField } from './ui'
+import { Button, Footer, PROFILE_FILL, ProfileDot, Segmented, TextField } from './ui'
 
 export function ServerEditor({
   name,
@@ -203,16 +203,22 @@ export function ServerEditor({
                     aria-pressed={on}
                     onClick={() => setSwitched((s) => ({ ...s, [p.id]: !on }))}
                     title={p.name}
-                    className={`flex h-[28px] max-w-full items-center gap-1.5 rounded-full pr-3 pl-2.5 text-small transition-[background-color,box-shadow] duration-150 ease-settle ${
+                    // Forced colours drop the fill and ring, so the chip keeps a border, and the pressed one takes Highlight.
+                    className={`flex h-[28px] max-w-full items-center gap-1.5 rounded-full pr-3 pl-2.5 text-small transition-[background-color,box-shadow] duration-150 ease-settle forced-colors:border forced-colors:border-[ButtonText] ${
                       on
-                        ? 'text-ink'
+                        ? 'bg-[var(--chip-fill)] text-ink shadow-[inset_0_0_0_1.5px_var(--chip-ring)] forced-colors:forced-color-adjust-none forced-colors:bg-[Highlight] forced-colors:text-[HighlightText]'
                         : 'text-ink-2 shadow-[inset_0_0_0_1px_var(--er-rule)] hover:bg-[color-mix(in_srgb,var(--er-ink)_5%,transparent)] hover:text-ink'
                     }`}
                     style={
-                      on ? { background: `color-mix(in srgb, ${p.color} 16%, var(--er-card))`, boxShadow: `inset 0 0 0 1.5px ${p.color}` } : undefined
+                      on
+                        ? ({
+                            '--chip-fill': `color-mix(in srgb, ${p.color} ${PROFILE_FILL}%, var(--er-card))`,
+                            '--chip-ring': p.color,
+                          } as CSSProperties)
+                        : undefined
                     }
                   >
-                    <ProfileDot color={p.color} size={2} className={on ? '' : 'opacity-70'} />
+                    <ProfileDot color={p.color} size={2} />
                     <span className="min-w-0 truncate">{p.name}</span>
                   </button>
                 )
@@ -361,7 +367,7 @@ export function ServerEditor({
         <Button onClick={revert} disabled={saving || (!dirty && Boolean(name))}>
           {name ? 'Revert' : 'Cancel'}
         </Button>
-        <Button kind="primary" type="submit" disabled={!dirty && Boolean(name)} busy={saving}>
+        <Button kind="primary" type="submit" data-save disabled={!dirty && Boolean(name)} busy={saving}>
           {saving ? 'Saving…' : 'Save'}
         </Button>
       </Footer>

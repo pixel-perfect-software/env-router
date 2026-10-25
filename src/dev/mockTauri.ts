@@ -20,6 +20,7 @@
 // - `&agents=` which agents are on a new terminal's PATH: a list of commands (`claude`, `claude,copilot`), `none`, or `unknown` (the
 //   shell didn't say, so nothing is marked). Every agent the window offers is there unless it says otherwise; VS Code and Insiders carry
 //   Claude Code's extension (see the editors below), so Claude isn't marked in a window that has them even with `none`.
+// - `&gone=~/dev,~/notes`: those folders aren't on disk any more, so showing one in Finder says so, as `commands::locate` does.
 // - `&shim=stale`: the installed shim doesn't match the app's, until a save reinstalls it.
 // - `&store=off`: there's no secret store, so saving a secret (or checking a server that needs
 //   a saved one) fails as it does there, and a save that drops a secret goes through with a warning. Off macOS the setup status says so up front
@@ -90,6 +91,8 @@ const HOME = macos ? '/Users/sam' : '/home/sam'
 const scenario = params.get('scenario') ?? 'first-run'
 const forcedCheck = params.get('check')
 const storeOff = params.get('store') === 'off'
+/** `&gone=~/old,~/older`: folders that are no longer on disk, as a profile's trigger folder can be once a repo moves. */
+const goneFolders = (params.get('gone') ?? '').split(',').filter(Boolean)
 /** What `&fail=` breaks, until `window.__mockFix()`. */
 let failing: string | null = ['home', 'status', 'shell', 'editor', 'reveal', 'uninstall'].includes(params.get('fail') ?? '')
   ? params.get('fail')
@@ -934,11 +937,6 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
     case 'plugin:resources|close':
       menus.delete(a.rid as number)
       return null
-    case 'plugin:opener|reveal_item_in_dir':
-      // WSL with no file manager, say.
-      if (failing === 'reveal') throw 'No file manager could show it.'
-      // Finder or the file manager would open beside the window; nothing to show in a browser.
-      return null
     case 'get_config':
       // `ConfigFault`: the one command that rejects with its kind too.
       if (configBroken && scenario === 'newer')
@@ -1083,6 +1081,19 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
         path = `${HOME}/.envrouter/config.json`
       } else if (place.kind === 'root') {
         path = `${HOME}/.envrouter`
+      } else if (place.kind === 'trigger') {
+        // Only what a saved trigger covers, and not by climbing out of it.
+        const covered = config.profiles.some((p) =>
+          p.triggerPaths.some((raw) => {
+            const base = triggerBaseOrNull(raw)
+            return base !== null && (place.folder === base || place.folder.startsWith(`${base}/`))
+          }),
+        )
+        if (!place.folder.startsWith('/') || place.folder.split('/').includes('..')) throw "That isn't a valid trigger folder."
+        if (!covered) throw `\`${place.folder}\` isn't a trigger folder any more: config.json changed since the window showed it.`
+        if (goneFolders.some((gone) => expandHome(gone) === place.folder))
+          throw `There's no \`${place.folder}\` any more. It may have been moved or deleted.`
+        path = place.folder
       } else {
         if (!isFileName(place.profileId)) throw "That isn't a profile."
         // The mock renders no files; a saved profile with servers is the one that would have them.

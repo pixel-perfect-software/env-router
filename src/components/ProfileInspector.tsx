@@ -3,7 +3,7 @@
 // The profile grid stays in place behind it. Removals stay struck through until saved.
 
 import { open } from '@tauri-apps/plugin-dialog'
-import { useEffect, useRef, useState } from 'react'
+import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { errorMessage } from '../lib/api'
 import { confirmDelete, confirmDiscard } from '../lib/confirm'
 import { hasMcpFiles, mcpAgentLabels, serverSummary } from '../lib/mcp'
@@ -231,6 +231,7 @@ export function ProfileInspector({
         }}
         onKeyDown={(e) => {
           if (e.key === 'Escape') close()
+          else if (e.key === 'Tab') wrapTab(e)
         }}
       >
         <header className="flex items-center gap-2.5 px-5 pt-5 pb-3">
@@ -422,7 +423,7 @@ export function ProfileInspector({
                 <Button className="mt-2" busy={revealing} onClick={revealMcp}>
                   {revealLabelOf('MCP Folder')}
                 </Button>
-                <p ref={revealErrorLine} role="alert" className="mt-1.5 text-small text-problem empty:hidden">
+                <p ref={revealErrorLine} role="alert" className="mt-1.5 text-small text-problem select-text empty:hidden">
                   {revealError && <ValueText text={revealError} home={home} />}
                 </p>
               </>
@@ -450,13 +451,44 @@ export function ProfileInspector({
           <Button onClick={close} disabled={saving}>
             Cancel
           </Button>
-          <Button kind="primary" type="submit" busy={saving}>
+          <Button kind="primary" type="submit" data-save busy={saving}>
             {saving ? 'Saving…' : 'Save'}
           </Button>
         </Footer>
       </form>
     </>
   )
+}
+
+/** What a Tab can land on in the dialog. */
+const TABBABLE =
+  'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+
+/**
+ * Whether Tab really lands on `el`: not taken out of the order (`tabindex=-1`), not disabled or hidden, and, of a radio group, only the
+ * checked one (or the first when none is), which is the one the browser stops on.
+ */
+function isStop(el: HTMLElement) {
+  if (el.tabIndex < 0 || el.matches(':disabled') || el.getClientRects().length === 0) return false
+  if (!(el instanceof HTMLInputElement) || el.type !== 'radio' || !el.name) return true
+  const group = Array.from(el.form?.elements ?? el.ownerDocument.querySelectorAll('input[type=radio]')).filter(
+    (other): other is HTMLInputElement => other instanceof HTMLInputElement && other.type === 'radio' && other.name === el.name,
+  )
+  return el === (group.find((radio) => radio.checked) ?? group[0])
+}
+
+/**
+ * Keeps Tab inside the dialog: everything behind it is `inert`, so past either end focus would fall to the page (a dead stop in the
+ * window) before it came back. At the last stop Tab goes to the first, and Shift+Tab at the first goes to the last.
+ */
+function wrapTab(e: KeyboardEvent<HTMLElement>) {
+  const stops = Array.from(e.currentTarget.querySelectorAll<HTMLElement>(TABBABLE)).filter(isStop)
+  const [first, last] = [stops[0], stops[stops.length - 1]]
+  if (!first || !last) return
+  if (e.shiftKey ? document.activeElement === first : document.activeElement === last) {
+    e.preventDefault()
+    ;(e.shiftKey ? last : first).focus()
+  }
 }
 
 const sameTools = (a: string[], b: string[]) => a.length === b.length && a.every((tool) => b.includes(tool))
