@@ -103,6 +103,34 @@ describe('pasted JSON', () => {
   })
 })
 
+describe('pasted TOML', () => {
+  it("reads Codex's tables with variables as references, and words an unreadable one as the backend does", async () => {
+    const call = await boot('')
+    const text = `# from the README
+[mcp_servers.figma]
+url = "https://mcp.figma.com/mcp"
+bearer_token_env_var = "FIGMA_TOKEN"
+
+[mcp_servers."docs.search"]
+command = "npx"
+args = ["-y", "@acme/docs-mcp", 3]
+env_vars = ["DOCS_API_KEY"]
+`
+    const pasted = await call<Pasted>('parse_mcp_json', { text })
+    expect(pasted.servers).toEqual([
+      {
+        name: 'docs.search',
+        server: { transport: 'stdio', command: 'npx', args: ['-y', '@acme/docs-mcp', '3'], env: { DOCS_API_KEY: `\${DOCS_API_KEY}` } },
+      },
+      { name: 'figma', server: { transport: 'http', url: 'https://mcp.figma.com/mcp', headers: { Authorization: `Bearer \${FIGMA_TOKEN}` } } },
+    ])
+    await expect(call('parse_mcp_json', { text: 'model = "gpt-5"' })).rejects.toMatch(/^There are no MCP servers in it\. Paste the \[mcp_servers/)
+    await expect(call('parse_mcp_json', { text: '[mcp_servers.x]\ncommand = ' })).rejects.toMatch(
+      /^That isn't JSON or TOML EnvRouter can read: .+ \(line 2\)\.$/,
+    )
+  })
+})
+
 describe('saving', () => {
   it('keeps its own copy at the current version', async () => {
     const call = await boot('?scenario=populated')

@@ -1,7 +1,9 @@
 //! Finds MCP servers the user's agents already define, so the library can import them. It reads
 //! each agent's own files where its descriptor says they are (its config folder, by default and
 //! as each profile sets it, and the project files in each trigger folder), and never writes them.
-//! It also reads servers from JSON pasted into the window, such as a README's snippet.
+//! Claude and Copilot keep theirs in JSON and Codex in TOML (`mcp_servers`), which is why `toml` is
+//! a dependency here and nowhere near the shim. It also reads servers from JSON or TOML pasted into
+//! the window, such as a README's snippet.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -91,7 +93,9 @@ pub struct PastedServer {
 /// Reads servers from pasted text, as READMEs and agents write them: an `mcpServers` table,
 /// VS Code's `servers` (or `mcp.servers` in its settings), a bare table of named servers, or a
 /// lone server. Comments and trailing commas are fine, and so is a table entry copied without
-/// its outer braces (`"github": { ... }`). The error is worded to show as is.
+/// its outer braces (`"github": { ... }`). Text that isn't JSON is read as Codex's TOML: an
+/// `[mcp_servers.<name>]` block, a bare `[<name>]` one, or a lone server's fields. The error is
+/// worded to show as is.
 pub fn parse_pasted(text: &str) -> std::result::Result<Pasted, String> {
     if text.trim().is_empty() {
         return Err("Paste a server's JSON first.".into());
@@ -99,39 +103,93 @@ pub fn parse_pasted(text: &str) -> std::result::Result<Pasted, String> {
     let parse = |text: &str| {
         jsonc_parser::parse_to_serde_value::<Value>(text, &jsonc_parser::ParseOptions::default())
     };
-    let json = match parse(text) {
-        Ok(json) => json,
-        // The brace goes on its own line, so a trailing `//` comment can't swallow it.
-        Err(err) => parse(&format!("{{{text}\n}}"))
-            .map_err(|_| format!("That isn't JSON EnvRouter can read: {err}."))?,
-    };
-    if is_entry(&json) {
-        let server = parse_entry(&json)
-            .ok_or("EnvRouter can't use this server's transport, values or sign-in.")?;
-        return Ok(Pasted {
-            servers: vec![PastedServer { name: None, server }],
-            skipped: Vec::new(),
-        });
+    // The brace goes on its own line, so a trailing `//` comment can't swallow it.
+    let json = parse(text).or_else(|err| parse(&format!("{{{text}\n}}")).map_err(|_| err));
+    match json {
+        Ok(json) => pasted_json(&json),
+        Err(json_err) => match text.parse::<toml::Table>() {
+            Ok(table) => pasted_toml(&table),
+            // Say what's wrong with the format it looks like it was meant to be.
+            Err(toml_err) => Err(format!(
+                "That isn't JSON or TOML EnvRouter can read: {}.",
+                if looks_like_toml(text) {
+                    let line = toml_err
+                        .span()
+                        .map_or(1, |span| text[..span.start].matches('\n').count() + 1);
+                    format!("{} (line {line})", toml_err.message())
+                } else {
+                    json_err.to_string()
+                }
+            )),
+        },
     }
-    let table = [&json["mcpServers"], &json["servers"], &json["mcp"]["servers"]]
-        .into_iter()
-        .find_map(Value::as_object)
-        .or_else(|| {
-            json.as_object()
-                .filter(|map| is_bare_table(map))
-        })
-        .ok_or("There are no MCP servers in it. Paste the part with mcpServers, or one server with its command or url.")?;
+}
+
+fn pasted_json(json: &Value) -> std::result::Result<Pasted, String> {
+    if is_entry(json) {
+        let server = parse_entry(json).ok_or(LONE_SERVER_UNUSABLE)?;
+        return Ok(lone(server));
+    }
+    let table = [
+        &json["mcpServers"],
+        &json["servers"],
+        &json["mcp"]["servers"],
+    ]
+    .into_iter()
+    .find_map(Value::as_object)
+    .or_else(|| json.as_object().filter(|map| is_bare_table(map)))
+    .ok_or(NO_JSON_TABLE)?;
+    pasted_of(
+        table
+            .iter()
+            .map(|(name, entry)| (name.clone(), parse_entry(entry))),
+    )
+}
+
+fn pasted_toml(table: &toml::Table) -> std::result::Result<Pasted, String> {
+    let whole = toml::Value::Table(table.clone());
+    if is_toml_entry(&whole) {
+        return Ok(lone(codex_entry(&whole).ok_or(LONE_SERVER_UNUSABLE)?));
+    }
+    let servers = table
+        .get("mcp_servers")
+        .and_then(toml::Value::as_table)
+        .or_else(|| Some(table).filter(|map| !map.is_empty() && map.values().all(is_toml_entry)))
+        .ok_or(NO_TOML_TABLE)?;
+    pasted_of(
+        servers
+            .iter()
+            .map(|(name, entry)| (name.clone(), codex_entry(entry))),
+    )
+}
+
+const LONE_SERVER_UNUSABLE: &str =
+    "EnvRouter can't use this server's transport, values or sign-in.";
+const NO_JSON_TABLE: &str = "There are no MCP servers in it. Paste the part with mcpServers, or one server with its command or url.";
+const NO_TOML_TABLE: &str = "There are no MCP servers in it. Paste the [mcp_servers.<name>] part, or one server with its command or url.";
+
+fn lone(server: McpServer) -> Pasted {
+    Pasted {
+        servers: vec![PastedServer { name: None, server }],
+        skipped: Vec::new(),
+    }
+}
+
+/// The servers a table's entries make, and the names of those EnvRouter can't use.
+fn pasted_of(
+    entries: impl Iterator<Item = (String, Option<McpServer>)>,
+) -> std::result::Result<Pasted, String> {
     let mut pasted = Pasted {
         servers: Vec::new(),
         skipped: Vec::new(),
     };
-    for (name, entry) in table {
-        match parse_entry(entry) {
+    for (name, server) in entries {
+        match server {
             Some(server) => pasted.servers.push(PastedServer {
-                name: Some(name.clone()),
+                name: Some(name),
                 server,
             }),
-            None => pasted.skipped.push(name.clone()),
+            None => pasted.skipped.push(name),
         }
     }
     if pasted.servers.is_empty() && pasted.skipped.is_empty() {
@@ -146,6 +204,22 @@ pub fn parse_pasted(text: &str) -> std::result::Result<Pasted, String> {
     Ok(pasted)
 }
 
+/// Whether text that isn't JSON reads as TOML: its first line is a `[table]` header or a
+/// `key = value` with no `:` ahead of the `=` (a JSON member's colon comes first).
+fn looks_like_toml(text: &str) -> bool {
+    let Some(line) = text
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with('#') && !line.starts_with("//"))
+    else {
+        return false;
+    };
+    line.starts_with('[')
+        || line
+            .split_once('=')
+            .is_some_and(|(key, _)| !key.contains([':', '{']))
+}
+
 fn is_entry(value: &Value) -> bool {
     value.get("command").is_some() || value.get("url").is_some()
 }
@@ -156,16 +230,24 @@ fn is_bare_table(map: &serde_json::Map<String, Value>) -> bool {
     !map.is_empty() && map.values().all(is_entry)
 }
 
-/// The servers in one file: its top-level `mcpServers` (or, for Copilot and with no such key, a
-/// bare table of named servers; Claude reads only the wrapped form), plus, in Claude's
-/// `.claude.json`, each project's. Read as JSONC, as Paste is: hand-written project files carry
-/// comments. A file that's missing or unreadable has none.
+/// The servers in one file, read in its agent's format: JSON for Claude and Copilot, TOML for
+/// Codex. A file that's missing, unreadable or unparsable has none.
 fn read_servers(path: &Path, dialect: McpDialect) -> Vec<(String, McpServer)> {
     let Ok(text) = fs::read_to_string(path) else {
         return Vec::new();
     };
+    match dialect {
+        McpDialect::Claude | McpDialect::Copilot => json_servers(&text, dialect),
+        McpDialect::Codex => toml_servers(&text),
+    }
+}
+
+/// A JSON file's top-level `mcpServers` (or, for Copilot and with no such key, a bare table of
+/// named servers; Claude reads only the wrapped form), plus, in Claude's `.claude.json`, each
+/// project's. Read as JSONC, as Paste is: hand-written project files carry comments.
+fn json_servers(text: &str, dialect: McpDialect) -> Vec<(String, McpServer)> {
     let Ok(json) =
-        jsonc_parser::parse_to_serde_value::<Value>(&text, &jsonc_parser::ParseOptions::default())
+        jsonc_parser::parse_to_serde_value::<Value>(text, &jsonc_parser::ParseOptions::default())
     else {
         return Vec::new();
     };
@@ -184,6 +266,20 @@ fn read_servers(path: &Path, dialect: McpDialect) -> Vec<(String, McpServer)> {
         .filter_map(Value::as_object)
         .flat_map(|table| table.iter())
         .filter_map(|(name, entry)| Some((name.clone(), parse_entry(entry)?)))
+        .collect()
+}
+
+/// A Codex `config.toml`'s `[mcp_servers.<name>]` tables. Nothing else in the file is read, so
+/// its model, trust list and profiles stay out of the way.
+fn toml_servers(text: &str) -> Vec<(String, McpServer)> {
+    let Ok(file) = text.parse::<toml::Table>() else {
+        return Vec::new();
+    };
+    file.get("mcp_servers")
+        .and_then(toml::Value::as_table)
+        .into_iter()
+        .flatten()
+        .filter_map(|(name, entry)| Some((name.clone(), codex_entry(entry)?)))
         .collect()
 }
 
@@ -243,6 +339,131 @@ fn parse_entry(entry: &Value) -> Option<McpServer> {
     }
 }
 
+/// What makes a TOML table a server, as `is_entry` does for JSON.
+fn is_toml_entry(value: &toml::Value) -> bool {
+    value
+        .as_table()
+        .is_some_and(|table| table.contains_key("command") || table.contains_key("url"))
+}
+
+/// One `[mcp_servers.<name>]` table (checked against Codex 0.164.0's `RawMcpServerConfig`).
+/// Variables Codex passes through by name, `env_vars`, `env_http_headers` and
+/// `bearer_token_env_var`, become `${NAME}` references, which render back to those fields under
+/// Codex. Like `parse_entry`, anything EnvRouter can't represent is skipped rather than imported
+/// half right: how the server signs in, where it runs (`cwd`, a remote `environment_id` or
+/// `env_vars` source), an inline `bearer_token`, `command` with `url`. Tool filters, timeouts
+/// and the rest of Codex's own settings aren't carried.
+fn codex_entry(entry: &toml::Value) -> Option<McpServer> {
+    use toml::Value;
+    const LEFT_OUT: [&str; 6] = [
+        "oauth",
+        "oauth_resource",
+        "scopes",
+        "http_headers_helper",
+        "cwd",
+        "bearer_token",
+    ];
+    let entry = entry.as_table()?;
+    let is = |key: &str, expected: &str| {
+        entry
+            .get(key)
+            .is_none_or(|value| value.as_str() == Some(expected))
+    };
+    if LEFT_OUT.iter().any(|key| entry.contains_key(*key))
+        || !is("environment_id", "local")
+        || !is("auth", "oauth")
+        || (entry.contains_key("command") && entry.contains_key("url"))
+        // Turned off in Codex: imported, it would start under every agent of a profile.
+        || entry.get("enabled").and_then(Value::as_bool) == Some(false)
+    {
+        return None;
+    }
+    let text = |value: &Value| match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Integer(number) => Some(number.to_string()),
+        Value::Float(number) => Some(number.to_string()),
+        Value::Boolean(flag) => Some(flag.to_string()),
+        _ => None,
+    };
+    let strings = |key: &str| -> Option<BTreeMap<String, McpValue>> {
+        match entry.get(key) {
+            None => Some(BTreeMap::new()),
+            Some(Value::Table(map)) => map
+                .iter()
+                .map(|(k, v)| Some((k.clone(), McpValue::Plain(text(v)?))))
+                .collect(),
+            Some(_) => None,
+        }
+    };
+    let reference = |name: &str| McpValue::Plain(format!("${{{name}}}"));
+    if let Some(command) = entry.get("command") {
+        let args = match entry.get("args") {
+            None => Vec::new(),
+            Some(Value::Array(args)) => args
+                .iter()
+                .map(|a| Some(McpValue::Plain(text(a)?)))
+                .collect::<Option<_>>()?,
+            Some(_) => return None,
+        };
+        let mut env = strings("env")?;
+        let names = match entry.get("env_vars") {
+            None => &[][..],
+            Some(Value::Array(names)) => names,
+            Some(_) => return None,
+        };
+        for item in names {
+            let name = match item {
+                Value::String(name) => name,
+                // Codex passes a `remote` one from the remote environment, which isn't ours to name.
+                Value::Table(table)
+                    if table
+                        .get("source")
+                        .is_none_or(|s| s.as_str() == Some("local")) =>
+                {
+                    table.get("name")?.as_str()?
+                }
+                _ => return None,
+            };
+            // A value typed in `env` is the one Codex starts the server with.
+            env.entry(name.to_string())
+                .or_insert_with(|| reference(name));
+        }
+        return Some(McpServer::Stdio {
+            command: command.as_str()?.to_string(),
+            args,
+            env,
+        });
+    }
+    let url = entry.get("url")?.as_str()?.to_string();
+    let mut headers = strings("http_headers")?;
+    match entry.get("env_http_headers") {
+        None => {}
+        Some(Value::Table(map)) => {
+            for (header, name) in map {
+                let name = name.as_str()?;
+                headers
+                    .entry(header.clone())
+                    .or_insert_with(|| reference(name));
+            }
+        }
+        Some(_) => return None,
+    }
+    if let Some(name) = entry.get("bearer_token_env_var") {
+        // A second Authorization header would be a different server than the one Codex runs.
+        if headers
+            .keys()
+            .any(|h| h.eq_ignore_ascii_case("authorization"))
+        {
+            return None;
+        }
+        headers.insert(
+            "Authorization".into(),
+            McpValue::Plain(format!("Bearer ${{{}}}", name.as_str()?)),
+        );
+    }
+    Some(McpServer::Http { url, headers })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,6 +484,10 @@ mod tests {
             // An entry copied without the table's braces.
             r#""gh": { "command": "npx", "args": ["-y", "gh"] },"#,
             r#""gh": { "command": "npx", "args": ["-y", "gh"] }, // from the README"#,
+            // Codex's TOML: its own table, a bare one, and a whole config.toml around them.
+            "[mcp_servers.gh]\ncommand = \"npx\"\nargs = [\"-y\", \"gh\"]",
+            "[gh]\ncommand = \"npx\"\nargs = [\"-y\", \"gh\"]",
+            "model = \"gpt-5\"\n\n[mcp_servers.gh]\ncommand = \"npx\"\n\n[projects.\"/p\"]\ntrust_level = \"trusted\"",
         ];
         for text in shapes {
             let pasted = parse_pasted(text).unwrap_or_else(|err| panic!("{text}: {err}"));
@@ -275,6 +500,7 @@ mod tests {
         let lone =
             parse_pasted(r#"{ "type": "http", "url": "https://mcp.linear.app/mcp" }"#).unwrap();
         assert_eq!(named(&lone), [None]);
+        assert_eq!(named(&parse_pasted("command = \"npx\"").unwrap()), [None]);
         let mixed = parse_pasted(
             r#"{ "mcpServers": { "lin": { "url": "https://l/mcp" }, "odd": { "type": "ws", "url": "ws://x" } } }"#,
         )
@@ -318,7 +544,14 @@ mod tests {
         for (text, says) in [
             ("  ", "Paste"),
             ("{ nope", "isn't JSON"),
+            ("[mcp_servers.x]\ncommand = ", "isn't JSON or TOML"),
+            // JSONC whose comment holds an `=` still gets JSON's own error.
+            (
+                "// set DEBUG=1 for logs\n{ \"mcpServers\": { \"x\": ",
+                "unexpected end of input",
+            ),
             (r#"{ "name": "x" }"#, "no MCP servers"),
+            ("model = \"gpt-5\"", "no MCP servers"),
             (r#"{ "mcpServers": {} }"#, "no MCP servers"),
             (
                 r#"{ "mcpServers": { "odd": { "type": "ws", "url": "ws://x" } } }"#,
@@ -484,5 +717,142 @@ mod tests {
             serde_json::from_str(r#"{ "command": "npx", "env": { "N": { "nested": 1 } } }"#)
                 .unwrap();
         assert_eq!(parse_entry(&bad), None);
+    }
+
+    fn codex_config() -> ConfigState {
+        ConfigState {
+            profiles: vec![Profile {
+                id: "w".into(),
+                name: "Work".into(),
+                trigger_paths: vec!["~/dev/app".into()],
+                tools: BTreeMap::from([(
+                    "codex".into(),
+                    ToolConfig {
+                        env_var: "CODEX_HOME".into(),
+                        path: "~/.codex-work".into(),
+                    },
+                )]),
+                ..Default::default()
+            }],
+            agents: BTreeMap::from([(
+                "codex".into(),
+                AgentDef {
+                    mcp: Some(McpInjection {
+                        dialect: McpDialect::Codex,
+                        config_arg: "--config=".into(),
+                        ..claude().mcp.unwrap()
+                    }),
+                    mcp_files: Some(McpFiles {
+                        user_file: "config.toml".into(),
+                        default_dir: "~/.codex".into(),
+                        project_files: vec![".codex/config.toml".into()],
+                    }),
+                    ide: None,
+                },
+            )]),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn reads_codex_servers_from_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        for folder in [".codex", ".codex-work", "dev/app/.codex"] {
+            fs::create_dir_all(home.join(folder)).unwrap();
+        }
+        fs::write(
+            home.join(".codex/config.toml"),
+            r#"model = "gpt-5"
+            [projects."/p"]
+            trust_level = "trusted"
+
+            [mcp_servers."docs.search"]
+            command = "npx"
+            args = ["-y", "d", 3]
+            env = { LOG = "debug" }
+            env_vars = ["GITHUB_TOKEN", { name = "X" }, { name = "LOG" }]
+            startup_timeout_sec = 20
+            disabled_tools = ["w"]
+            "#,
+        )
+        .unwrap();
+        fs::write(
+            home.join(".codex-work/config.toml"),
+            r#"[mcp_servers.linear]
+            url = "https://mcp.linear.app/mcp"
+            http_headers = { X-Team = "eng" }
+            env_http_headers = { X-Key = "LIN_KEY" }
+            bearer_token_env_var = "LIN_TOKEN"
+            "#,
+        )
+        .unwrap();
+        fs::write(
+            home.join("dev/app/.codex/config.toml"),
+            "[mcp_servers.local]\ncommand = \"uvx\"\n",
+        )
+        .unwrap();
+
+        let found = candidates(&codex_config(), home);
+        let by_name = |name: &str| found.iter().find(|c| c.name == name).unwrap();
+        let plain = |text: &str| McpValue::Plain(text.into());
+        assert_eq!(
+            by_name("docs.search").server,
+            McpServer::Stdio {
+                command: "npx".into(),
+                args: vec![plain("-y"), plain("d"), plain("3")],
+                env: BTreeMap::from([
+                    // A value typed in `env` is not replaced by the reference beside it.
+                    ("LOG".into(), plain("debug")),
+                    ("GITHUB_TOKEN".into(), plain("${GITHUB_TOKEN}")),
+                    ("X".into(), plain("${X}")),
+                ]),
+            }
+        );
+        assert_eq!(
+            by_name("linear").server,
+            McpServer::Http {
+                url: "https://mcp.linear.app/mcp".into(),
+                headers: BTreeMap::from([
+                    ("X-Team".into(), plain("eng")),
+                    ("X-Key".into(), plain("${LIN_KEY}")),
+                    ("Authorization".into(), plain("Bearer ${LIN_TOKEN}")),
+                ]),
+            }
+        );
+        assert_eq!(
+            by_name("local").sources,
+            [home
+                .join("dev/app/.codex/config.toml")
+                .display()
+                .to_string()]
+        );
+        assert_eq!(found.len(), 3);
+    }
+
+    #[test]
+    fn leaves_out_codex_servers_it_cannot_represent() {
+        let table = |text: &str| -> Option<McpServer> {
+            let file: toml::Table = format!("[s]\n{text}").parse().unwrap();
+            codex_entry(&file["s"])
+        };
+        assert!(table("command = \"npx\"").is_some());
+        assert!(table("url = \"https://x/mcp\"\nauth = \"oauth\"").is_some());
+        for (why, text) in [
+            ("an OAuth client", "url = \"https://x\"\noauth = { client_id = \"a\" }"),
+            ("an OAuth resource", "url = \"https://x\"\noauth_resource = \"r\""),
+            ("scopes", "url = \"https://x\"\nscopes = [\"a\"]"),
+            ("a headers helper", "url = \"https://x\"\nhttp_headers_helper = \"/bin/t\""),
+            ("another sign-in", "url = \"https://x\"\nauth = \"chatgpt\""),
+            ("turned off", "command = \"npx\"\nenabled = false"),
+            ("a working folder", "command = \"npx\"\ncwd = \"/p\""),
+            ("another environment", "command = \"npx\"\nenvironment_id = \"remote\""),
+            ("a remote variable", "command = \"npx\"\nenv_vars = [{ name = \"X\", source = \"remote\" }]"),
+            ("an inline token", "url = \"https://x\"\nbearer_token = \"abc\""),
+            ("two transports", "command = \"npx\"\nurl = \"https://x\""),
+            ("two Authorization headers", "url = \"https://x\"\nhttp_headers = { authorization = \"a\" }\nbearer_token_env_var = \"T\""),
+        ] {
+            assert!(table(text).is_none(), "{why}");
+        }
     }
 }

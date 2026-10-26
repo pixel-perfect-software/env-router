@@ -173,7 +173,8 @@ const CREDENTIAL_WORD = /key|token|secret|passw(or)?d|[a-z0-9][-_]pwd\b|auth|cre
 /** Whether a value itself looks like a credential, whatever it's called. */
 export const looksLikeCredential = (value: string) => URL_WITH_PASSWORD.test(value.trim()) || TOKEN_SHAPE.test(value.trim())
 
-const isReference = (value: string) => /^\$\{[^}]+\}$/.test(value.trim())
+/** A value that is only a `${VAR}` reference, alone or after an authorization scheme (`Bearer ${TOKEN}`, what a Codex `bearer_token_env_var` imports as). */
+const isReference = (value: string) => /^([A-Za-z]+ )?\$\{[^}]+\}$/.test(value.trim())
 
 /**
  * Where a draft holds what looks like a credential in plain text that saving won't lock: an

@@ -26,7 +26,7 @@ env-router/
 │   │   ├── src/shims.rs       # installs the shim and helpers (and asks them their config and launcher versions); syncs one symlink per tool
 │   │   ├── src/uninstall.rs   # uninstall: shell blocks, editor wrappers, the secret item, ~/.envrouter, the app's webview folders (the app deletes its own as it exits, `finish_uninstall`), in that order (a problem before the secrets stops the run), the commands that remove the app and CLI, and the app's lock the CLI's uninstall checks
 │   │   ├── src/editors.rs     # points an agent extension's process-wrapper setting at the shim (desktop editors and remote servers)
-│   │   ├── src/mcp_import.rs  # reads the agents' own MCP files (by their mcpFiles descriptor, user and project files) for import, and pasted JSON
+│   │   ├── src/mcp_import.rs  # reads the agents' own MCP files (by their mcpFiles descriptor, user and project files) for import (JSON for Claude and Copilot, TOML for Codex), and pasted JSON or TOML
 │   │   ├── src/mcp_probe.rs   # MCP server check (rmcp): tools, needs-login, stderr tail; tool-list cache
 │   │   └── build.rs           # builds the shim and helper its tests install
 │   ├── cli/                   # `envrouter`: status, install, shell, editor, check, explain, apply, secret, uninstall, rpc
@@ -61,7 +61,7 @@ env-router/
 │   │                          # mcp.ts (server drafts, rename/remove, secret locking), mcpCatalog.ts (well-known servers), serverLogo.ts (logo matching),
 │   │                          # verdict.ts (check wording, tested in verdict.test.ts), health.ts (the health line and the one-accent rule, tested in health.test.ts), paths.ts, text.ts (plural, listOf), confirm.ts,
 │   │                          # lastView.ts (the view the window opens on), hooks the window composes: useConfigStore.ts (load, save and its merge loop), useFolderCheck.ts, useShortcuts.ts, useFolderDrop.ts
-│   └── dev/mockTauri.ts       # dev-only browser mock (?scenario=, ?platform=, ?check= and more; see docs/contributing.md); never bundled; mockTauri.test.ts pins it, and App.test.tsx boots it
+│   └── dev/mockTauri.ts       # dev-only browser mock (?scenario=, ?platform=, ?check= and more; see docs/contributing.md); never bundled; mockTauri.test.ts pins it, and App.test.tsx boots it; miniToml.ts is its TOML reader for Paste
 ├── packaging/homebrew/        # cask and CLI formula templates; render.sh fills them from a release's SHA256SUMS
 ├── packaging/notices/         # `pnpm notices`: render.mjs and cargo-about's about.toml write THIRD-PARTY-NOTICES.txt for releases
 ├── dev/containers/            # compose.yaml (project envrouter-dev): Linux tests, app build, bundles, Windows helper under Wine
@@ -113,7 +113,7 @@ command of the same name and arguments.
 | `preview_folder(payload, folder, tool)` | Instant profile preview from an unsaved config |
 | `check_mcp_server(name, server, secrets)` | Starts or connects to one MCP server with a new terminal's PATH and lists its tools: ok, needs sign-in (401), failed with its stderr tail, timed out, or unsupported (SSE); caches a good list |
 | `import_candidates(payload)` | MCP servers the agents already define in their own files, merged when identical; read only |
-| `parse_mcp_json(text)` | Reads MCP servers from pasted JSON (JSONC, `mcpServers`, VS Code's `servers`, a bare table or one server) the way import reads a file; read only |
+| `parse_mcp_json(text)` | Reads MCP servers from pasted JSON (JSONC, `mcpServers`, VS Code's `servers`, a bare table or one server) or, when it isn't JSON, Codex's TOML (`mcp_servers`, a bare table or one server), the way import reads a file; read only |
 | `get_mcp_tools` | Each library server's cached tool list, while its definition is unchanged |
 | `uninstall(dry_run)` | Turns every shell block and editor wrapper off, deletes the stored MCP secrets, `~/.envrouter` and the webview folders (the window's, as it exits), and reports (`UninstallReport`) what it did and the commands that remove the app and CLI; a problem in the first two steps stops before the secrets. `dry_run` is required over rpc and changes nothing. The window quits after a finished run |
 | `open_in_editor(path)` | Opens an existing file inside the home folder in the default text editor (`open -t`, `xdg-open`) |
@@ -122,7 +122,7 @@ command of the same name and arguments.
 | Concern | Choice |
 |---|---|
 | App shell | Tauri 2 with plugins: dialog, opener, window-state |
-| Backend | Rust 2021 edition, Cargo workspace, serde / serde_json / thiserror; clap (CLI); jsonc-parser (editor settings); secret-service (Linux), windows-sys (Windows) |
+| Backend | Rust 2021 edition, Cargo workspace, serde / serde_json / thiserror; clap (CLI); jsonc-parser (editor settings, pasted JSON); toml (`ops` only: Codex's config.toml for import and paste); secret-service (Linux), windows-sys (Windows) |
 | Frontend | React 19, TypeScript 7, Vite 8 |
 | Styling | Tailwind CSS 4 via `@tailwindcss/vite` |
 | Lint / format | Biome 2.5 (TS/JSON/CSS); `cargo fmt` and clippy (Rust) |

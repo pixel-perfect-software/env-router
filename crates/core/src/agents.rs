@@ -38,25 +38,32 @@ pub fn known() -> Vec<KnownAgent> {
 /// `skipSubcommands`, `skipIfPresent`): each only turns injection off for a run it would break,
 /// and without this a machine with no window would never see one a release adds. And in a config
 /// saved before version 6, one named with no MCP descriptor gains the registry's: 0.9 saved Codex
-/// without one, and a machine with no window would otherwise never hand Codex its servers. A
+/// without one, and a machine with no window would otherwise never hand Codex its servers. The
+/// same goes for the files import reads (`mcpFiles`), which Codex's gained in version 6. A
 /// version 6 config is left as it is, so a later release that drops an agent's descriptor isn't
 /// undone by this CLI.
 pub fn with_agents(mut config: ConfigState) -> ConfigState {
-    let before_codex_dialect = config.version < 6;
+    let before_version_6 = config.version < 6;
     for agent in known() {
         match config.agents.entry(agent.command) {
             Entry::Vacant(entry) => {
                 entry.insert(agent.def);
             }
-            Entry::Occupied(mut entry) => match (entry.get_mut().mcp.as_mut(), agent.def.mcp) {
-                (Some(mcp), Some(known)) => {
-                    add_missing(&mut mcp.skip_any_args, known.skip_any_args);
-                    add_missing(&mut mcp.skip_subcommands, known.skip_subcommands);
-                    add_missing(&mut mcp.skip_if_present, known.skip_if_present);
+            Entry::Occupied(mut entry) => {
+                let ours = entry.get_mut();
+                match (ours.mcp.as_mut(), agent.def.mcp) {
+                    (Some(mcp), Some(known)) => {
+                        add_missing(&mut mcp.skip_any_args, known.skip_any_args);
+                        add_missing(&mut mcp.skip_subcommands, known.skip_subcommands);
+                        add_missing(&mut mcp.skip_if_present, known.skip_if_present);
+                    }
+                    (None, Some(known)) if before_version_6 => ours.mcp = Some(known),
+                    _ => {}
                 }
-                (None, Some(known)) if before_codex_dialect => entry.get_mut().mcp = Some(known),
-                _ => {}
-            },
+                if before_version_6 && ours.mcp_files.is_none() {
+                    ours.mcp_files = agent.def.mcp_files;
+                }
+            }
         }
     }
     config
@@ -188,29 +195,33 @@ mod tests {
         );
     }
 
-    /// 0.9 saved Codex with no `mcp`, and `with_agents` kept it, so a machine with no window
-    /// never handed Codex its servers. A config from version 6 on keeps what it says, so a
-    /// release that drops a descriptor isn't undone by an older CLI.
+    /// 0.9 saved Codex with no `mcp` and no `mcpFiles`, and `with_agents` kept it, so a machine
+    /// with no window never handed Codex its servers or imported its own. A config from version 6
+    /// on keeps what it says, so a release that drops a descriptor isn't undone by an older CLI.
     #[test]
     fn a_config_before_version_6_gains_a_missing_descriptor_once() {
         let registry = known();
         let codex = registry.iter().find(|a| a.command == "codex").unwrap();
-        assert!(codex.def.mcp.is_some());
+        assert!(codex.def.mcp.is_some() && codex.def.mcp_files.is_some());
         let old = AgentDef {
             mcp: None,
+            mcp_files: None,
             ..codex.def.clone()
         };
         let current = ConfigState {
             agents: [("codex".to_string(), old)].into(),
             ..ConfigState::default()
         };
-        assert_eq!(with_agents(current.clone()).agents["codex"].mcp, None);
+        let kept = with_agents(current.clone());
+        assert_eq!(kept.agents["codex"].mcp, None);
+        assert_eq!(kept.agents["codex"].mcp_files, None);
 
         let filled = with_agents(ConfigState {
             version: 5,
             ..current
         });
         assert_eq!(filled.agents["codex"].mcp, codex.def.mcp);
+        assert_eq!(filled.agents["codex"].mcp_files, codex.def.mcp_files);
         assert_eq!(with_agents(filled.clone()), filled);
     }
 

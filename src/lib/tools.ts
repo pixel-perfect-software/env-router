@@ -36,8 +36,13 @@
 //   (0.164.0, run with a scratch home). Not MCP OAuth tokens, which the OS keyring keeps by server
 //   name and URL for every home, nor `~/.agents/skills`, read from HOME; and install.sh puts a
 //   standalone install under CODEX_HOME, so an update run in a profile's folder lands in that
-//   profile. Codex exits when the folder is missing, so the shim makes it again. No `mcpFiles` yet:
-//   Codex keeps its own servers in TOML, which importing needs a reader for (#162). No editor
+//   profile. Codex exits when the folder is missing, so the shim makes it again. `mcpFiles`, checked
+//   against the 0.164.0 source (#162): servers are `[mcp_servers.<name>]` tables in TOML, in
+//   `CODEX_HOME/config.toml` and, in a trusted project, in each `<folder>/.codex/config.toml` from
+//   the project root (the nearest ancestor with a `.git`) down to the working folder. Import reads
+//   the user's file in each home and the trigger folders' `.codex/config.toml` only, with no walk up
+//   and no trust check, as for Claude and Copilot (`codex_entry` in `mcp_import.rs` says what comes
+//   over: a server's fields, and its variables passed by name as `${NAME}`). No editor
 //   hook: the VS Code extension (`openai.chatgpt`) runs its bundled binary as one app-server per
 //   window, with no wrapper setting. No `mark`: Simple Icons has no OpenAI logo. The MCP
 //   descriptor, checked against the 0.164.0 source: `--config=` is global and appends one value

@@ -227,11 +227,13 @@ function rowsOf(candidates: ImportCandidate[], config: ConfigState): Row[] {
   const taken = new Set(Object.keys(config.mcpServers))
   return candidates.map((candidate) => {
     const server = serverWithInit(candidate.server)
-    const saved = config.mcpServers[candidate.name]
-    // An earlier import may have added the --init, and moved a credential to the secret store.
-    const present = sameDefinition(saved, candidate.server) || sameDefinition(saved, server)
-    // A name agents can't take (`my server`) becomes one they can.
-    const as = present ? candidate.name : freeName(asServerName(candidate.name), taken)
+    // An earlier import may have added the --init, and moved a credential to the secret store. And it
+    // saved a name agents can't take (Codex's `docs.search`) as one they can (`docs-search`).
+    const inLibrary = [candidate.name, asServerName(candidate.name)].find(
+      (name) => sameDefinition(config.mcpServers[name], candidate.server) || sameDefinition(config.mcpServers[name], server),
+    )
+    const present = inLibrary !== undefined
+    const as = inLibrary ?? freeName(asServerName(candidate.name), taken)
     if (!present) taken.add(as)
     return { candidate, as, present, draft: withSecretsLocked(draftOf(as, server)), init: server !== candidate.server }
   })
@@ -389,7 +391,7 @@ export function ImportView({
                           row.as !== row.candidate.name && (
                             <span className="text-caption text-ink-2">
                               <span className="font-mono">{row.candidate.name}</span>{' '}
-                              {SERVER_NAME.test(row.candidate.name) ? 'is taken' : "isn't a name agents accept"}
+                              {SERVER_NAME.test(row.candidate.name) ? 'is taken' : "isn't a name EnvRouter can use"}
                             </span>
                           )
                         )}
@@ -516,7 +518,7 @@ export function PasteView({
           className="min-h-[180px] flex-1 resize-none rounded-control bg-field px-2.5 py-2 font-mono text-small text-ink select-text shadow-[inset_0_0_0_1px_var(--er-field-edge)] placeholder:text-ink-2 placeholder:italic focus:shadow-[inset_0_0_0_1.5px_var(--er-accent-ink)] focus:outline-none forced-colors:border forced-colors:border-[ButtonText]"
         />
         <p id="paste-note" className="mt-1.5 text-caption text-ink-2">
-          An mcpServers block from a README or an agent's file, VS Code's servers, or one server on its own.
+          An mcpServers block from a README or an agent's file, VS Code's servers, Codex's [mcp_servers] TOML, or one server on its own.
         </p>
       </div>
       <Footer error={error} errorId="paste-error">
