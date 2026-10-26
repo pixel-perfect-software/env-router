@@ -523,12 +523,17 @@ Parked.
    out, `codex_apps` and `codex_tui` are refused as names, and an install that saved Codex
    without a descriptor gains it (`with_agents`). Decided 2026-10-26: servers keep their library
    names, so a same-name server in Codex's own config merges with the profile's and a different
-   transport fails every run in that folder. Ship #162 in the same release, whose TOML reader
-   lets a save warn and `check_folder` report that mismatch. Plain values are on Codex's command
+   transport fails every run in that folder. Ship #162 in the same release: its TOML reader and
+   `ops::mcp_clash` make a save warn and `check_folder` report that mismatch. Plain values are on Codex's command
    line (README's Privacy section), and its OAuth store stays at its default. Not verified: WSL, a
    Linux desktop, Codex before 0.164.0.
 7. **#162: the import reads Codex's TOML and Copilot's `.github/mcp.json`,** with `mcpFiles`
-   taking several project files and a format (`CONFIG_VERSION`).
+   taking several project files (`CONFIG_VERSION` 6; no separate format field, since the agent's
+   dialect already says it). Built in three PRs: Copilot's project files with or without the
+   `mcpServers` wrapper, Codex's `config.toml` and `.codex/config.toml` and pasted TOML, and the
+   transport-mismatch warning on save plus a problem verdict in Check Folder that follows Codex's
+   project-root and trust rules. Not verified: WSL, a Linux desktop, Codex before 0.164.0, a
+   worktree trusted only through its main repository.
 8. **#163: SSE marked deprecated, and Claude's `ws` servers.** SSE has been eligible for removal
    since about 2026-09-03 (three months after SEP-2596 went Final, not a 12-month window); `ws`
    is Claude's alone and outside the spec.

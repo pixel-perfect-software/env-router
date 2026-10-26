@@ -16,6 +16,7 @@ use envrouter_core::programs::is_executable;
 use envrouter_core::{mcp, paths, resolve, Error, Result, EXIT_TOOL_NOT_FOUND};
 use serde::{Deserialize, Serialize};
 
+use crate::mcp_clash::McpClash;
 use crate::uninstall;
 
 const BEGIN: &str = "# >>> envrouter >>>";
@@ -531,6 +532,9 @@ pub enum FolderCheck {
         /// A file that turns the profile's MCP servers off on this machine, such as Claude
         /// Code's enterprise `managed-mcp.json`. `mcp` is empty then.
         mcp_managed_by: Option<String>,
+        /// Servers the profile hands the agent that its own files define with the other
+        /// transport, so it won't start. Empty here: `commands::check_folder` fills it in.
+        mcp_clashes: Vec<McpClash>,
         /// The run goes through an alias with the tool's name that runs the tool itself, as
         /// `alias claude='claude --model opus'` does: what it expands to.
         via_alias: Option<String>,
@@ -1005,6 +1009,7 @@ pub fn check_folder(shell: Shell, home: &Path, folder: &Path, tool: &str) -> Res
         value: explanation.value,
         mcp: explanation.mcp,
         mcp_managed_by: explanation.mcp_managed_by,
+        mcp_clashes: Vec::new(),
         via_alias: alias.map(|(expansion, _)| expansion),
         real: explanation.real,
     })
@@ -1437,10 +1442,15 @@ mod tests {
                 value: Some("/x".into()),
                 mcp: vec!["github".into()],
                 mcp_managed_by: None,
+                mcp_clashes: vec![McpClash {
+                    server: "github".into(),
+                    file: "/h/.codex/config.toml".into(),
+                    openable: true,
+                }],
                 via_alias: Some("t -v".into()),
                 real: "/bin/t".into(),
             }),
-            r#"{"status":"routed","profile":null,"profileId":null,"envVar":"V","value":"/x","mcp":["github"],"mcpManagedBy":null,"viaAlias":"t -v","real":"/bin/t"}"#
+            r#"{"status":"routed","profile":null,"profileId":null,"envVar":"V","value":"/x","mcp":["github"],"mcpManagedBy":null,"mcpClashes":[{"server":"github","file":"/h/.codex/config.toml","openable":true}],"viaAlias":"t -v","real":"/bin/t"}"#
         );
         assert_eq!(
             json(&Preview {
@@ -1768,6 +1778,7 @@ mod tests {
                 value: Some(home.join(".claude-work").display().to_string()),
                 mcp: Vec::new(),
                 mcp_managed_by: None,
+                mcp_clashes: Vec::new(),
                 via_alias: None,
                 real: home.join("bin/claude").display().to_string(),
             }

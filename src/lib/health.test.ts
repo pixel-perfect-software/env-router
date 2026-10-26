@@ -195,6 +195,7 @@ const routed: FolderCheck = {
   value: null,
   mcp: [],
   mcpManagedBy: null,
+  mcpClashes: [],
   viaAlias: null,
   real: '/bin/claude',
 }

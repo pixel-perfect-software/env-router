@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { FolderCheck, ShellStatus } from './types'
-import { type Owner, offersFix, verdictOf } from './verdict'
+import { type Owner, offersFix, routedAndStarts, verdictOf } from './verdict'
 
 const HOME = '/Users/sam'
 const SHIMS = `${HOME}/.envrouter/shims`
@@ -85,6 +85,7 @@ describe('verdictOf', () => {
       value: `${HOME}/.claude-work`,
       mcp: [],
       mcpManagedBy: null,
+      mcpClashes: [],
       viaAlias: null,
       real: '/opt/bin/claude',
     }
@@ -107,6 +108,7 @@ describe('verdictOf', () => {
       value: null,
       mcp: [],
       mcpManagedBy: null,
+      mcpClashes: [],
       viaAlias: null,
       real: '/opt/bin/claude',
     }
@@ -120,6 +122,55 @@ describe('verdictOf', () => {
     ])
   })
 
+  it("offers the agent's own file to open when it defines a server the profile hands it with the other transport", () => {
+    const v = verdict({
+      status: 'routed',
+      profile: 'Work',
+      profileId: 'p2',
+      envVar: 'CLAUDE_CONFIG_DIR',
+      value: `${HOME}/.claude-work`,
+      mcp: ['github'],
+      mcpManagedBy: null,
+      mcpClashes: [
+        { server: 'github', file: '/Volumes/dots/.codex/config.toml', openable: false },
+        { server: 'linear', file: '/Volumes/dots/.codex/config.toml', openable: false },
+        { server: 'github', file: `${HOME}/dev/work/.codex/config.toml`, openable: true },
+      ],
+      viaAlias: null,
+      real: '/opt/bin/claude',
+    })
+    expect(v.tone).toBe('problem')
+    expect(v.headline).toBe("claude won't start here")
+    expect(v.note).toBe(
+      'Work and /Volumes/dots/.codex/config.toml (and 1 more file) both define github and linear, one as a command and the other as a URL, and claude merges servers that share a name. Rename one of them.',
+    )
+    // Open refuses a file outside the home folder, so the action is the first one inside it.
+    expect(v.action).toEqual({ kind: 'openFile', path: `${HOME}/dev/work/.codex/config.toml` })
+    expect(offersFix(v)).toBe(true)
+  })
+
+  it('offers no action when no clashing file is one Open can open', () => {
+    const check: FolderCheck = {
+      status: 'routed',
+      profile: 'Work',
+      profileId: 'p2',
+      envVar: null,
+      value: null,
+      mcp: ['github'],
+      mcpManagedBy: null,
+      mcpClashes: [{ server: 'github', file: '/opt/repo/.codex/config.toml', openable: false }],
+      viaAlias: null,
+      real: '/opt/bin/claude',
+    }
+    const v = verdict(check)
+    expect(v.tone).toBe('problem')
+    expect(v.note).toContain('/opt/repo/.codex/config.toml')
+    expect(v.action).toBeUndefined()
+    // A routed check the agent can't start in isn't a working route: no green slip, no first successful check.
+    expect(routedAndStarts(check)).toBe(false)
+    expect(routedAndStarts({ ...check, mcpClashes: [] })).toBe(true)
+  })
+
   it('names an alias the run goes through on its way to the shim', () => {
     const v = verdict({
       status: 'routed',
@@ -129,6 +180,7 @@ describe('verdictOf', () => {
       value: `${HOME}/.claude-work`,
       mcp: [],
       mcpManagedBy: null,
+      mcpClashes: [],
       viaAlias: 'claude --model opus',
       real: '/opt/bin/claude',
     })
@@ -147,6 +199,7 @@ describe('verdictOf', () => {
       value: null,
       mcp: [],
       mcpManagedBy: managed,
+      mcpClashes: [],
       viaAlias: null,
       real: '/opt/bin/claude',
     }
@@ -168,6 +221,7 @@ describe('verdictOf', () => {
       value: null,
       mcp: [],
       mcpManagedBy: null,
+      mcpClashes: [],
       viaAlias: null,
       real: '/opt/bin/claude',
     })
@@ -185,6 +239,7 @@ describe('verdictOf', () => {
       value: null,
       mcp: [],
       mcpManagedBy: null,
+      mcpClashes: [],
       viaAlias: null,
       real: '/opt/bin/claude',
     }
@@ -205,6 +260,7 @@ describe('verdictOf', () => {
       value: null,
       mcp: [],
       mcpManagedBy: null,
+      mcpClashes: [],
       viaAlias: null,
       real: '/opt/bin/claude',
     }

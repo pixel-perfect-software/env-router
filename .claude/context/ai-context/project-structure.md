@@ -26,6 +26,7 @@ env-router/
 │   │   ├── src/shims.rs       # installs the shim and helpers (and asks them their config and launcher versions); syncs one symlink per tool
 │   │   ├── src/uninstall.rs   # uninstall: shell blocks, editor wrappers, the secret item, ~/.envrouter, the app's webview folders (the app deletes its own as it exits, `finish_uninstall`), in that order (a problem before the secrets stops the run), the commands that remove the app and CLI, and the app's lock the CLI's uninstall checks
 │   │   ├── src/editors.rs     # points an agent extension's process-wrapper setting at the shim (desktop editors and remote servers)
+│   │   ├── src/mcp_clash.rs   # Codex's same-name merge: finds servers a profile hands it that its own config.toml (or a trusted project's .codex/config.toml) defines with the other transport; the save warning and check_folder's mcpClashes
 │   │   ├── src/mcp_import.rs  # reads the agents' own MCP files (by their mcpFiles descriptor, user and project files) for import (JSON for Claude and Copilot, TOML for Codex), and pasted JSON or TOML
 │   │   ├── src/mcp_probe.rs   # MCP server check (rmcp): tools, needs-login, stderr tail; tool-list cache
 │   │   └── build.rs           # builds the shim and helper its tests install
@@ -109,7 +110,7 @@ command of the same name and arguments.
 | `set_shell_integration(shell, enabled)` | Adds or removes the startup-file block |
 | `get_editor_status(hooks)` | Each VS Code-family editor's (and remote server's) state for each agent's extension hook (from `agents.json`) |
 | `set_editor_integration(editor, command, hook, enabled)` | Sets or clears the extension's process-wrapper setting in the editor's settings, keeping comments; never replaces someone else's wrapper |
-| `check_folder(shell, folder, tool)` | Real-shell check, after running the prompt hooks once: routed (with the MCP servers it adds), shadowed by an alias/function, shadowed on PATH (which includes a shell that's off, and says whether a prompt hook did it), not found, tool not installed, or shim failed |
+| `check_folder(shell, folder, tool)` | Real-shell check, after running the prompt hooks once: routed (with the MCP servers it adds), shadowed by an alias/function, shadowed on PATH (which includes a shell that's off, and says whether a prompt hook did it), not found, tool not installed, or shim failed. A routed answer carries `mcpClashes`: servers the profile hands the agent that its own files define with the other transport (Codex won't start) |
 | `preview_folder(payload, folder, tool)` | Instant profile preview from an unsaved config |
 | `check_mcp_server(name, server, secrets)` | Starts or connects to one MCP server with a new terminal's PATH and lists its tools: ok, needs sign-in (401), failed with its stderr tail, timed out, or unsupported (SSE); caches a good list |
 | `import_candidates(payload)` | MCP servers the agents already define in their own files, merged when identical; read only |

@@ -316,8 +316,11 @@ server, and nothing is written to disk for it. That has some consequences:
 - **A server named like one of yours in Codex's own `config.toml` merges with it.** Codex joins the
   two key by key, so the same transport works (EnvRouter's fields win, yours still apply). A
   different transport, say a command in one and a URL in the other, stops every `codex` command
-  in that folder with an error ending in `url is not supported for stdio`. Rename one of them,
-  or run `ENVROUTER_MCP=0 codex` meanwhile.
+  in that folder with an error ending in `url is not supported for stdio`. EnvRouter warns when you
+  save, and Check Folder shows it with the file to open (`envrouter check` prints it and exits 1);
+  it reads the `config.toml` of the profile's Codex folder (`~/.codex` when it doesn't set one) and
+  the checked folder's `.codex/config.toml` files that Codex trusts. Rename one of them, or run
+  `ENVROUTER_MCP=0 codex` meanwhile.
 - **`codex_apps` and `codex_tui` are Codex's own servers' names**, so a server in your library can't
   take either name while Codex is set up.
 - **Sign-ins are Codex's:** `codex mcp login <name>`. They're kept in the system's keyring by
@@ -375,7 +378,7 @@ folder its MCP files are written to.
 | `envrouter install` | Installs the shim, the secrets helper and the CLI into `~/.envrouter/bin`, and a shim per agent. When that changes the installed files, it renders the MCP files again to match, and asks the system's store once to let the new helper in |
 | `envrouter shell on\|off <zsh\|bash\|fish>` | Adds or removes the block in that shell's startup files |
 | `envrouter editor on\|off <editor> [--agent <command>]` | Routes an editor extension (`code`, `cursor`, `remote-code` for the VS Code Server, …) |
-| `envrouter check [folder] [--tool <command>] [--shell <shell>]` | Starts a shell the way a new terminal would and reports what running the agent there does; exits 1 unless it's routed |
+| `envrouter check [folder] [--tool <command>] [--shell <shell>]` | Starts a shell the way a new terminal would and reports what running the agent there does; exits 1 unless it's routed, and when Codex won't start there because one of its own files defines a server of the profile's with the other transport |
 | `envrouter explain [folder] [--tool <command>]` | Which profile the saved config picks, without starting a shell |
 | `envrouter apply` | Validates `~/.envrouter/config.json` after you edit it by hand, and renders its MCP files and shims |
 | `envrouter secret set <ID>` | Stores the value of a server's secret in the system's store: piped in, or typed without echo; never on the command line |
@@ -548,7 +551,7 @@ on the server:
 | You want one run without EnvRouter's MCP servers | `ENVROUTER_MCP=0 claude`, or pass `--strict-mcp-config` to `claude`. |
 | Claude Code exits at startup with `You cannot dynamically configure MCP servers when an enterprise MCP config is present` | Your organization manages MCP servers on this machine (`managed-mcp.json` in `/Library/Application Support/ClaudeCode/` or `/etc/claude-code/`). EnvRouter leaves its servers off wherever that file exists and says so when `claude` starts; the folder still gets its profile's config. If you've just updated EnvRouter, save once in the app (or run `envrouter apply`) so the profiles' MCP files pick this up. |
 | An MCP server doesn't show in `claude mcp list` or `copilot mcp list` | Expected: those commands don't list servers passed on the command line. Use `/mcp` inside the agent. `codex mcp list` does show them, unmarked, along with the ones in Codex's own config. |
-| Every `codex` command in a folder fails with `url is not supported for stdio` (or the reverse) | A profile's server and one in Codex's `config.toml` (or a trusted project's `.codex/config.toml`) share a name but not a transport, and Codex merges the two. Rename one, or run `ENVROUTER_MCP=0 codex` to skip EnvRouter's servers for that run. |
+| Every `codex` command in a folder fails with `url is not supported for stdio` (or the reverse) | A profile's server and one in Codex's `config.toml` (or a trusted project's `.codex/config.toml`) share a name but not a transport, and Codex merges the two. EnvRouter warns when you save, and Check Folder shows it as "codex won't start here" with the file to open; `envrouter check` prints it and exits 1. Rename one, or run `ENVROUTER_MCP=0 codex` to skip EnvRouter's servers for that run. |
 | Codex has no shared background server in a folder | Expected where the profile has MCP servers: Codex runs without it when given any configuration override. Folders with no servers, and `codex queue`, `archive`, `unarchive`, `delete` and `remote-control` everywhere, are unaffected. |
 | Saving a secret fails on Linux with "there's no Secret Service" | Install and start GNOME Keyring or KWallet, then save again. Until then a remote server that needs a secret is left out, and a command server that needs one doesn't start (the agent shows it as failed); the rest still load. |
 | A server fails with `envrouter: … is gone, so EnvRouter no longer starts the MCP server …` | The profile no longer has that server, and the agent session began before you removed it. Restart the agent. EnvRouter keeps a removed server's file for ten minutes, so a session can still reconnect to it for a while. |
