@@ -153,8 +153,8 @@ mod tests {
     }
 
     /// Claude's subcommands that don't run with an option ahead of them, from a sweep of
-    /// 2.1.309 (the reasons are beside the registry's import in `src/lib/tools.ts`). Change
-    /// this only after checking a current release.
+    /// 2.1.309 and of `remote-control`'s aliases on 2.1.310 (the reasons are beside the
+    /// registry's import in `src/lib/tools.ts`). Change this only after checking a current release.
     #[test]
     fn claude_skips_injection_for_the_subcommands_that_refuse_it() {
         let registry = known();
@@ -163,16 +163,20 @@ mod tests {
             claude.def.mcp.as_ref().unwrap().skip_subcommands,
             [
                 "attach",
+                "bridge",
                 "daemon",
                 "kill",
                 "logs",
                 "plugin",
                 "plugins",
+                "rc",
+                "remote",
                 "remote-control",
                 "respawn",
                 "rm",
                 "self-hosted-runner",
                 "stop",
+                "sync",
             ]
         );
     }
