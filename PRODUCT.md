@@ -26,7 +26,10 @@ EnvRouter works through a shim on PATH rather than shell hooks or per-project do
 covers every shell and scripts, never writes into the user's repositories, applies edits
 without reloading any terminal, and can show exactly what a new terminal window would do in
 any folder. It's specific to developer CLIs and their account or config separation, not a
-general env-var manager like direnv or mise.
+general env-var manager like direnv or mise. Nor is it a control panel for agent accounts: usage
+and quota display, failover at a rate limit, provider routing and adopting an existing login are
+out of scope. Its features are about the user's local configs (profiles, config folders, MCP
+servers), such as exporting and importing profiles.
 
 ## Operating Context
 - **A desktop app for macOS and Linux** (Tauri v2: a native window around a web view; React frontend), plus the `envrouter` CLI for machines without a desktop (servers, WSL distros). The app is opened occasionally, not kept running. The real usage happens in the terminal.
@@ -35,12 +38,12 @@ general env-var manager like direnv or mise.
 - **Diagnosis results:** routed (profile, variable, value, real binary); blocked by a shell alias or function; blocked by another copy earlier on PATH; integration off in that shell; not found; tool not installed; shim failed.
 
 ## Capabilities and Constraints
-- Profiles: a name, trigger folders (the native folder picker; a trigger covers its whole subtree), and per-tool settings. The agents offered come from a registry (`src/lib/agents.json`, read by the window and the CLI alike). An agent qualifies only if one variable separates its whole account, logins included. opencode (logins kept outside its config dir) and Aider (API keys) don't qualify. Codex CLI does (`CODEX_HOME`), though its MCP sign-ins are shared across homes; Qwen Code would; Gemini CLI would, and may come back as an add-on. An agent's editor extension that runs its own copy of the agent (Claude Code for VS Code, Cursor, Windsurf) is routed through its process-wrapper setting, including over VS Code Remote into WSL; GUI apps without such a setting can't be routed.
+- Profiles: a name, trigger folders (the native folder picker; a trigger covers its whole subtree), and per-tool settings. The agents offered come from a registry (`src/lib/agents.json`, read by the window and the CLI alike). An agent qualifies only if one variable separates its whole account, logins included. opencode (logins kept outside its config dir) and Aider (API keys) don't qualify; OpenCode comes in as a full agent once a variable moves its logins (`OPENCODE_HOME` is requested upstream), not as an MCP-only one. Codex CLI does (`CODEX_HOME`), though its MCP sign-ins are shared across homes; Qwen Code would; Gemini CLI would, and may come back as an add-on. An agent's editor extension that runs its own copy of the agent (Claude Code for VS Code, Cursor, Windsurf) is routed through its process-wrapper setting, including over VS Code Remote into WSL; GUI apps without such a setting can't be routed.
 - The most specific trigger's profile wins outright. A profile that doesn't configure a tool leaves it unrouted in its folders.
 - A folder can belong to only one profile. Save errors come back as user-readable strings to show inline.
 - Shell integration for zsh, bash and fish, by adding or removing a marked block in the shell's startup files. The app shows which files it edits.
 - Folder check (real shell, slow, up to ~15s) and instant preview (from the config alone).
-- No OAuth or logins. A new agent config folder starts logged out, and remote MCP servers sign in through the agent (`/mcp`); the user does both from the terminal. The only credentials EnvRouter holds are MCP secret values the user enters, in the platform's secret store: the macOS Keychain, the Linux keyring (Secret Service), or, inside WSL, the Windows Credential Manager.
+- No OAuth or logins. A new agent config folder starts logged out, and remote MCP servers sign in through the agent (`/mcp`); the user does both from the terminal. There are no pre-registered OAuth clients: both agents register themselves with a server that allows it (Client ID Metadata Documents or dynamic registration), and neither takes a client secret from EnvRouter. The only credentials EnvRouter holds are MCP secret values the user enters, in the platform's secret store: the macOS Keychain, the Linux keyring (Secret Service), or, inside WSL, the Windows Credential Manager.
 - MCP servers reach the agent through the shim at launch, with no background process: the app only needs to run when servers or profiles change.
 - macOS 11 or later on Apple Silicon, and Linux (x86_64, aarch64), WSL 2 included; native Windows is planned. No paid Apple Developer ID, so the macOS app is signed ad hoc and not notarized: users install it through a Homebrew cask (pixel-perfect-software/homebrew-tap), which clears the quarantine flag. Linux users install a `.deb` or AppImage from the release; the CLI comes from the same tap as a formula. Building from source works everywhere.
 
