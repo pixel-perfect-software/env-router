@@ -1,11 +1,14 @@
 {
   "$schema": "https://raw.githubusercontent.com/pixel-perfect-software/always-up-to-date/main/schema/config.schema.json",
-  "allowMinorUpdates": true,
-  "allowMajorUpdates": false,
   "debug": false,
   "silent": false,
-  "updateAllowlist": [],
-  "updateDenylist": ["@tauri-apps/api", "@tauri-apps/cli", "@tauri-apps/plugin-dialog", "@tauri-apps/plugin-opener"],
+  "beyondRange": "none",
+  "rules": {
+    "@tauri-apps/api": "hold",
+    "@tauri-apps/cli": "hold",
+    "@tauri-apps/plugin-dialog": "hold",
+    "@tauri-apps/plugin-opener": "hold"
+  },
   "cooldown": {
     "patch": "2 days",
     "minor": "1 week"

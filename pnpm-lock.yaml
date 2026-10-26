@@ -189,8 +189,8 @@ importers:
         specifier: ^2.5.15
         version: 2.5.15
       '@pixel-perfect-software/always-up-to-date':
-        specifier: ^1.0.31
-        version: 1.0.31(@types/node@26.6.5)
+        specifier: ^2.1.0
+        version: 2.1.0(@types/node@26.6.5)
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.4(@types/node@26.6.5)(jiti@2.7.0))
@@ -471,9 +471,9 @@ packages:
   '@oxc-project/types@0.152.0':
     resolution: {integrity: sha512-oM/5rLBm2tPkg0iBgkH/FOeR3PCDpY19GTgAZjMFM8h9WI9VW7cLgzp6nwtarYKmovavIQZ+Fe/RKX/8C8O/Rw==}
 
-  '@pixel-perfect-software/always-up-to-date@1.0.31':
-    resolution: {integrity: sha512-HmO332WbaYdn3YGzSWZoBcVty7RrGHL9jRP/OUuw5jp7b8JEiGivJciOnbyv7VDBPXZuj5vMA5BxIfVXrJO5vA==}
-    engines: {node: '>=24.0.0', pnpm: '>=11.0.0'}
+  '@pixel-perfect-software/always-up-to-date@2.1.0':
+    resolution: {integrity: sha512-FwvrnFWsdhj7vVtMVZRILw/Xwew47Lygvn2UTRmzEoeP/O9V5nrmxHMdSDhJsDfqnNKGo1MccCUipiUHWlA+bA==}
+    engines: {node: '>=24.0.0', pnpm: '>=12.0.0'}
     hasBin: true
 
   '@rolldown/binding-android-arm-eabi@1.2.12':
@@ -1807,7 +1807,7 @@ snapshots:
 
   '@oxc-project/types@0.152.0': {}
 
-  '@pixel-perfect-software/always-up-to-date@1.0.31(@types/node@26.6.5)':
+  '@pixel-perfect-software/always-up-to-date@2.1.0(@types/node@26.6.5)':
     dependencies:
       '@inquirer/prompts': 8.7.3(@types/node@26.6.5)
       colorette: 2.0.20
