@@ -6,7 +6,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -202,7 +202,7 @@ fn never_execs_another_copy_of_the_shim() {
     copy_executable(Path::new(SHIM), &other.join("bin/envrouter-shim"));
     symlink(other.join("bin/envrouter-shim"), other.join("shims/claude")).unwrap();
 
-    let mut child = Command::new(f.shims.join("claude"))
+    let child = Command::new(f.shims.join("claude"))
         .args(["two words", "x"])
         .current_dir(f.home.join("elsewhere"))
         .env("HOME", f.home.join("elsewhere"))
@@ -221,21 +221,82 @@ fn never_execs_another_copy_of_the_shim() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while child.try_wait().unwrap().is_none() {
-        if Instant::now() > deadline {
-            child.kill().unwrap();
-            panic!("the shim and its copy kept exec'ing each other");
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-    let output = child.wait_with_output().unwrap();
+    let output = output_within(child, "the shim and its copy kept exec'ing each other");
     assert_eq!(
         stdout(&output),
         "unset 2 two words x\n",
         "{}",
         stderr(&output)
     );
+}
+
+/// The child's output once it exits, or a failure with `stuck` if it hasn't within 10 seconds:
+/// two programs exec'ing each other never exit.
+fn output_within(mut child: Child, stuck: &str) -> Output {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while child.try_wait().unwrap().is_none() {
+        if Instant::now() > deadline {
+            child.kill().unwrap();
+            panic!("{stuck}");
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    child.wait_with_output().unwrap()
+}
+
+/// Like VS Code's `copilot-shim`: runs the first `claude` on PATH that isn't this script.
+const PATH_WRAPPER: &str = r#"#!/bin/sh
+me=$(cd "$(dirname "$0")" && pwd)
+IFS=:
+for dir in $PATH; do
+  [ "$dir" = "$me" ] && continue
+  [ -x "$dir/claude" ] && exec "$dir/claude" "$@"
+done
+echo "wrapper: no claude"
+exit 5
+"#;
+
+/// A wrapper further along PATH that looks there for the tool, skipping only itself, finds the
+/// shim again, and each would exec the other forever (#154). The tool still runs routed, with
+/// the servers added once, and with no tool past the wrapper, the wrapper gives its own answer.
+#[test]
+fn a_wrapper_that_looks_for_the_tool_on_path_never_brings_the_shim_back() {
+    let f = Fixture::new(Some(CONFIG));
+    f.write_launch("2", &fs_server());
+    let wrapper = f.home.join("wrapper-bin");
+    fs::create_dir_all(&wrapper).unwrap();
+    write_executable(&wrapper.join("claude"), PATH_WRAPPER);
+    let (shims, wrapper, real) = (f.shims.display(), wrapper.display(), f.real_bin.display());
+    for (path, expected, code) in [
+        (
+            format!("{shims}:{wrapper}:{real}:/usr/bin:/bin"),
+            format!(
+                "{}/.claude-work 3 --mcp-config=/m/fs.json --disallowedTools=mcp__fs__rm x\n",
+                f.home.display()
+            ),
+            3,
+        ),
+        (
+            format!("{shims}:{wrapper}:/usr/bin:/bin"),
+            "wrapper: no claude\n".to_owned(),
+            5,
+        ),
+    ] {
+        let child = Command::new(f.shims.join("claude"))
+            .arg("x")
+            .current_dir(f.home.join("dev/work/app"))
+            .env("HOME", &f.home)
+            .env("PATH", &path)
+            .env_remove("CLAUDE_CONFIG_DIR")
+            .env_remove("ENVROUTER_EXPLAIN")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let output = output_within(child, "the shim and the wrapper kept exec'ing each other");
+        assert_eq!(stdout(&output), expected, "{path}: {}", stderr(&output));
+        assert_eq!(output.status.code(), Some(code), "{path}");
+    }
 }
 
 #[test]
