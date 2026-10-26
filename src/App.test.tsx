@@ -1176,7 +1176,7 @@ describe('agents a new terminal does not find', () => {
     cleanup()
     await open('?scenario=first-run&agents=claude')
     const welcome = await screen.findByRole('heading', { name: 'The folder decides' })
-    expect(welcome.parentElement?.textContent).toMatch(/claude and copilot \(not installed\) use/)
+    expect(welcome.parentElement?.textContent).toMatch(/claude, copilot \(not installed\) and codex \(not installed\) use/)
   })
 
   it('are not marked while the terminal has not said what it has', async () => {

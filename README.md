@@ -14,7 +14,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg" alt="License: GPL-3.0-or-later" /></a>
   <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20WSL%202-4C6EF5" alt="Platforms: macOS, Linux and WSL 2" />
   <a href="https://github.com/pixel-perfect-software/homebrew-tap"><img src="https://img.shields.io/badge/homebrew-pixel--perfect--software%2Ftap-FBB040?logo=homebrew&logoColor=white" alt="Homebrew tap: pixel-perfect-software/tap" /></a>
-  <img src="https://img.shields.io/badge/agents-Claude%20Code%20%7C%20Copilot%20CLI-6E56CF" alt="Agents: Claude Code and Copilot CLI" />
+  <img src="https://img.shields.io/badge/agents-Claude%20Code%20%7C%20Copilot%20CLI%20%7C%20Codex%20CLI-6E56CF" alt="Agents: Claude Code, Copilot CLI and Codex CLI" />
 </p>
 
 <p align="center">
@@ -39,6 +39,7 @@ selection of MCP servers from a library you keep in the app:
 |---|---|---|---|
 | Claude Code | `claude` | `CLAUDE_CONFIG_DIR` | `--mcp-config=<file>` |
 | Copilot CLI | `copilot` | `COPILOT_HOME` | `--additional-mcp-config=@<file>` |
+| Codex CLI | `codex` | `CODEX_HOME` | Not yet: Codex gets the profile's account, not its servers |
 
 ## ✨ Features
 
@@ -83,7 +84,7 @@ selection of MCP servers from a library you keep in the app:
   The app needs WebKitGTK 4.1, which the `.deb` installs. Secrets need a keyring (GNOME Keyring
   or KWallet); in WSL they go to Windows instead, through a helper that comes with EnvRouter.
 - zsh, bash or fish.
-- Claude Code and/or Copilot CLI, installed the usual way.
+- Claude Code, Copilot CLI or Codex CLI, installed the usual way.
 
 EnvRouter is pre-release. The macOS app is signed ad hoc rather than with a paid Apple Developer
 ID, so it isn't notarized: install it with Homebrew, which clears the download's quarantine
@@ -186,7 +187,7 @@ and then `target/release/envrouter install`. The first build takes a few minutes
 1. **Create a profile** (⌘N; Ctrl+N on Linux). Give it a name, add its trigger folders with
    **Add Folder…**, and set a config folder for each agent you want to route, such as
    `~/.claude-work`. EnvRouter creates missing config folders inside your home folder when you
-   save. An agent a new terminal can't find on its `PATH` is still offered, marked **Not
+   save, and again when an agent starts in a folder whose config folder has been deleted. An agent a new terminal can't find on its `PATH` is still offered, marked **Not
    installed** (with its vendor's install line), so you can set it up first.
 2. **Turn on your shell.** Click the shell status in the toolbar (the `zsh` and `bash` dots) and
    switch on the shells you use. This adds a marked block to the end of each startup file that

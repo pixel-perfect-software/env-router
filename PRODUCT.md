@@ -14,7 +14,7 @@ right one picked automatically from the folder they're in, and then to forget th
 
 ## Product Purpose
 EnvRouter sets a per-agent environment variable based on the folder a command runs in: Claude
-Code (`CLAUDE_CONFIG_DIR`) and Copilot CLI (`COPILOT_HOME`). Users define **profiles**, each mapping **trigger folders** to a config
+Code (`CLAUDE_CONFIG_DIR`), Copilot CLI (`COPILOT_HOME`) and Codex CLI (`CODEX_HOME`). Users define **profiles**, each mapping **trigger folders** to a config
 folder per agent. Success means typing `claude` or `copilot` anywhere uses the right account, with no
 aliases, wrappers or reloading. The same profiles also choose which **MCP servers** an agent loads in their folders, from a
 server library the user keeps in the app, so the right tools come with the right account. The
@@ -35,7 +35,7 @@ general env-var manager like direnv or mise.
 - **Diagnosis results:** routed (profile, variable, value, real binary); blocked by a shell alias or function; blocked by another copy earlier on PATH; integration off in that shell; not found; tool not installed; shim failed.
 
 ## Capabilities and Constraints
-- Profiles: a name, trigger folders (the native folder picker; a trigger covers its whole subtree), and per-tool settings. The agents offered come from a registry (`src/lib/agents.json`, read by the window and the CLI alike). An agent qualifies only if one variable separates its whole account, logins included. opencode (logins kept outside its config dir) and Aider (API keys) don't qualify. Codex and Gemini CLI would, and may come back as add-ons; they're left out to keep the app focused. An agent's editor extension that runs its own copy of the agent (Claude Code for VS Code, Cursor, Windsurf) is routed through its process-wrapper setting, including over VS Code Remote into WSL; GUI apps without such a setting can't be routed.
+- Profiles: a name, trigger folders (the native folder picker; a trigger covers its whole subtree), and per-tool settings. The agents offered come from a registry (`src/lib/agents.json`, read by the window and the CLI alike). An agent qualifies only if one variable separates its whole account, logins included. opencode (logins kept outside its config dir) and Aider (API keys) don't qualify. Codex CLI does (`CODEX_HOME`), though its MCP sign-ins are shared across homes; Qwen Code would; Gemini CLI would, and may come back as an add-on. An agent's editor extension that runs its own copy of the agent (Claude Code for VS Code, Cursor, Windsurf) is routed through its process-wrapper setting, including over VS Code Remote into WSL; GUI apps without such a setting can't be routed.
 - The most specific trigger's profile wins outright. A profile that doesn't configure a tool leaves it unrouted in its folders.
 - A folder can belong to only one profile. Save errors come back as user-readable strings to show inline.
 - Shell integration for zsh, bash and fish, by adding or removing a marked block in the shell's startup files. The app shows which files it edits.

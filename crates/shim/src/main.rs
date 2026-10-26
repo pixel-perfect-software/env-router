@@ -161,6 +161,13 @@ fn main() -> ExitCode {
     }
     command.args(&user_args).env(RAN_VAR, this_process);
     if let Some((var, value)) = route.env {
+        // Codex exits when its folder is missing. A save makes it, but it can be deleted since,
+        // so it's made again here, inside home only, as a save does. A failure is the tool's to
+        // report.
+        let dir = Path::new(&value);
+        if home.as_deref().is_some_and(|home| dir.starts_with(home)) && !dir.exists() {
+            let _ = fs::create_dir_all(dir);
+        }
         command.env(var, value);
     }
     let err = command.exec(); // Only returns on failure.
