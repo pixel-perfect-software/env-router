@@ -7,11 +7,11 @@ release pipeline, and the agents and platforms EnvRouter depends on. Every findi
 file and line it was read from; the ones marked **verified** were reproduced with a build or
 read in the vendor's own documentation.
 
-The eight milestones are on GitHub as
-[milestones](https://github.com/pixel-perfect-software/env-router/milestones). M0 to M4 have their
-issues there (17 to 54 for M0 to M2, 111 to 125 for M3 and 154 to 169 for M4, in the order listed
-here, then later findings at the end of their milestone, such as #107); M5 to M7 keep theirs in
-this file until each is next. A new finding goes into its milestone here first, then into an issue.
+The nine milestones are on GitHub as
+[milestones](https://github.com/pixel-perfect-software/env-router/milestones). M0 to M4 and M8 have
+their issues there (17 to 54 for M0 to M2, 111 to 125 for M3, 154 to 169 for M4 and 176 to 180 for
+M8, in the order listed here, then later findings at the end of their milestone, such as #107); M5
+to M7 keep theirs in this file until each is next. A new finding goes into its milestone here first, then into an issue.
 PRs are assigned to the milestone they advance.
 
 **Status (2026-10-26):** M0 to M3 are done, and M4 is under way. M0's 12 issues were merged in PRs
@@ -19,11 +19,14 @@ PRs are assigned to the milestone they advance.
 #90), which change only CI, the Homebrew templates and docs. M2's 15 issues were fixed in PRs #92
 to #108, except #49, closed as accepted, and shipped in 0.7.2. M3's 16 issues were fixed in PRs
 #127 to #148, with #149 to #151 closing what its final checks found, and ship in 0.8.0. M4's plan
-was rechecked and its issues filed on 2026-10-26.
+was rechecked and its issues filed on 2026-10-26, and M8, which comes next, was planned and filed the
+same day.
 
-Order: M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7. The first three are small and make the next
+Order: M0 → M1 → M2 → M3 → M4 → M8 → M5 → M6 → M7. The first three are small and make the next
 release trustworthy. M4 (agents) is what brings users and can start as soon as M0 lands, since
-it's mostly data and one new dialect. M7 can start now that M3, which carries the Windows prep, is done.
+it's mostly data and one new dialect. M8 (config folders) was added on 2026-10-26 and runs right
+after M4: it needs M4's agents and nothing from M5 to M7. M7 can start now that M3, which carries
+the Windows prep, is done.
 
 | Milestone | Goal | Size |
 |---|---|---|
@@ -35,6 +38,7 @@ it's mostly data and one new dialect. M7 can start now that M3, which carries th
 | M5: Headless parity | Everything the window does, the CLI and rpc do too, with tests | medium |
 | M6: Update and reach | Users get new versions without a manual reinstall, on every Mac and Linux channel we ship | medium |
 | M7: Native Windows | The app, CLI and shim run on Windows without WSL | large |
+| M8: Config folders in view | See what each profile's config folders hold, share parts across profiles, seed a new folder and compare two | large |
 
 ---
 
@@ -666,6 +670,61 @@ Terminal tab.
 4. **Packaging and CI.** `.exe` names for `externalBin`; NSIS target with `downloadBootstrapper`;
    a `windows-latest` job running the workspace tests; `deny.toml`/`about.toml` already list the
    gnu target, add msvc if used.
+
+---
+
+## M8: Config folders in view
+
+**Status:** planned and filed on 2026-10-26 (#176 to #180), to run right after M4. It comes from
+the user's choice of config-shaped features over control-panel ones (#169) and from a check of
+Claude Code 2.1.310, Copilot CLI 1.0.103 and Codex CLI 0.164.0 in scratch config folders, each run
+against a local fake model endpoint with no login.
+
+**Goal:** see what each profile's config folders hold, share chosen parts across profiles while
+logins and state stay apart, start a new folder from an existing one, and compare two profiles.
+**Size:** large.
+
+**Scope:** the registry describes each agent's config kinds (instructions, skills, commands,
+agents, Claude's rules and output styles) and what EnvRouter never touches (credentials, state,
+mixed files such as `.claude.json`, `config.toml`, Copilot's `config.json`, `plugins/`); a
+read-only listing of a profile's contents in the window and the CLI, read from frontmatter and
+TOML without running an agent; sharing through EnvRouter-managed links, item by item inside real
+folders, and Claude's `CLAUDE.md` through an `@path` import; seeding that copies only the
+user-written kinds; a comparison of two profiles kind by kind; uninstall removes EnvRouter's links
+and leaves real files.
+
+**Done when:** for Claude, Copilot and Codex, the inspector lists a profile's instructions,
+commands, skills and agents; a skill shared into three profiles shows in each and an edit to its
+source reaches all three; unsharing or uninstalling leaves the user's files untouched; a seeded
+folder holds the source's user-written files and no credentials; comparing two profiles shows
+each difference.
+
+Why: a profile's config folder starts without the global instructions, commands and skills the
+default folder had (Claude ignores `~/.claude` once `CLAUDE_CONFIG_DIR` points elsewhere, and
+Copilot reads `~/.agents/skills` only under its default `COPILOT_HOME`), so users copy them by
+hand and the copies drift. All three agents follow links, both to a whole kind folder and to
+single items, but each writes into its own folders (Codex's `skills/.system/` on every start,
+Claude's `skills/synced/`, Copilot's `skill add`), so sharing links items one by one inside real
+folders, never a whole `skills/`.
+
+### Issues
+
+1. **#176: the registry doesn't say what an agent's config folder holds.** A `config` descriptor
+   per agent in `agents.json`: each kind's path, item pattern, naming rule (Claude's commands are
+   named by path with `/` as `:`, Copilot's agents with `/` as `--`), whether it's shared only item
+   by item, and the paths EnvRouter never reads or writes. Rust reads kinds, not agents.
+2. **#177: a profile's instructions, commands, skills and agents can't be seen.** A read-only
+   listing in the inspector and the CLI, flagging a Claude agent file Claude would skip, links
+   with their targets, claude.ai's synced skills and Codex's `~/.agents/skills`.
+3. **#178: skills, commands and agents can't be shared across profiles.** Item-level links from
+   one source, recorded as EnvRouter's, never replacing a real file, removed on unshare and
+   uninstall; Claude's `CLAUDE.md` through a marked `@path` line. Whether Copilot's skills go
+   through `COPILOT_SKILLS_DIRS` instead is the plan's call.
+4. **#179: a new config folder starts empty.** Seed it from another profile's folder or the
+   default, copying only the user's own kinds and filtered settings; never a login, state or
+   Claude's `plugins/` (absolute paths back into the source).
+5. **#180: two profiles' config folders can't be compared.** Kind by kind: in both, only in one,
+   the same shared item, or a drifted copy; settings by key name only.
 
 ---
 
