@@ -387,7 +387,11 @@ A WSL 2 distro is a Linux machine: install EnvRouter inside it, not on the Windo
 2. **Secrets go to the Windows Credential Manager.** A distro usually has no keyring of its own,
    so EnvRouter's Windows helper (`~/.envrouter/bin/envrouter-keychain.exe`, installed with the
    rest) keeps them on the Windows side, per distro. It needs WSL's Windows interop, which is on
-   by default. Store one with `envrouter secret set <ID>`, or in the window.
+   by default. Store one with `envrouter secret set <ID>`, or in the window. The distro's name
+   comes from `WSL_DISTRO_NAME`, which WSL sets in its terminals; the first time one of them uses
+   the store, EnvRouter notes the name in `~/.envrouter/wsl-distro`, so a process started without
+   the variable finds the same secrets. Until then such a process can't tell which distro it
+   is and says so; run `envrouter secret list` once in a WSL terminal.
 3. **VS Code on Windows, connected to the distro,** runs the Claude Code extension inside WSL.
    Route it with `envrouter editor on remote-code` (or **Editors…** › **VS Code Server**), which
    sets the wrapper in the distro's server settings.
@@ -427,6 +431,7 @@ after resolving symlinks and letter case, and a trigger covers its whole subtree
 | `~/.envrouter/mcp/` | Rendered MCP server files per profile and agent (readable only by you) |
 | `~/.envrouter/mcp-tools.json` | Tool lists from server checks |
 | `~/.envrouter/last-folder.json` | The folder you last checked, for the menu bar's **Check Last Folder** |
+| `~/.envrouter/wsl-distro` | In WSL only: the distro's name, noted the first time a terminal uses the secret store. The Credential Manager item is keyed by it, and a process the distro starts without `WSL_DISTRO_NAME` (a systemd user unit, cron, an agent that passes a bare environment) reads it here |
 | `~/.envrouter/checked-once` | Made the first time a folder check finds an agent routed, so first-run's last step is not shown again. Also made when you update from a release up to 0.7.2 that was already set up (a profile, a shell turned on) |
 | `~/Library/Application Support/ca.pixel-perfect.envrouter/.window-state.json` (macOS), `~/.config/ca.pixel-perfect.envrouter/.window-state.json` (Linux) | The window's size and position, written when the app quits. The view it was left on is kept in the window's own web storage. Releases up to 0.7.2 kept these under another bundle identifier; the first launch copies the window's size and position over and deletes that identifier's folders (the window's storage and caches, which can't move: the system keys them by identifier). The view you left on is reset once. If an older copy of the app is still running, the folders are cleared at a later launch, after it quits |
 | "EnvRouter MCP secrets" in the system's store | Secret values you've entered, once there are any: in the login Keychain on macOS, the keyring on Linux, the Windows Credential Manager from WSL |

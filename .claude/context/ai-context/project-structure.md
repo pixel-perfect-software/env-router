@@ -85,7 +85,8 @@ env-router/
 Created on the user's machine at runtime: `~/.envrouter/config.json`, `~/.envrouter/bin/` (the
 shim, `envrouter-keychain`, the `envrouter` CLI when installed from a release archive, and on
 Linux `envrouter-keychain.exe` for WSL), `~/.envrouter/shims/<tool>` (symlinks), and
-`~/.envrouter/mcp/<profile id>/<command>/` (rendered MCP server files and `launch.json`), `~/.envrouter/last-folder.json`, plus an
+`~/.envrouter/mcp/<profile id>/<command>/` (rendered MCP server files and `launch.json`), `~/.envrouter/last-folder.json`,
+`~/.envrouter/wsl-distro` (WSL only: the distro's name, for a store use without `WSL_DISTRO_NAME`), plus an
 "EnvRouter MCP secrets" item in the platform's store once a secret is saved (the login Keychain,
 the Secret Service, or the Windows Credential Manager as `EnvRouter MCP secrets:wsl:<distro>:<home>#<n>`).
 The app also adds a marked block to the end of `~/.zshrc` (or `$ZDOTDIR/.zshrc`), bash's files
