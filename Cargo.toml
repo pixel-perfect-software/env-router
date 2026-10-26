@@ -19,6 +19,7 @@ serde_json = "1"
 security-framework = "3"
 tempfile = "3"
 thiserror = "2"
+toml = "1"
 
 # Every member opts in with `[lints] workspace = true`. CI runs clippy with `-D warnings`, so
 # these are errors there. A curated slice of clippy::pedantic: the lints that catch real

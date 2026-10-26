@@ -29,7 +29,13 @@ pub const CONFIG_FILE: &str = "config.json";
 /// 5 added the files whose presence turns injection off (`agents.*.mcp.skipIfPresent`). It
 /// defaults to empty, so a version 4 file reads as is; the window writes it on every save, and
 /// the CLI adds the registry's (`agents::with_agents`).
-pub const CONFIG_VERSION: u32 = 5;
+///
+/// 6 added the `codex` MCP dialect. Nothing else changed shape, so a version 5 file reads as is.
+/// The bump is for older readers, whose [`McpDialect`] can't parse `codex` and fail the whole
+/// file (a 0.9.0 shim warns "unknown variant `codex`" and runs every agent unrouted, since the
+/// parse fails before the version is checked): a CLI save sees the installed shim's version and
+/// installs one that reads it (`commands::cli_installs`).
+pub const CONFIG_VERSION: u32 = 6;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -185,9 +191,11 @@ pub struct McpFiles {
 pub struct McpInjection {
     /// The config file format the agent reads.
     pub dialect: McpDialect,
-    /// One argument is this followed by a rendered file's path, e.g. `--mcp-config=`. It must
-    /// hold an `=`: Claude's flags take several values, so `--mcp-config <file>` as two
-    /// arguments would swallow whatever the user typed next, a subcommand or a prompt.
+    /// One argument is this followed by what the dialect renders for one server: a rendered
+    /// file's path (Claude, Copilot) or `mcp_servers.<name>=<inline table>` (Codex), e.g.
+    /// `--mcp-config=`. It must hold an `=`: Claude's flags take several values, so
+    /// `--mcp-config <file>` as two arguments would swallow whatever the user typed next, a
+    /// subcommand or a prompt.
     pub config_arg: String,
     /// Followed by the tools to turn off, in the dialect's form, e.g. `--disallowedTools=`.
     /// `None`: the agent can't turn tools off by flag.
@@ -207,8 +215,8 @@ pub struct McpInjection {
     pub skip_if_present: Vec<String>,
 }
 
-/// An MCP config file format, named after the agent that defined it. Several agents can share
-/// one.
+/// How an agent is handed MCP servers, named after the agent that defined it. Several agents can
+/// share one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum McpDialect {
@@ -216,6 +224,25 @@ pub enum McpDialect {
     Claude,
     /// Copilot CLI's `--additional-mcp-config`: Claude's shape plus a required `tools` list.
     Copilot,
+    /// Codex CLI's `--config=mcp_servers.<name>={…}`: one inline TOML table per server, as the
+    /// argument itself, with no file.
+    Codex,
+}
+
+impl McpDialect {
+    /// Whether this dialect can hand `server` to its agent: Codex has no SSE transport.
+    pub fn takes(self, server: &McpServer) -> bool {
+        !(self == McpDialect::Codex && matches!(server, McpServer::Sse { .. }))
+    }
+
+    /// The server names the agent keeps for its own servers: Codex's `codex_apps` and
+    /// `codex_tui`. A library server of that name would be merged into them.
+    pub fn reserved_names(self) -> &'static [&'static str] {
+        match self {
+            McpDialect::Claude | McpDialect::Copilot => &[],
+            McpDialect::Codex => &["codex_apps", "codex_tui"],
+        }
+    }
 }
 
 impl Profile {
@@ -706,6 +733,17 @@ fn validate_profile_mcp(config: &ConfigState, profile: &Profile) -> Result<()> {
                 profile.name
             )));
         }
+        let keeper = config.agents.iter().find(|(_, agent)| {
+            agent
+                .mcp
+                .as_ref()
+                .is_some_and(|mcp| mcp.dialect.reserved_names().contains(&server.as_str()))
+        });
+        if let Some((command, _)) = keeper {
+            return Err(Error::Invalid(format!(
+                "MCP server \"{server}\" has a name {command} keeps for its own servers. Rename it."
+            )));
+        }
         if let Some(tool) = using.disabled_tools.iter().find(|t| !is_mcp_tool_name(t)) {
             return Err(Error::Invalid(format!(
                 "\"{tool}\" in profile \"{}\" isn't a valid MCP tool name.",
@@ -1190,6 +1228,26 @@ mod tests {
         // The id only names a folder once the profile uses a server.
         bad_id.profiles[0].mcp_servers.clear();
         validate(&bad_id, &home()).unwrap();
+    }
+
+    /// Codex merges a server of the same name into its own `codex_apps` and `codex_tui`, so a
+    /// library server named so is refused, but only while an agent with Codex's dialect is set up.
+    #[test]
+    fn validate_rejects_a_codex_reserved_name_while_codex_takes_servers() {
+        let mut config = with_server(stdio("npx"), &[]);
+        let server = config.mcp_servers.remove("github").unwrap();
+        config.mcp_servers.insert("codex_apps".into(), server);
+        let using = config.profiles[0].mcp_servers.remove("github").unwrap();
+        config.profiles[0]
+            .mcp_servers
+            .insert("codex_apps".into(), using);
+        validate(&config, &home()).unwrap();
+
+        let mut codex = claude_agent();
+        codex.mcp.as_mut().unwrap().dialect = McpDialect::Codex;
+        config.agents.insert("codex".into(), codex);
+        let err = validate(&config, &home()).unwrap_err().to_string();
+        assert!(err.contains("codex keeps for its own servers"), "{err}");
     }
 
     /// Two profiles with one id rendered into one `mcp/<id>/` folder, the second winning, so the

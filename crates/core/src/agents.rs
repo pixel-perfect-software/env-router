@@ -36,20 +36,27 @@ pub fn known() -> Vec<KnownAgent> {
 /// on every save, and a CLI a release apart from the app mustn't undo that with its older (or
 /// newer) copy. Except that it gains the registry's skip rules it lacks (`skipAnyArgs`,
 /// `skipSubcommands`, `skipIfPresent`): each only turns injection off for a run it would break,
-/// and without this a machine with no window would never see one a release adds.
+/// and without this a machine with no window would never see one a release adds. And in a config
+/// saved before version 6, one named with no MCP descriptor gains the registry's: 0.9 saved Codex
+/// without one, and a machine with no window would otherwise never hand Codex its servers. A
+/// version 6 config is left as it is, so a later release that drops an agent's descriptor isn't
+/// undone by this CLI.
 pub fn with_agents(mut config: ConfigState) -> ConfigState {
+    let before_codex_dialect = config.version < 6;
     for agent in known() {
         match config.agents.entry(agent.command) {
             Entry::Vacant(entry) => {
                 entry.insert(agent.def);
             }
-            Entry::Occupied(mut entry) => {
-                if let (Some(mcp), Some(known)) = (entry.get_mut().mcp.as_mut(), agent.def.mcp) {
+            Entry::Occupied(mut entry) => match (entry.get_mut().mcp.as_mut(), agent.def.mcp) {
+                (Some(mcp), Some(known)) => {
                     add_missing(&mut mcp.skip_any_args, known.skip_any_args);
                     add_missing(&mut mcp.skip_subcommands, known.skip_subcommands);
                     add_missing(&mut mcp.skip_if_present, known.skip_if_present);
                 }
-            }
+                (None, Some(known)) if before_codex_dialect => entry.get_mut().mcp = Some(known),
+                _ => {}
+            },
         }
     }
     config
@@ -181,6 +188,32 @@ mod tests {
         );
     }
 
+    /// 0.9 saved Codex with no `mcp`, and `with_agents` kept it, so a machine with no window
+    /// never handed Codex its servers. A config from version 6 on keeps what it says, so a
+    /// release that drops a descriptor isn't undone by an older CLI.
+    #[test]
+    fn a_config_before_version_6_gains_a_missing_descriptor_once() {
+        let registry = known();
+        let codex = registry.iter().find(|a| a.command == "codex").unwrap();
+        assert!(codex.def.mcp.is_some());
+        let old = AgentDef {
+            mcp: None,
+            ..codex.def.clone()
+        };
+        let current = ConfigState {
+            agents: [("codex".to_string(), old)].into(),
+            ..ConfigState::default()
+        };
+        assert_eq!(with_agents(current.clone()).agents["codex"].mcp, None);
+
+        let filled = with_agents(ConfigState {
+            version: 5,
+            ..current
+        });
+        assert_eq!(filled.agents["codex"].mcp, codex.def.mcp);
+        assert_eq!(with_agents(filled.clone()), filled);
+    }
+
     #[test]
     fn fills_missing_agents_and_keeps_every_one_already_named() {
         let mut config = ConfigState::default();
@@ -193,7 +226,12 @@ mod tests {
         };
         config.agents.insert("mytool".into(), own.clone());
         // What another release's window saved for a registry agent stays as it is.
-        let saved = AgentDef::default();
+        let mut saved = known()
+            .into_iter()
+            .find(|a| a.command == "claude")
+            .unwrap()
+            .def;
+        saved.mcp.as_mut().unwrap().config_arg = "--other-config=".into();
         config.agents.insert("claude".into(), saved.clone());
 
         let filled = with_agents(config);

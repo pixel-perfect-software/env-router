@@ -112,7 +112,7 @@ describe('saving', () => {
     await call('save_config', { payload, secrets: {} })
     payload.profiles.pop()
     const saved = await call<ConfigState>('get_config')
-    expect(saved.version).toBe(5)
+    expect(saved.version).toBe(6)
     expect(saved.profiles).toHaveLength(count)
   })
 
@@ -132,6 +132,20 @@ describe('saving', () => {
     )
     await expect(call('save_config', { payload: { ...config, profiles: [{ ...twin, id: '' }] }, secrets: {} })).rejects.toBe(
       `Profile "${twin.name}" has no id. Give it one in config.json.`,
+    )
+    const codex = {
+      ...config.agents.codex,
+      mcp: { dialect: 'codex', configArg: '--config=', denyArg: null, skipAnyArgs: [], skipSubcommands: [], skipIfPresent: [] },
+    }
+    const [first] = Object.keys(config.profiles[0].mcpServers)
+    const reserved = {
+      ...config,
+      agents: { ...config.agents, codex },
+      mcpServers: { codex_apps: config.mcpServers[first] },
+      profiles: [{ ...config.profiles[0], mcpServers: { codex_apps: { disabledTools: [] } } }],
+    }
+    await expect(call('save_config', { payload: reserved, secrets: {} })).rejects.toBe(
+      'MCP server "codex_apps" has a name codex keeps for its own servers. Rename it.',
     )
     await expect(call('save_config', { payload: config, secrets: { ABCD: 'x' } })).rejects.toBe(
       "A new secret isn't used by any server. Save the server again.",

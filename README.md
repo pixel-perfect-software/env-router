@@ -39,7 +39,7 @@ selection of MCP servers from a library you keep in the app:
 |---|---|---|---|
 | Claude Code | `claude` | `CLAUDE_CONFIG_DIR` | `--mcp-config=<file>` |
 | Copilot CLI | `copilot` | `COPILOT_HOME` | `--additional-mcp-config=@<file>` |
-| Codex CLI | `codex` | `CODEX_HOME` | Not yet: Codex gets the profile's account, not its servers |
+| Codex CLI | `codex` | `CODEX_HOME` | `--config=mcp_servers.<name>={…}`, one inline table per server, no file; no SSE servers |
 
 ## ✨ Features
 
@@ -194,7 +194,7 @@ and then `target/release/envrouter install`. The first build takes a few minutes
 2. **Turn on your shell.** Click the shell status in the toolbar (the `zsh` and `bash` dots) and
    switch on the shells you use. This adds a marked block to the end of each startup file that
    puts EnvRouter's shims first on `PATH`.
-3. **Open a new terminal window,** `cd` into a trigger folder and run `claude` or `copilot`.
+3. **Open a new terminal window,** `cd` into a trigger folder and run `claude`, `copilot` or `codex`.
    A new config folder starts logged out, so sign in once there as usual.
 4. **Check it.** Drop a folder on the window, or press ⌘O (Ctrl+O), to see which profile a new
    terminal window would use there and what it would set. From a terminal, `envrouter check`
@@ -239,6 +239,7 @@ its row, for **Duplicate…**, **Check Server** and **Delete…**.
   the import review. ⌘Return (Ctrl+Return) continues.
 - **Add Server** (the plus): fill in the editor by hand. **Connects with** picks a command the
   agent starts (with arguments and environment variables), or a URL (HTTP or SSE) with headers.
+  Codex CLI has no SSE transport, so an SSE server reaches Claude Code and Copilot CLI, not Codex.
 
 ### 👥 Choose which profiles use it
 
@@ -275,6 +276,35 @@ headers. The shim reads the values and gives them to the agent in its environmen
 agent puts into the headers. One it can't read is left out, with a warning when the agent
 starts. [Privacy and security](#-privacy-and-security) says what that means for who can see
 them.
+
+### 🧵 Codex CLI takes its servers differently
+
+Claude Code and Copilot CLI load a file EnvRouter wrote. Codex has no such flag, so each server
+reaches it as one `--config=mcp_servers.<name>={…}` argument, a TOML table holding the whole
+server, and nothing is written to disk for it. That has some consequences:
+
+- **Lock what's secret.** Codex expands no `${VAR}` in a server's values. EnvRouter tells it to
+  read a variable where a whole value is one: an environment variable set to `${SAME_NAME}`, a
+  header that is `${VAR}`, or `Authorization: Bearer ${VAR}`. Anything else reaches the server as
+  typed. And the table is on Codex's command line, so a value you leave unlocked (a plain
+  environment variable, a plain header, an argument) can be read by other programs you run. A locked value in an environment variable
+  or a header isn't on it: a command server gets it from the helper as it starts, and a remote
+  server's header only names the variable the shim sets.
+- **In a folder with servers, Codex runs without its shared background server.** Given any
+  configuration override, `codex`, `codex resume` and `codex fork` run the session themselves
+  instead of handing it to the background server. `codex queue`,
+  `archive`, `unarchive`, `delete` and `remote-control` are left alone by EnvRouter, because they
+  refuse an override or would write session state through a second server; they get no servers
+  and need none.
+- **A server named like one of yours in Codex's own `config.toml` merges with it.** Codex joins the
+  two key by key, so the same transport works (EnvRouter's fields win, yours still apply). A
+  different transport, say a command in one and a URL in the other, stops every `codex` command
+  in that folder with an error ending in `url is not supported for stdio`. Rename one of them,
+  or run `ENVROUTER_MCP=0 codex` meanwhile.
+- **`codex_apps` and `codex_tui` are Codex's own servers' names**, so a server in your library can't
+  take either name while Codex is set up.
+- **Sign-ins are Codex's:** `codex mcp login <name>`. They're kept in the system's keyring by
+  server name and URL, so every profile shares them.
 
 ### 🧰 Check a server and turn tools off
 
@@ -336,7 +366,7 @@ folder its MCP files are written to.
 | `envrouter uninstall [--yes] [--dry-run]` | Turns routing off everywhere, deletes the stored MCP secrets, `~/.envrouter` and the window's own data, and names the commands that remove the app and the CLI (see Uninstall below) |
 | `envrouter rpc` | Answers the window's commands as JSON lines, one per line each way, so another program (later, a window managing a WSL distro) can drive this machine |
 
-`--tool` defaults to `claude`; pass `--tool copilot` for Copilot CLI. `--shell` defaults to your
+`--tool` defaults to `claude`; pass `--tool copilot` for Copilot CLI or `--tool codex` for Codex CLI. `--shell` defaults to your
 login shell. Add `--json` to any command for machine-readable output.
 
 The window and the CLI can both change the config while the window is open. When the window
@@ -352,7 +382,7 @@ with an ID of uppercase hex:
 
 ```json
 {
-  "version": 5,
+  "version": 6,
   "profiles": [
     {
       "id": "work",
@@ -477,6 +507,10 @@ on the server:
   for you, its hooks, and its command servers that need no secret, so those can read them.
 - **A secret in an argument** is on that server's command line while it runs, where other
   programs you run can read it; one in an environment variable or a header isn't.
+- **Under Codex, every unlocked value is on Codex's command line.** Codex takes a server as an
+  argument, so a plain environment variable, header or argument of a server is in `codex`'s argument list for as long as it runs, visible to other programs you run.
+  Credential-looking values start out locked, and the editor warns about plain ones. A remote
+  server's locked headers are in Codex's environment, as for Claude Code.
 - **Any program that runs as you can run the helper** and ask it for the secrets, the same as it
   could before: the system's store is what stops it (on macOS, the Keychain asks the first time
   and each time the helper changes; choose **Always Allow**). The protection is against
@@ -493,10 +527,12 @@ on the server:
 | Problem | Try |
 |---|---|
 | The agent ignores the profile | Check the folder in the app (⌘O, Ctrl+O) or with `envrouter check`. It names what's in the way: the shell block is off, an alias or function, another copy earlier on `PATH`, or a prompt hook (mise, direnv) moving one ahead. Remember to open a new terminal window after turning a shell on. |
-| You want to see what the shim would do | `ENVROUTER_EXPLAIN=1 claude` (or `copilot`) prints the profile, variable, MCP servers and real binary as JSON, without running the tool. |
+| You want to see what the shim would do | `ENVROUTER_EXPLAIN=1 claude` (or `copilot`, `codex`) prints the profile, variable, MCP servers and real binary as JSON, without running the tool. |
 | You want one run without EnvRouter's MCP servers | `ENVROUTER_MCP=0 claude`, or pass `--strict-mcp-config` to `claude`. |
 | Claude Code exits at startup with `You cannot dynamically configure MCP servers when an enterprise MCP config is present` | Your organization manages MCP servers on this machine (`managed-mcp.json` in `/Library/Application Support/ClaudeCode/` or `/etc/claude-code/`). EnvRouter leaves its servers off wherever that file exists and says so when `claude` starts; the folder still gets its profile's config. If you've just updated EnvRouter, save once in the app (or run `envrouter apply`) so the profiles' MCP files pick this up. |
-| An MCP server doesn't show in `claude mcp list` or `copilot mcp list` | Expected: those commands don't list servers passed on the command line. Use `/mcp` inside the agent. |
+| An MCP server doesn't show in `claude mcp list` or `copilot mcp list` | Expected: those commands don't list servers passed on the command line. Use `/mcp` inside the agent. `codex mcp list` does show them, unmarked, along with the ones in Codex's own config. |
+| Every `codex` command in a folder fails with `url is not supported for stdio` (or the reverse) | A profile's server and one in Codex's `config.toml` (or a trusted project's `.codex/config.toml`) share a name but not a transport, and Codex merges the two. Rename one, or run `ENVROUTER_MCP=0 codex` to skip EnvRouter's servers for that run. |
+| Codex has no shared background server in a folder | Expected where the profile has MCP servers: Codex runs without it when given any configuration override. Folders with no servers, and `codex queue`, `archive`, `unarchive`, `delete` and `remote-control` everywhere, are unaffected. |
 | Saving a secret fails on Linux with "there's no Secret Service" | Install and start GNOME Keyring or KWallet, then save again. Until then a remote server that needs a secret is left out, and a command server that needs one doesn't start (the agent shows it as failed); the rest still load. |
 | A server fails with `envrouter: … is gone, so EnvRouter no longer starts the MCP server …` | The profile no longer has that server, and the agent session began before you removed it. Restart the agent. EnvRouter keeps a removed server's file for ten minutes, so a session can still reconnect to it for a while. |
 | A server fails with `envrouter: couldn't read the secrets the MCP server … needs` | The store refused, or didn't answer within 20 seconds. On macOS a Keychain prompt for `envrouter-keychain` may be waiting behind another window; choose **Always Allow**, then restart the agent or reconnect the server. The store's own reason is in the parentheses. |

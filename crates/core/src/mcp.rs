@@ -1,10 +1,11 @@
 //! Handing a profile's MCP servers to an agent when it starts.
 //!
 //! On every save the app renders, for each profile that uses servers and each agent with an
-//! MCP descriptor, one config file per server in the agent's dialect, plus a launch manifest
-//! listing the arguments that load them. The shim reads only the manifest, so it never needs
-//! an agent's file format. Secret values are nowhere on disk, and a secret reaches only the
-//! process that uses it:
+//! MCP descriptor, a launch manifest listing the arguments that load them, and in a file
+//! dialect (Claude, Copilot) one config file per server for those arguments to name. Codex's
+//! dialect is the argument itself, one inline TOML table per server, so it has no such file. The
+//! shim reads only the manifest, so it never needs an agent's format. Secret values are nowhere
+//! on disk, and a secret reaches only the process that uses it:
 //!
 //! - A stdio server that needs one is rendered as the secrets helper's `exec` entry, with a
 //!   [`StdioSpec`] beside it holding the real command and its secrets as references. The helper
@@ -12,6 +13,9 @@
 //!   so they are in that server's environment or arguments and in no other process.
 //! - A remote server's file refers to `${ENVROUTER_SECRET_<ID>}` in its headers, which the agent
 //!   expands from its own environment, so the shim reads the store and sets it on the agent.
+//!   Codex expands nothing, but reads a header's value from a variable it names
+//!   (`env_http_headers`), so its table names `ENVROUTER_SECRET_<ID>` and the shim sets the same
+//!   variable.
 
 #[cfg(unix)]
 use std::collections::HashSet;
@@ -29,6 +33,7 @@ use serde_json::{json, Map, Value};
 use crate::config::{self, ConfigState, McpDialect, McpServer, McpUse, McpValue, Profile};
 use crate::error::{Error, Result};
 use crate::paths;
+use crate::secrets;
 
 /// What a secret's variable begins with. The launcher removes every variable with it from a
 /// server's environment, so a server never sees the secrets of the agent's remote servers.
@@ -41,6 +46,11 @@ pub const LAUNCH_SUBCOMMAND: &str = "exec";
 /// ([`paths::KEYCHAIN_LAUNCHER_VERSION_ARG`]). A renderer writes specs only for a helper that
 /// reads this version or a newer one.
 pub const LAUNCHER_VERSION: u32 = 1;
+
+/// How long Codex waits for a server that starts through the launcher: the store's own read limit
+/// ([`secrets::READ_TIMEOUT`]) plus Codex's default for a server's start (30 s in 0.164.0), so a
+/// slow store doesn't eat the server's share.
+const LAUNCHER_STARTUP_TIMEOUT_SECS: u64 = secrets::READ_TIMEOUT.as_secs() + 30;
 
 /// The manifest at [`paths::mcp_launch`]: what to add to one agent's command line in one
 /// profile's folders.
@@ -65,7 +75,8 @@ pub struct Launch {
 #[serde(rename_all = "camelCase")]
 pub struct LaunchServer {
     pub name: String,
-    /// Each a single `--flag=value` argument, added before the user's own.
+    /// Each a single `--flag=value` argument, added before the user's own: the one that loads
+    /// the server (a file to load, or the whole server, per the dialect) and its deny arguments.
     pub args: Vec<String>,
     /// The Keychain secrets the agent's environment must carry for the server's file: a remote
     /// server's header secrets. Without all of them it's left out. A stdio server that needs
@@ -239,14 +250,18 @@ pub fn load_launch(home: &Path, profile_id: &str, command: &str) -> Result<Optio
 /// The servers `profile` hands `tool`, from the config alone: what a run would get once the
 /// files are rendered and every secret is readable.
 pub fn servers_for(config: &ConfigState, profile: &Profile, tool: &str) -> Vec<String> {
-    let injects = config
-        .agents
-        .get(tool)
-        .is_some_and(|agent| agent.mcp.is_some());
+    let Some(injection) = config.agents.get(tool).and_then(|agent| agent.mcp.as_ref()) else {
+        return Vec::new();
+    };
     profile
         .mcp_servers
         .keys()
-        .filter(|name| injects && config.mcp_servers.contains_key(*name))
+        .filter(|name| {
+            config
+                .mcp_servers
+                .get(*name)
+                .is_some_and(|server| injection.dialect.takes(server))
+        })
         .cloned()
         .collect()
 }
@@ -273,16 +288,28 @@ pub fn render(config: &ConfigState, home: &Path) -> Vec<(PathBuf, String)> {
                 let Some(server) = config.mcp_servers.get(name) else {
                     continue;
                 };
+                if !injection.dialect.takes(server) {
+                    continue;
+                }
                 // In their own folders, so a server named `launch` can't collide.
-                let file = dir.join("servers").join(format!("{name}.json"));
                 let spec_file = dir.join("stdio").join(format!("{name}.json"));
-                let (contents, spec) =
-                    server_file(injection.dialect, name, server, home, &spec_file);
-                files.push((file.clone(), pretty(&contents)));
+                let (load, spec) = match injection.dialect {
+                    McpDialect::Codex => {
+                        let (table, spec) = codex_table(name, server, using, home, &spec_file);
+                        (format!("mcp_servers.{name}={table}"), spec)
+                    }
+                    McpDialect::Claude | McpDialect::Copilot => {
+                        let file = dir.join("servers").join(format!("{name}.json"));
+                        let (contents, spec) =
+                            server_file(injection.dialect, name, server, home, &spec_file);
+                        files.push((file.clone(), pretty(&contents)));
+                        (file.display().to_string(), spec)
+                    }
+                };
                 if let Some(spec) = spec {
                     files.push((spec_file, pretty(&spec)));
                 }
-                let mut args = vec![format!("{}{}", injection.config_arg, file.display())];
+                let mut args = vec![format!("{}{load}", injection.config_arg)];
                 if let Some(deny_arg) = &injection.deny_arg {
                     args.extend(deny_args(injection.dialect, deny_arg, name, using));
                 }
@@ -470,9 +497,58 @@ fn agent_secret_ids(server: &McpServer) -> Vec<String> {
     }
 }
 
-/// One server as an agent's config file in `dialect`. A stdio server that needs a secret is the
-/// helper's `exec` of `spec_file`, and its [`StdioSpec`] is the second answer; any other stdio
-/// server keeps its real command, so an allowlist that names it still matches.
+/// How an agent starts one stdio server: the server's own command, or the helper's `exec` when it
+/// needs a secret.
+struct StdioRun {
+    command: String,
+    args: Vec<String>,
+    env: BTreeMap<String, String>,
+}
+
+/// What an agent runs for a stdio server, and the [`StdioSpec`] the helper reads when that is
+/// the helper's `exec` of `spec_file`. A server that needs no secret keeps its real command, so an
+/// allowlist that names it still matches.
+fn stdio_run(
+    name: &str,
+    command: &str,
+    args: &[McpValue],
+    env: &BTreeMap<String, McpValue>,
+    home: &Path,
+    spec_file: &Path,
+) -> (StdioRun, Option<StdioSpec>) {
+    let args = launch_args(command, args.to_vec(), home);
+    let needs_secret = args
+        .iter()
+        .chain(env.values())
+        .any(|v| v.secret_id().is_some());
+    if needs_secret {
+        let spec = StdioSpec {
+            server: name.to_owned(),
+            home: home.display().to_string(),
+            command: command.to_owned(),
+            args,
+            env: env.clone(),
+        };
+        let run = StdioRun {
+            command: paths::keychain_helper(home).display().to_string(),
+            args: vec![
+                LAUNCH_SUBCOMMAND.to_owned(),
+                spec_file.display().to_string(),
+            ],
+            env: BTreeMap::new(),
+        };
+        (run, Some(spec))
+    } else {
+        let run = StdioRun {
+            command: command.to_owned(),
+            args: args.iter().map(text).collect(),
+            env: env.iter().map(|(k, v)| (k.clone(), text(v))).collect(),
+        };
+        (run, None)
+    }
+}
+
+/// One server as a config file in a file dialect (Claude, Copilot), with the stdio spec it needs.
 fn server_file(
     dialect: McpDialect,
     name: &str,
@@ -482,28 +558,8 @@ fn server_file(
 ) -> (Value, Option<StdioSpec>) {
     let (mut entry, spec) = match server {
         McpServer::Stdio { command, args, env } => {
-            let args = launch_args(command, args.clone(), home);
-            if server.secret_ids().is_empty() {
-                let args: Vec<String> = args.iter().map(text).collect();
-                (stdio_entry(dialect, command, &args, &text_map(env)), None)
-            } else {
-                let helper = paths::keychain_helper(home).display().to_string();
-                let launcher_args = vec![
-                    LAUNCH_SUBCOMMAND.to_owned(),
-                    spec_file.display().to_string(),
-                ];
-                let spec = StdioSpec {
-                    server: name.to_owned(),
-                    home: home.display().to_string(),
-                    command: command.clone(),
-                    args,
-                    env: env.clone(),
-                };
-                (
-                    stdio_entry(dialect, &helper, &launcher_args, &Map::new()),
-                    Some(spec),
-                )
-            }
+            let (run, spec) = stdio_run(name, command, args, env, home, spec_file);
+            (stdio_entry(dialect, &run), spec)
         }
         McpServer::Http { url, headers } => (remote_entry("http", url, headers), None),
         McpServer::Sse { url, headers } => (remote_entry("sse", url, headers), None),
@@ -516,20 +572,16 @@ fn server_file(
 }
 
 /// A stdio server as an entry of `dialect`.
-fn stdio_entry(
-    dialect: McpDialect,
-    command: &str,
-    args: &[String],
-    env: &Map<String, Value>,
-) -> Value {
+fn stdio_entry(dialect: McpDialect, run: &StdioRun) -> Value {
     json!({
         "type": match dialect {
-            McpDialect::Claude => "stdio",
+            // Codex has no server files, so this arm is never asked.
+            McpDialect::Claude | McpDialect::Codex => "stdio",
             McpDialect::Copilot => "local",
         },
-        "command": command,
-        "args": args,
-        "env": env,
+        "command": run.command,
+        "args": run.args,
+        "env": run.env,
     })
 }
 
@@ -538,9 +590,141 @@ fn remote_entry(kind: &str, url: &str, headers: &BTreeMap<String, McpValue>) -> 
     json!({ "type": kind, "url": url, "headers": text_map(headers) })
 }
 
+/// One server as Codex's inline table, what follows `--config=mcp_servers.<name>=`, with the stdio
+/// spec it needs. Field names are bare and every map key is quoted. Codex parses the argument as
+/// `_x_ = <table>` and, if that fails, takes the text as a string, which fails its config load on
+/// every run, so the strings are exact TOML 1.0 basic strings. Only fields Codex 0.164.0 knows are
+/// written, so `--strict-config` accepts them. A remote server's secret headers are
+/// `env_http_headers`: Codex reads each value from the variable the shim sets. Its disabled tools
+/// go inside the table, so there are no deny arguments.
+fn codex_table(
+    name: &str,
+    server: &McpServer,
+    using: &McpUse,
+    home: &Path,
+    spec_file: &Path,
+) -> (String, Option<StdioSpec>) {
+    let mut fields: Vec<(&str, String)> = Vec::new();
+    let mut spec = None;
+    match server {
+        McpServer::Stdio { command, args, env } => {
+            let (run, stdio_spec) = stdio_run(name, command, args, env, home, spec_file);
+            spec = stdio_spec;
+            fields.push(("command", toml_str(&run.command)));
+            if !run.args.is_empty() {
+                fields.push(("args", toml_list(&run.args)));
+            }
+            // Codex expands no `${VAR}`; it passes a variable of its own under the same name.
+            let (passed, literal): (Vec<_>, Vec<_>) = run
+                .env
+                .iter()
+                .partition(|(key, value)| whole_var(value) == Some(key.as_str()));
+            if !literal.is_empty() {
+                fields.push((
+                    "env",
+                    toml_table(literal.into_iter().map(|(k, v)| (k.as_str(), toml_str(v)))),
+                ));
+            }
+            if !passed.is_empty() {
+                let names: Vec<String> = passed.into_iter().map(|(k, _)| k.clone()).collect();
+                fields.push(("env_vars", toml_list(&names)));
+            }
+            if spec.is_some() {
+                fields.push((
+                    "startup_timeout_sec",
+                    LAUNCHER_STARTUP_TIMEOUT_SECS.to_string(),
+                ));
+            }
+        }
+        McpServer::Http { url, headers } | McpServer::Sse { url, headers } => {
+            fields.push(("url", toml_str(url)));
+            let mut plain = Vec::new();
+            let mut named = Vec::new();
+            for (header, value) in headers {
+                match value {
+                    McpValue::Secret { secret } => {
+                        named.push((header.as_str(), toml_str(&secret_var(secret))));
+                    }
+                    // Codex expands no `${VAR}`, so a header that is one variable, or a bearer
+                    // token that is, names it for Codex to read.
+                    McpValue::Plain(value) => match whole_var(value) {
+                        Some(var) => named.push((header.as_str(), toml_str(var))),
+                        None => match value
+                            .strip_prefix("Bearer ")
+                            .and_then(whole_var)
+                            .filter(|_| header.eq_ignore_ascii_case("authorization"))
+                        {
+                            Some(var) => fields.push(("bearer_token_env_var", toml_str(var))),
+                            None => plain.push((header.as_str(), toml_str(value))),
+                        },
+                    },
+                }
+            }
+            for (field, entries) in [("http_headers", plain), ("env_http_headers", named)] {
+                if !entries.is_empty() {
+                    fields.push((field, toml_table(entries)));
+                }
+            }
+        }
+    }
+    if !using.disabled_tools.is_empty() {
+        fields.push(("disabled_tools", toml_list(&using.disabled_tools)));
+    }
+    let body: Vec<String> = fields
+        .into_iter()
+        .map(|(field, value)| format!("{field} = {value}"))
+        .collect();
+    (format!("{{{}}}", body.join(", ")), spec)
+}
+
+/// The variable `value` is, when it is exactly `${NAME}`: what Claude and Copilot expand, and
+/// Codex can only be told to read. A default (`${NAME:-x}`) or text around it isn't one.
+fn whole_var(value: &str) -> Option<&str> {
+    value
+        .strip_prefix("${")
+        .and_then(|rest| rest.strip_suffix('}'))
+        .filter(|name| config::is_env_var_name(name))
+}
+
+/// A TOML 1.0 basic string. Codex's parser is 1.0, so a control character is a `\uXXXX` escape,
+/// never 1.1's `\xHH` or `\e`; everything else stays UTF-8.
+fn toml_str(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{8}' => out.push_str("\\b"),
+            '\t' => out.push_str("\\t"),
+            '\n' => out.push_str("\\n"),
+            '\u{c}' => out.push_str("\\f"),
+            '\r' => out.push_str("\\r"),
+            '\0'..='\u{1f}' | '\u{7f}' => out.push_str(&format!("\\u{:04X}", u32::from(c))),
+            _ => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn toml_list(items: &[String]) -> String {
+    let items: Vec<String> = items.iter().map(|item| toml_str(item)).collect();
+    format!("[{}]", items.join(", "))
+}
+
+/// An inline table with every key quoted, from keys and values already in TOML.
+fn toml_table<'a>(entries: impl IntoIterator<Item = (&'a str, String)>) -> String {
+    let entries: Vec<String> = entries
+        .into_iter()
+        .map(|(key, value)| format!("{} = {value}", toml_str(key)))
+        .collect();
+    format!("{{{}}}", entries.join(", "))
+}
+
 /// The arguments that turn off a server's disabled tools, each in the `--flag=value` form:
 /// Claude takes one comma-separated list of `mcp__<server>__<tool>`, Copilot one
-/// `<server>(<tool>)` pattern per argument.
+/// `<server>(<tool>)` pattern per argument. Codex takes none: its tools go in the server's table.
 fn deny_args(dialect: McpDialect, deny_arg: &str, server: &str, using: &McpUse) -> Vec<String> {
     let tools = &using.disabled_tools;
     if tools.is_empty() {
@@ -558,6 +742,7 @@ fn deny_args(dialect: McpDialect, deny_arg: &str, server: &str, using: &McpUse) 
             .iter()
             .map(|tool| format!("{deny_arg}{server}({tool})"))
             .collect(),
+        McpDialect::Codex => Vec::new(),
     }
 }
 
@@ -590,6 +775,20 @@ mod tests {
                 dialect: McpDialect::Copilot,
                 config_arg: "--additional-mcp-config=@".into(),
                 deny_arg: Some("--deny-tool=".into()),
+                skip_any_args: Vec::new(),
+                skip_subcommands: Vec::new(),
+                skip_if_present: Vec::new(),
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn codex() -> AgentDef {
+        AgentDef {
+            mcp: Some(McpInjection {
+                dialect: McpDialect::Codex,
+                config_arg: "--config=".into(),
+                deny_arg: None,
                 skip_any_args: Vec::new(),
                 skip_subcommands: Vec::new(),
                 skip_if_present: Vec::new(),
@@ -830,6 +1029,210 @@ mod tests {
                 "--deny-tool=github(fork)"
             ]
         );
+    }
+
+    /// `config()` for Codex alone, with `fs` (a stdio server with an env value, `write_file` off)
+    /// and a plain `X-Team` header beside `linear`'s secret one.
+    fn codex_config() -> ConfigState {
+        let mut config = config();
+        config.agents = BTreeMap::from([("codex".into(), codex())]);
+        config.mcp_servers.insert(
+            "fs".into(),
+            McpServer::Stdio {
+                command: "npx".into(),
+                args: vec![McpValue::Plain("-y".into()), McpValue::Plain("fs".into())],
+                env: BTreeMap::from([("LOG".into(), McpValue::Plain("debug".into()))]),
+            },
+        );
+        config.profiles[0].mcp_servers.insert(
+            "fs".into(),
+            McpUse {
+                disabled_tools: vec!["write_file".into()],
+            },
+        );
+        let McpServer::Http { headers, .. } = config.mcp_servers.get_mut("linear").unwrap() else {
+            unreachable!("linear is remote");
+        };
+        headers.insert("X-Team".into(), McpValue::Plain("eng".into()));
+        config
+    }
+
+    #[test]
+    fn codex_gets_each_server_as_one_config_argument() {
+        let files = rendered(&codex_config());
+        // No `servers/` files: the argument is the server.
+        assert_eq!(
+            files.keys().collect::<Vec<_>>(),
+            ["work/codex/launch.json", "work/codex/stdio/github.json"]
+        );
+        let launch: Launch = serde_json::from_str(&files["work/codex/launch.json"]).unwrap();
+        let by_name = |name: &str| launch.servers.iter().find(|s| s.name == name).unwrap();
+        assert_eq!(
+            by_name("fs").args,
+            [
+                r#"--config=mcp_servers.fs={command = "npx", args = ["--prefix=/home/me", "-y", "fs"], env = {"LOG" = "debug"}, disabled_tools = ["write_file"]}"#
+            ]
+        );
+        // Through the launcher, with the timeout that leaves the server Codex's own 30 s.
+        assert_eq!(
+            by_name("github").args,
+            [
+                r#"--config=mcp_servers.github={command = "/home/me/.envrouter/bin/envrouter-keychain", args = ["exec", "/home/me/.envrouter/mcp/work/codex/stdio/github.json"], startup_timeout_sec = 50, disabled_tools = ["delete_repo", "fork"]}"#
+            ]
+        );
+        // Only the variable's name, never a value; a plain header stays a value.
+        assert_eq!(
+            by_name("linear").args,
+            [
+                r#"--config=mcp_servers.linear={url = "https://mcp.linear.app/mcp", http_headers = {"X-Team" = "eng"}, env_http_headers = {"Authorization" = "ENVROUTER_SECRET_9B2C"}}"#
+            ]
+        );
+        assert_eq!(by_name("fs").secrets, Vec::<String>::new());
+        assert_eq!(by_name("github").secrets, Vec::<String>::new());
+        assert_eq!(by_name("linear").secrets, ["9B2C"]);
+    }
+
+    /// Claude and Copilot expand a `${VAR}` value from their environment; Codex expands nothing,
+    /// so it would send the text itself. A whole value that is one variable is named for Codex to
+    /// read; anything else stays as typed.
+    #[test]
+    fn codex_reads_a_variable_a_whole_value_names() {
+        let plain = |text: &str| McpValue::Plain(text.into());
+        let mut config = codex_config();
+        config.mcp_servers.insert(
+            "fs".into(),
+            McpServer::Stdio {
+                command: "srv".into(),
+                args: Vec::new(),
+                env: BTreeMap::from([
+                    ("TOKEN".into(), plain("${TOKEN}")),
+                    ("OTHER".into(), plain("${TOKEN}")),
+                ]),
+            },
+        );
+        config.mcp_servers.insert(
+            "linear".into(),
+            McpServer::Http {
+                url: "https://example.com/mcp".into(),
+                headers: BTreeMap::from([
+                    ("Authorization".into(), plain("Bearer ${LINEAR_TOKEN}")),
+                    ("X-Key".into(), plain("${KEY}")),
+                    ("X-Default".into(), plain("${KEY:-none}")),
+                ]),
+            },
+        );
+        let files = rendered(&config);
+        let launch: Launch = serde_json::from_str(&files["work/codex/launch.json"]).unwrap();
+        let args = |name: &str| &launch.servers.iter().find(|s| s.name == name).unwrap().args;
+        // Codex passes a variable only under its own name, so `OTHER` can't be one.
+        assert_eq!(
+            args("fs")[0],
+            r#"--config=mcp_servers.fs={command = "srv", env = {"OTHER" = "${TOKEN}"}, env_vars = ["TOKEN"], disabled_tools = ["write_file"]}"#
+        );
+        assert_eq!(
+            args("linear")[0],
+            r#"--config=mcp_servers.linear={url = "https://example.com/mcp", bearer_token_env_var = "LINEAR_TOKEN", http_headers = {"X-Default" = "${KEY:-none}"}, env_http_headers = {"X-Key" = "KEY"}}"#
+        );
+    }
+
+    /// Codex parses `-c key=value` by wrapping the value as `_x_ = <value>`, and a value that
+    /// fails to parse silently becomes a string, which then fails its config load on every run.
+    #[test]
+    fn codex_arguments_parse_as_codex_parses_them() {
+        let hostile = "a\"b\\c\nd\te\u{7f}\u{1b}é=#}] ";
+        let plain = |text: &str| McpValue::Plain(text.into());
+        let mut config = codex_config();
+        config.mcp_servers.insert(
+            "fs".into(),
+            McpServer::Stdio {
+                command: "srv".into(),
+                args: vec![plain(hostile), plain("--flag=1")],
+                env: BTreeMap::from([("KEY".into(), plain(hostile))]),
+            },
+        );
+        config.mcp_servers.insert(
+            "linear".into(),
+            McpServer::Http {
+                url: "https://example.com/mcp?a=1&b=#x".into(),
+                headers: BTreeMap::from([
+                    ("Authorization".into(), secret("9B2C")),
+                    ("X-Hostile".into(), plain(hostile)),
+                ]),
+            },
+        );
+        config.profiles[0].mcp_servers.insert(
+            "fs".into(),
+            McpUse {
+                disabled_tools: vec!["a.b".into()],
+            },
+        );
+        let files = rendered(&config);
+        let launch: Launch = serde_json::from_str(&files["work/codex/launch.json"]).unwrap();
+        let parsed = |name: &str| -> toml::Table {
+            let arg = &launch.servers.iter().find(|s| s.name == name).unwrap().args[0];
+            assert!(
+                !arg.chars().any(|c| c < ' ' || c == '\u{7f}'),
+                "a raw control character in {arg:?}"
+            );
+            // As `config_override.rs` splits it: at the first `=`, both halves trimmed.
+            let (key, value) = arg
+                .strip_prefix("--config=")
+                .unwrap()
+                .split_once('=')
+                .unwrap();
+            assert_eq!(key.trim(), format!("mcp_servers.{name}"));
+            let wrapped = format!("_x_ = {}", value.trim());
+            let mut table: toml::Table = toml::from_str(&wrapped).unwrap();
+            let toml::Value::Table(server) = table.remove("_x_").unwrap() else {
+                panic!("not a table: {wrapped}");
+            };
+            server
+        };
+        assert_eq!(
+            parsed("fs"),
+            toml::toml! {
+                command = "srv"
+                args = [hostile, "--flag=1"]
+                env = { KEY = hostile }
+                disabled_tools = ["a.b"]
+            }
+        );
+        assert_eq!(
+            parsed("linear"),
+            toml::toml! {
+                url = "https://example.com/mcp?a=1&b=#x"
+                http_headers = { "X-Hostile" = hostile }
+                env_http_headers = { "Authorization" = "ENVROUTER_SECRET_9B2C" }
+            }
+        );
+    }
+
+    #[test]
+    fn codex_leaves_out_sse_servers() {
+        let mut config = config();
+        config.agents.insert("codex".into(), codex());
+        config.mcp_servers.insert(
+            "events".into(),
+            McpServer::Sse {
+                url: "https://example.com/sse".into(),
+                headers: BTreeMap::new(),
+            },
+        );
+        config.profiles[0]
+            .mcp_servers
+            .insert("events".into(), McpUse::default());
+        let files = rendered(&config);
+        let names = |agent: &str| -> Vec<String> {
+            let launch: Launch =
+                serde_json::from_str(&files[&format!("work/{agent}/launch.json")]).unwrap();
+            launch.servers.into_iter().map(|s| s.name).collect()
+        };
+        assert_eq!(names("claude"), ["events", "github", "linear"]);
+        assert_eq!(names("codex"), ["github", "linear"]);
+        // What the preview and explain mode list agrees with what is rendered.
+        let work = &config.profiles[0];
+        assert_eq!(servers_for(&config, work, "claude"), names("claude"));
+        assert_eq!(servers_for(&config, work, "codex"), names("codex"));
     }
 
     #[test]
