@@ -9,6 +9,7 @@ pub mod platform;
 #[cfg(unix)]
 pub mod programs;
 pub mod resolve;
+pub mod secrets;
 pub mod watcher;
 
 pub use error::{Error, ErrorKind, Result};

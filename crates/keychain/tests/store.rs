@@ -45,3 +45,49 @@ fn finds_no_problem_with_a_store_it_can_use() {
     let home = tempfile::tempdir().unwrap();
     assert_eq!(envrouter_keychain::problem(home.path()), None);
 }
+
+/// The launcher reads the item through the installed helper (here a link to the built one) and
+/// starts a server with the value, from an environment with no `HOME`, as Copilot starts one.
+#[cfg(unix)]
+#[test]
+#[ignore = "uses the machine's secret store"]
+fn the_launcher_starts_a_server_with_its_stored_secret() {
+    use std::os::unix::fs::symlink;
+    use std::process::Command;
+
+    const HELPER: &str = env!("CARGO_BIN_EXE_envrouter-keychain");
+
+    let home = tempfile::tempdir().unwrap();
+    let home = std::fs::canonicalize(home.path()).unwrap();
+    let bin = home.join(".envrouter/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    symlink(HELPER, bin.join("envrouter-keychain")).unwrap();
+    let stored = HashMap::from([("7F3A".to_string(), "ghp_x".to_string())]);
+    envrouter_keychain::write(&home, &stored).unwrap();
+
+    let spec = home.join("github.json");
+    let server = serde_json::json!({
+        "server": "github",
+        "home": home.display().to_string(),
+        "command": "/bin/sh",
+        "args": ["-c", r#"echo "$TOKEN""#],
+        "env": { "TOKEN": { "secret": "7F3A" } },
+    });
+    std::fs::write(&spec, server.to_string()).unwrap();
+    // The session bus address and the like stay: the store needs them. HOME doesn't.
+    let output = Command::new(HELPER)
+        .arg("exec")
+        .arg(&spec)
+        .env_remove("HOME")
+        .output()
+        .unwrap();
+
+    // Before the asserts, so a failure leaves nothing in the store.
+    envrouter_keychain::write(&home, &HashMap::new()).unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "ghp_x\n",
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

@@ -4,7 +4,8 @@
 //!
 //! The app links this crate to write secrets. The shim doesn't: it runs the
 //! `envrouter-keychain` binary only when a server needs a secret, so launches that don't pay
-//! nothing to load the store's framework.
+//! nothing to load the store's framework. The binary's `exec` (Unix) starts a stdio server that
+//! needs a secret, in the agent's place, with the values in that server's environment alone.
 //!
 //! The item's account is the canonical home folder, so a run under a scratch `HOME` (every
 //! test, and the safe way to try the app) never reads or writes the real secrets.

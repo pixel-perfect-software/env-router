@@ -103,12 +103,7 @@ impl McpServer {
 
     /// The ids of the Keychain secrets this server needs.
     pub fn secret_ids(&self) -> BTreeSet<&str> {
-        self.values()
-            .filter_map(|value| match value {
-                McpValue::Secret { secret } => Some(secret.as_str()),
-                McpValue::Plain(_) => None,
-            })
-            .collect()
+        self.values().filter_map(McpValue::secret_id).collect()
     }
 }
 
@@ -119,6 +114,16 @@ impl McpServer {
 pub enum McpValue {
     Plain(String),
     Secret { secret: String },
+}
+
+impl McpValue {
+    /// The id of the secret this refers to, if it is one.
+    pub fn secret_id(&self) -> Option<&str> {
+        match self {
+            McpValue::Secret { secret } => Some(secret),
+            McpValue::Plain(_) => None,
+        }
+    }
 }
 
 /// What EnvRouter knows about an agent beyond its variable. The window writes these from its

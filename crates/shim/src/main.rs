@@ -16,19 +16,15 @@ use std::collections::HashMap;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs;
-use std::io::Read;
 use std::os::unix::{self, process::CommandExt};
 use std::path::{Path, PathBuf};
-use std::process::{self, Command, ExitCode, Stdio};
-use std::sync::mpsc;
-use std::thread;
-use std::time::Duration;
+use std::process::{self, Command, ExitCode};
 
 use envrouter_core::config::ConfigState;
 use envrouter_core::mcp::{self, Launch};
 use envrouter_core::platform::Platform;
 use envrouter_core::programs::{self, is_executable, is_shim};
-use envrouter_core::{config, paths, resolve, EXIT_TOOL_NOT_FOUND};
+use envrouter_core::{config, paths, resolve, secrets, EXIT_TOOL_NOT_FOUND};
 
 /// When set to `1`, print how this invocation would be routed, as one line of JSON, and exit
 /// without running the tool. The app uses it to check a folder. Any other value is ignored, so
@@ -41,8 +37,6 @@ const MCP_VAR: &str = "ENVROUTER_MCP";
 /// there for the tool and found the shim again, as VS Code's `copilot-shim` does. A tool run from
 /// inside that program is a new process, with an ID of its own.
 const RAN_VAR: &str = "ENVROUTER_SHIM_RAN";
-/// An unanswered Keychain prompt mustn't hold the tool forever.
-const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(20);
 
 fn main() -> ExitCode {
     let mut args = env::args_os();
@@ -255,7 +249,12 @@ fn inject(launch: &Launch, home: &Path, tool: &str) -> mcp::Injection {
         return launch.inject(&HashMap::new());
     }
     let ids: Vec<&str> = launch.secret_ids().into_iter().collect();
-    match read_secrets(home, &ids) {
+    match secrets::read_through(
+        &paths::keychain_helper(home),
+        home,
+        &ids,
+        secrets::READ_TIMEOUT,
+    ) {
         Ok(secrets) => {
             let injection = launch.inject(&secrets);
             for name in &injection.dropped {
@@ -272,51 +271,6 @@ fn inject(launch: &Launch, home: &Path, tool: &str) -> mcp::Injection {
             injection
         }
     }
-}
-
-/// The named secrets, from the Keychain helper installed next to the shim. It's a separate
-/// binary so that only runs needing a secret load the Security framework. Ids go on its
-/// command line; values come back through the pipe. An unanswered Keychain prompt times out.
-fn read_secrets(home: &Path, ids: &[&str]) -> Result<HashMap<String, String>, String> {
-    let helper = paths::keychain_helper(home);
-    let mut child = Command::new(&helper)
-        .arg("read")
-        .args(ids)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|err| format!("couldn't start {}: {err}", helper.display()))?;
-    // Both pipes are read while the helper runs: an answer bigger than a pipe's buffer would
-    // otherwise block the helper on its write until the deadline.
-    let stdout = child.stdout.take().expect("stdout is piped");
-    let stderr = child.stderr.take().expect("stderr is piped");
-    let errors = thread::spawn(move || read_all(stderr));
-    let (sender, answer) = mpsc::channel();
-    thread::spawn(move || sender.send(read_all(stdout)));
-    // The pipe closes when the helper exits.
-    let Ok(stdout) = answer.recv_timeout(KEYCHAIN_TIMEOUT) else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(format!(
-            "the {} didn't answer within 20 seconds",
-            Platform::current().secret_store_name()
-        ));
-    };
-    let status = child.wait().map_err(|err| err.to_string())?;
-    if !status.success() {
-        let errors = errors.join().unwrap_or_default();
-        return Err(String::from_utf8_lossy(&errors).trim().to_string());
-    }
-    serde_json::from_slice(&stdout)
-        .map_err(|err| format!("the secrets helper's answer was unreadable: {err}"))
-}
-
-/// Everything until the pipe closes. A failed read keeps what came before it.
-fn read_all(mut pipe: impl Read) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    let _ = pipe.read_to_end(&mut bytes);
-    bytes
 }
 
 /// One line on stderr: what went wrong, then what the shim does about it.

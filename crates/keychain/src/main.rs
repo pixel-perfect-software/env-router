@@ -3,6 +3,11 @@
 //! app runs it that way after an install, so macOS asks to let this build in while the app is in
 //! front. Values only ever travel through the pipe, never on a command line.
 //!
+//! `envrouter-keychain exec <spec>` starts one stdio MCP server that needs a secret, in the agent's
+//! place: it reads that server's secrets and `exec`s its command with them (`launch.rs`). The
+//! other Unix command is `--launcher-version`, which prints the spec format `exec` reads, so a
+//! save renders servers through it only for a helper that can.
+//!
 //! The Windows build also answers the WSL bridge (`store/wsl.rs`), on the item itself:
 //! `store-get <service> <account>` prints it (exit 3 when there's none), `store-set <service>
 //! <account>` reads it from stdin, and `store-delete <service> <account>` removes it.
@@ -12,6 +17,20 @@ use std::env;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
+
+#[cfg(unix)]
+use envrouter_core::{mcp, paths};
+
+#[cfg(unix)]
+mod launch;
+
+/// Opens with the line the helper printed before `exec` existed, so anything that quotes it
+/// still matches.
+#[cfg(unix)]
+const USAGE: &str = "usage: envrouter-keychain read [ID...] | exec <spec> | --launcher-version";
+/// The Windows build starts no servers.
+#[cfg(not(unix))]
+const USAGE: &str = "usage: envrouter-keychain read [ID...]";
 
 /// `store-get`'s exit status for an item that isn't there, which the bridge reads as "none".
 const NOT_FOUND: u8 = 3;
@@ -25,6 +44,13 @@ fn main() -> ExitCode {
         .as_slice()
     {
         ["read", ids @ ..] => read(ids),
+        #[cfg(unix)]
+        [mcp::LAUNCH_SUBCOMMAND, spec] => launch::run(std::path::Path::new(spec)),
+        #[cfg(unix)]
+        [paths::KEYCHAIN_LAUNCHER_VERSION_ARG] => {
+            println!("{}", mcp::LAUNCHER_VERSION);
+            ExitCode::SUCCESS
+        }
         ["store-get", service, account] => match envrouter_keychain::raw::get(service, account) {
             Ok(Some(bytes)) => {
                 let mut stdout = std::io::stdout().lock();
@@ -52,7 +78,7 @@ fn main() -> ExitCode {
         ["store-delete", service, account] => envrouter_keychain::raw::delete(service, account)
             .map_or_else(|err| fail(&err), |()| ExitCode::SUCCESS),
         _ => {
-            eprintln!("usage: envrouter-keychain read [ID...]");
+            eprintln!("{USAGE}");
             ExitCode::from(2)
         }
     }
