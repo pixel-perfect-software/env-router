@@ -53,5 +53,13 @@
       "skipIfPresent": []
     },
     "mcpFiles": { "userFile": "mcp-config.json", "defaultDir": "~/.copilot", "projectFile": ".mcp.json" }
+  },
+  {
+    "command": "codex",
+    "label": "Codex CLI",
+    "envVar": "CODEX_HOME",
+    "defaultPath": "~/.codex",
+    "install": "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+    "note": "MCP sign-ins and ~/.agents/skills are shared by every profile, and a standalone install updates into the folder of the profile it runs in."
   }
 ]

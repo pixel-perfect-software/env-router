@@ -26,9 +26,19 @@
 //   whenever `claudeCode.claudeProcessWrapper` is set, whatever the wrapper does.
 // - copilot: verified on 1.0.98: `@` takes a file and the flag adds to the user's own servers; a
 //   tool is turned off with `--deny-tool=server(tool)`, one per argument.
+// - codex: `CODEX_HOME` holds config.toml and its trust list, auth.json (or the keyring entry
+//   `Codex Auth`, keyed by a hash of the folder), sessions, history, logs and the SQLite state
+//   (0.164.0, run with a scratch home). Not MCP OAuth tokens, which the OS keyring keeps by server
+//   name and URL for every home, nor `~/.agents/skills`, read from HOME; and install.sh puts a
+//   standalone install under CODEX_HOME, so an update run in a profile's folder lands in that
+//   profile. Codex exits when the folder is missing, so the shim makes it again. No MCP descriptor
+//   or `mcpFiles` yet: Codex takes servers as TOML in `--config`, and keeps its own in TOML. No
+//   editor hook: the VS Code extension (`openai.chatgpt`) runs its bundled binary as one app-server
+//   per window, with no wrapper setting. No `mark`: Simple Icons has no OpenAI logo.
 // - `install` is each vendor's own one-line installer (claude: claude.ai/install.sh, the native
 //   installer in the Claude Code docs; copilot: gh.io/copilot-install, the install script in the
-//   Copilot CLI docs; both checked 2026-10-24). It's shown as text to copy, never run by the
+//   Copilot CLI docs; both checked 2026-10-24; codex: chatgpt.com/codex/install.sh, in its README,
+//   checked 2026-10-26). It's shown as text to copy, never run by the
 //   window, and `withAgents` doesn't copy it, since Rust never needs it.
 // - `mark` names the logo `AgentMark` draws (Claude's starburst, not the Claude Code mascot, which blurs
 //   into a blob at 14px); the window's alone, like `label`.

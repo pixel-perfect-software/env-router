@@ -134,6 +134,24 @@ fn routes_each_folder_to_its_most_specific_profile() {
     }
 }
 
+/// A profile's folder that's gone is made again inside home before the tool runs, since some
+/// agents (Codex) exit when theirs is missing, but never elsewhere.
+#[test]
+fn makes_a_missing_tool_folder_inside_home_only() {
+    let f = Fixture::new(None);
+    let outside = f.home.parent().unwrap().join("outside");
+    let config = CONFIG.replace("~/.claude-me", &outside.display().to_string());
+    fs::write(f.home.join(".envrouter/config.json"), config).unwrap();
+    for (cwd, folder, made) in [
+        ("dev/work/app", f.home.join(".claude-work"), true),
+        ("dev", outside, false),
+    ] {
+        let output = f.run(cwd, &f.default_path());
+        assert_eq!(output.status.code(), Some(3), "{cwd}: {}", stderr(&output));
+        assert_eq!(folder.is_dir(), made, "{}", folder.display());
+    }
+}
+
 #[test]
 fn missing_config_runs_the_tool_unrouted_and_quietly() {
     let f = Fixture::new(None);
