@@ -3,8 +3,9 @@
 //! the shim.
 
 use std::cell::OnceCell;
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::fs;
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
@@ -61,4 +62,15 @@ pub fn find_real(
                 && !is_shim(candidate, me.get_or_init(&current_exe).as_deref())
         })
         .map(|(candidate, _)| candidate)
+}
+
+/// `path` without the folders whose `tool` is a shim, every other entry (empty ones too) kept as
+/// it was, so a program run with it can't find a shim for `tool` there.
+pub fn without_shims(path: &OsStr, tool: &str, me: Option<&Path>) -> OsString {
+    let kept: Vec<&[u8]> = path
+        .as_bytes()
+        .split(|&byte| byte == b':')
+        .filter(|dir| dir.is_empty() || !is_shim(&Path::new(OsStr::from_bytes(dir)).join(tool), me))
+        .collect();
+    OsString::from_vec(kept.join(&b':'))
 }

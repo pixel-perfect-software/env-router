@@ -17,9 +17,9 @@ use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::Read;
-use std::os::unix::process::CommandExt;
+use std::os::unix::{self, process::CommandExt};
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode, Stdio};
+use std::process::{self, Command, ExitCode, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -36,6 +36,11 @@ use envrouter_core::{config, paths, resolve, EXIT_TOOL_NOT_FOUND};
 const EXPLAIN_VAR: &str = "ENVROUTER_EXPLAIN";
 /// `0` turns MCP injection off for a run: the tool gets only the servers it configures itself.
 const MCP_VAR: &str = "ENVROUTER_MCP";
+/// Set on what the shim runs: its process ID and its parent's. exec keeps both, so a shim that
+/// finds its own here was exec'd by the program it ran, a wrapper further along PATH that looks
+/// there for the tool and found the shim again, as VS Code's `copilot-shim` does. A tool run from
+/// inside that program is a new process, with an ID of its own.
+const RAN_VAR: &str = "ENVROUTER_SHIM_RAN";
 /// An unanswered Keychain prompt mustn't hold the tool forever.
 const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -46,6 +51,7 @@ fn main() -> ExitCode {
     let home = env::var_os("HOME")
         .filter(|home| !home.is_empty())
         .map(PathBuf::from);
+    let this_process = format!("{}:{}", process::id(), unix::process::parent_id());
     let Some(name) = Path::new(&argv0)
         .file_name()
         .and_then(|name| name.to_str())
@@ -97,6 +103,9 @@ fn main() -> ExitCode {
             );
             return ExitCode::from(EXIT_TOOL_NOT_FOUND);
         };
+        if env::var_os(RAN_VAR).is_some_and(|ran| ran == this_process.as_str()) {
+            return run_again_past_the_shims(&found, &name, &user_args);
+        }
         tool = Some(name);
         real = found;
     }
@@ -150,9 +159,25 @@ fn main() -> ExitCode {
         // Ahead of the user's arguments, so none can land after a `--` they typed.
         command.args(&injection.args).envs(injection.env);
     }
-    command.args(&user_args);
+    command.args(&user_args).env(RAN_VAR, this_process);
     if let Some((var, value)) = route.env {
         command.env(var, value);
+    }
+    let err = command.exec(); // Only returns on failure.
+    eprintln!("envrouter: couldn't run {}: {err}", real.display());
+    ExitCode::from(126)
+}
+
+/// Runs `real` once more, for the wrapper that brought the shim back. The first run routed it,
+/// so its arguments and environment pass through as they are, and PATH loses every folder with a
+/// shim for `tool`: the wrapper then finds the tool itself, or gives its own answer when there's
+/// none, and the shim can't come round again. Anything run from inside it goes unrouted.
+fn run_again_past_the_shims(real: &Path, tool: &str, args: &[OsString]) -> ExitCode {
+    let mut command = Command::new(real);
+    command.args(args);
+    if let Some(path) = env::var_os("PATH") {
+        let me = env::current_exe().and_then(fs::canonicalize).ok();
+        command.env("PATH", programs::without_shims(&path, tool, me.as_deref()));
     }
     let err = command.exec(); // Only returns on failure.
     eprintln!("envrouter: couldn't run {}: {err}", real.display());
