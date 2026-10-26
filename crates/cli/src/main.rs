@@ -383,8 +383,22 @@ fn status(cli: &Cli, home: &Path, agents: bool) -> Result<ExitCode> {
 fn install(cli: &Cli, home: &Path) -> Result<ExitCode> {
     let me = shims::current_exe()?;
     let changed = shims::install_bundled(home)? | shims::install_cli(home, &me)?;
+    let saved = commands::get_config(home)?;
     // In memory: install changes no config. `apply` (or the window) saves the filled agents.
-    shims::sync(home, &agents::with_agents(commands::get_config(home)?))?;
+    shims::sync(home, &agents::with_agents(saved.clone()))?;
+    if changed {
+        // The files the servers start from name the helper just installed (a server that needs a
+        // secret runs through it), so they are rendered again with it, as the app does at launch.
+        commands::render_saved(home)?;
+        if !config::secret_ids(&saved).is_empty() {
+            // Asked once now, not by each server an agent starts. Waits for the answer.
+            eprintln!(
+                "Checking access to the {} for your MCP secrets; it may show a prompt.",
+                Platform::current().secret_store_name()
+            );
+            let _ = shims::ask_keychain_access(home).join();
+        }
+    }
     let bin = paths::root(home).join("bin");
     let installed = serde_json::json!({ "changed": changed, "binDir": bin.display().to_string() });
     print(cli, &installed, || {

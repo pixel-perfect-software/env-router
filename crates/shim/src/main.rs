@@ -242,8 +242,10 @@ fn route(
     }
 }
 
-/// What to add to the run, reading the Keychain only if a server needs a secret. A server
-/// whose secret can't be read is left out, with a warning, rather than started without it.
+/// What to add to the run, reading the Keychain only if the manifest lists a secret, which is a
+/// remote server's header: a stdio server that needs one starts through the secrets helper, which
+/// reads it itself. A server whose secret can't be read is left out, with a warning, rather than
+/// started without it.
 fn inject(launch: &Launch, home: &Path, tool: &str) -> mcp::Injection {
     if launch.secret_ids().is_empty() {
         return launch.inject(&HashMap::new());

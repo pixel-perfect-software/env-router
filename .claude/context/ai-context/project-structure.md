@@ -8,8 +8,9 @@ env-router/
 │   ├── core/                  # shared by app, CLI and shim; no Tauri dependency
 │   │   ├── src/config.rs      # ConfigState model (mirrors TS types), config.json I/O, CONFIG_VERSION, validate
 │   │   ├── src/resolve.rs     # folder → active profile → env var (canonical-path matching)
-│   │   ├── src/mcp.rs         # renders per-profile MCP files + launch manifests; what the shim injects
+│   │   ├── src/mcp.rs         # renders per-profile MCP files + launch manifests (a stdio server with a secret as an `exec` entry for the helper, with a `stdio/<name>.json` spec); `StdioSpec`, what the shim injects
 │   │   ├── src/agents.rs      # the agent registry (src/lib/agents.json, include_str!) and with_agents, so the CLI fills config.agents
+│   │   ├── src/secrets.rs     # `read_through`: `envrouter-keychain read` as a child with a deadline, for the shim and the launcher (std only; no store library)
 │   │   ├── src/platform.rs    # what differs per system: terminal login shells, new-terminal PATH, config dirs, opener
 │   │   ├── src/programs.rs    # finding the real program behind a command (the shim's search, shared with the window's installed check)
 │   │   ├── src/watcher.rs     # Watcher: one probe thread at a time, a bounded wait, the last answer kept (the secret store check and the agent probe)
@@ -22,7 +23,7 @@ env-router/
 │   │   ├── src/installed.rs   # which agents a new terminal has nothing to run for and no editor carries (SetupStatus.missingAgents): the login shell's PATH, aliases and functions, kept 3 minutes
 │   │   ├── src/last_folder.rs # the folder the window last checked, for the menu bar's Check Last Folder
 │   │   ├── src/legacy_identifier.rs # first launch under a new bundle identifier: carries the window's frame over, deletes the old identifier's webview folders
-│   │   ├── src/shims.rs       # installs the shim and helpers; syncs one symlink per tool
+│   │   ├── src/shims.rs       # installs the shim and helpers (and asks them their config and launcher versions); syncs one symlink per tool
 │   │   ├── src/uninstall.rs   # uninstall: shell blocks, editor wrappers, the secret item, ~/.envrouter, the app's webview folders (the app deletes its own as it exits, `finish_uninstall`), in that order (a problem before the secrets stops the run), the commands that remove the app and CLI, and the app's lock the CLI's uninstall checks
 │   │   ├── src/editors.rs     # points an agent extension's process-wrapper setting at the shim (desktop editors and remote servers)
 │   │   ├── src/mcp_import.rs  # reads the agents' own MCP files (by their mcpFiles descriptor) for import, and pasted JSON
@@ -31,14 +32,16 @@ env-router/
 │   ├── cli/                   # `envrouter`: status, install, shell, editor, check, explain, apply, secret, uninstall, rpc
 │   ├── keychain/              # MCP secrets in one item of the platform's store; envrouter-keychain helper bin (the shim runs it, never links it)
 │   │   ├── src/store/         # macos.rs (Keychain), linux.rs → secret_service.rs or wsl.rs, windows.rs (Credential Manager), unavailable.rs
-│   │   └── tests/store.rs     # round trip through the real store; ignored by default, run by CI on Linux
+│   │   ├── src/launch.rs      # `exec <spec>` (unix): starts one stdio MCP server with its secrets, in the agent's place; `--launcher-version` is in main.rs
+│   │   ├── tests/launch.rs    # the built helper's `exec` against a fake helper in a scratch home
+│   │   └── tests/store.rs     # round trip through the real store, and the launcher through it; ignored by default, run by CI on Linux
 │   ├── shim/
 │   │   ├── src/main.rs        # the shim: route, find the real binary, exec; wrapper mode for editors; ENVROUTER_EXPLAIN mode
 │   │   └── tests/shim.rs      # end-to-end tests of the built binary through a symlink
 │   └── build-support/         # builds the shim and helper for the build scripts that bundle or test them
 ├── src-tauri/                 # the desktop app
 │   ├── build.rs               # stages the shim and helper for bundle.externalBin
-│   ├── src/lib.rs             # Tauri commands (wrappers over ops::commands), app setup, and the `Gate` every home() call goes through (it counts commands in flight, so an uninstall can wait for them, then turn the rest away) and the app's `app.lock`
+│   ├── src/lib.rs             # Tauri commands (wrappers over ops::commands), app setup, and the `Gate` every home() call goes through (it counts commands in flight, so an uninstall can wait for them, then turn the rest away) and the app's `app.lock`; `after_install` is what a new helper installed at launch leaves to do (render the MCP files again, ask the store for access), on a thread that owns the lease
 │   ├── src/tray.rs            # menu bar icon and menu (Check Last Folder, the version line); on macOS close-to-hide and the Dock icon only while open
 │   ├── src/menu.rs            # macOS menu bar: Settings… after About, EnvRouter's own Quit, the Help menu's links
 │   ├── src/help.rs            # the two help links (docs, report an issue) as a fixed list under the repository; the only addresses EnvRouter opens
@@ -85,7 +88,7 @@ env-router/
 Created on the user's machine at runtime: `~/.envrouter/config.json`, `~/.envrouter/bin/` (the
 shim, `envrouter-keychain`, the `envrouter` CLI when installed from a release archive, and on
 Linux `envrouter-keychain.exe` for WSL), `~/.envrouter/shims/<tool>` (symlinks), and
-`~/.envrouter/mcp/<profile id>/<command>/` (rendered MCP server files and `launch.json`), `~/.envrouter/last-folder.json`,
+`~/.envrouter/mcp/<profile id>/<command>/` (rendered MCP server files, `launch.json`, and `stdio/<server>.json`, the spec the helper's `exec` starts a stdio server that needs a secret from: its command with each secret as a reference), `~/.envrouter/last-folder.json`,
 `~/.envrouter/wsl-distro` (WSL only: the distro's name, for a store use without `WSL_DISTRO_NAME`), plus an
 "EnvRouter MCP secrets" item in the platform's store once a secret is saved (the login Keychain,
 the Secret Service, or the Windows Credential Manager as `EnvRouter MCP secrets:wsl:<distro>:<home>#<n>`).
@@ -101,7 +104,7 @@ command of the same name and arguments.
 | Command | Does |
 |---|---|
 | `get_config` | Reads the config, creating an empty one if it's missing |
-| `save_config(payload, secrets)` | Validates, stores new MCP secrets in the platform's store (pruning unused ones), saves, installs the shim, renders the MCP files, syncs the symlinks |
+| `save_config(payload, secrets)` | Validates, stores new MCP secrets in the platform's store (pruning unused ones), saves, installs the shim and helper, renders the MCP files, syncs the symlinks |
 | `get_setup_status` | The platform and its store's name, whether the shim is installed, plus per-shell availability, default shell and block status, and which agents a new terminal doesn't find (`missingAgents`, null while unknown) |
 | `set_shell_integration(shell, enabled)` | Adds or removes the startup-file block |
 | `get_editor_status(hooks)` | Each VS Code-family editor's (and remote server's) state for each agent's extension hook (from `agents.json`) |

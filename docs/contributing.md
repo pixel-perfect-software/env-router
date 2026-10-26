@@ -181,7 +181,7 @@ crates/ops/        The backend with no UI: shell integration, shims, editors, MC
 crates/cli/        The envrouter command.
 crates/shim/       The shim binary, with end-to-end tests in tests/shim.rs.
 crates/keychain/   MCP secrets in the platform's store (src/store/), and the envrouter-keychain
-                   helper the shim runs.
+                   helper the shim runs and agents start command servers through (src/launch.rs).
 src-tauri/         The desktop app (Tauri 2): command wrappers, the menu bar, the window.
 src/               The window: React, TypeScript, Tailwind CSS 4.
 src/lib/agents.json  The agent registry: each agent's variable, MCP dialect and editor hook,
@@ -200,7 +200,7 @@ command. A new window command goes in `crates/ops/src/commands.rs`, gets a Tauri
   warns and still runs it. The same goes for MCP manifests and unreadable secrets.
   `crates/shim/tests/shim.rs` covers each case; add to it when you change the shim.
 - **The shim stays small.** `crates/core` and `crates/shim` must not depend on a secret store
-  library; the shim runs the secrets helper only when a server needs a secret. `otool -L` on the
+  library; the shim runs the secrets helper only when a remote server's header needs a secret. `otool -L` on the
   release shim lists only `libSystem`, `ldd` only libc and libgcc.
 - **Platform differences live in one place.** Rust asks `crates/core/src/platform.rs`; the
   window asks `usePlatform()` in `src/lib/platform.ts`. Don't check the OS inline, and don't
