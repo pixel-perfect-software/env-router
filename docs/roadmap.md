@@ -510,17 +510,23 @@ Parked.
    start and `exec`s the command with them, so they are in that server's environment and not the
    agent's. Remote servers keep `${ENVROUTER_SECRET_<ID>}` in the agent's environment, since the
    agent sends the headers; README's Privacy and security says so, with the allowlist cost. Still
-   to do: Codex's rendering of the same entry (#161), locking credential-looking arguments on
-   import, and moving remote secrets out of the environment through Claude's `headersHelper`.
+   to do: locking credential-looking arguments on import, and moving remote secrets out of the environment through Claude's `headersHelper`.
    Not verified: WSL, a Linux desktop's session bus from a stripped environment, Copilot's startup
    timeout, a remote header secret under `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`, and both agents
    starting a launcher entry.
 5. **#160: Codex CLI** as an agent with `CODEX_HOME`. A missing folder is fatal, MCP OAuth
    tokens and `~/.agents/skills` stay shared, and the VS Code extension has no wrapper setting.
 6. **#161: Codex's MCP dialect:** one `--config=mcp_servers.<name>={…}` inline table per server
-   with `disabled_tools` inside it, HTTP secrets by variable name, a decision on same-name merges
-   (a transport mismatch fails every run), and `skipSubcommands` for the commands bound to
-   Codex's background server.
+   with `disabled_tools` inside it, HTTP secrets by variable name, and `skipSubcommands` for the
+   commands bound to Codex's background server. Built (`CONFIG_VERSION` 6): a stdio server with a
+   secret runs through the launcher from #159 (`startup_timeout_sec = 50`), SSE servers are left
+   out, `codex_apps` and `codex_tui` are refused as names, and an install that saved Codex
+   without a descriptor gains it (`with_agents`). Decided 2026-10-26: servers keep their library
+   names, so a same-name server in Codex's own config merges with the profile's and a different
+   transport fails every run in that folder. Ship #162 in the same release, whose TOML reader
+   lets a save warn and `check_folder` report that mismatch. Plain values are on Codex's command
+   line (README's Privacy section), and its OAuth store stays at its default. Not verified: WSL, a
+   Linux desktop, Codex before 0.164.0.
 7. **#162: the import reads Codex's TOML and Copilot's `.github/mcp.json`,** with `mcpFiles`
    taking several project files and a format (`CONFIG_VERSION`).
 8. **#163: SSE marked deprecated, and Claude's `ws` servers.** SSE has been eligible for removal

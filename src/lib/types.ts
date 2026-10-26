@@ -37,13 +37,13 @@ export type McpServer =
   | { transport: 'http'; url: string; headers: Record<string, McpValue> }
   | { transport: 'sse'; url: string; headers: Record<string, McpValue> }
 
-/** `envrouter_core::config::McpDialect`: an MCP config file format, named after the agent that defined it. */
-export type McpDialect = 'claude' | 'copilot'
+/** `envrouter_core::config::McpDialect`: how an agent is handed MCP servers, named after the agent that defined it. */
+export type McpDialect = 'claude' | 'copilot' | 'codex'
 
 /** `envrouter_core::config::McpInjection`: how the shim hands an agent its servers at launch. */
 export interface McpInjection {
   dialect: McpDialect
-  /** Followed by a rendered file's path, as one argument: `--mcp-config=`. Never two arguments, since Claude's flags take several values. */
+  /** Followed by what the dialect renders for one server, as one argument: a rendered file's path (`--mcp-config=`) or, for Codex, `mcp_servers.<name>=<inline table>`. Never two arguments, since Claude's flags take several values. */
   configArg: string
   /** Followed by the tools to turn off, in the dialect's form, e.g. `--disallowedTools=`. */
   denyArg: string | null

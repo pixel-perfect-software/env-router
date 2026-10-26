@@ -8,7 +8,7 @@ env-router/
 │   ├── core/                  # shared by app, CLI and shim; no Tauri dependency
 │   │   ├── src/config.rs      # ConfigState model (mirrors TS types), config.json I/O, CONFIG_VERSION, validate
 │   │   ├── src/resolve.rs     # folder → active profile → env var (canonical-path matching)
-│   │   ├── src/mcp.rs         # renders per-profile MCP files + launch manifests (a stdio server with a secret as an `exec` entry for the helper, with a `stdio/<name>.json` spec); `StdioSpec`, what the shim injects
+│   │   ├── src/mcp.rs         # renders per-profile MCP files + launch manifests (a stdio server with a secret as an `exec` entry for the helper, with a `stdio/<name>.json` spec; Codex's dialect is an inline TOML `--config` argument per server and writes no `servers/` file); `StdioSpec`, what the shim injects
 │   │   ├── src/agents.rs      # the agent registry (src/lib/agents.json, include_str!) and with_agents, so the CLI fills config.agents
 │   │   ├── src/secrets.rs     # `read_through`: `envrouter-keychain read` as a child with a deadline, for the shim and the launcher (std only; no store library)
 │   │   ├── src/platform.rs    # what differs per system: terminal login shells, new-terminal PATH, config dirs, opener
@@ -88,7 +88,7 @@ env-router/
 Created on the user's machine at runtime: `~/.envrouter/config.json`, `~/.envrouter/bin/` (the
 shim, `envrouter-keychain`, the `envrouter` CLI when installed from a release archive, and on
 Linux `envrouter-keychain.exe` for WSL), `~/.envrouter/shims/<tool>` (symlinks), and
-`~/.envrouter/mcp/<profile id>/<command>/` (rendered MCP server files, `launch.json`, and `stdio/<server>.json`, the spec the helper's `exec` starts a stdio server that needs a secret from: its command with each secret as a reference), `~/.envrouter/last-folder.json`,
+`~/.envrouter/mcp/<profile id>/<command>/` (rendered MCP server files (none for Codex, whose `codex/` holds only `launch.json` and `stdio/`), `launch.json`, and `stdio/<server>.json`, the spec the helper's `exec` starts a stdio server that needs a secret from: its command with each secret as a reference), `~/.envrouter/last-folder.json`,
 `~/.envrouter/wsl-distro` (WSL only: the distro's name, for a store use without `WSL_DISTRO_NAME`), plus an
 "EnvRouter MCP secrets" item in the platform's store once a secret is saved (the login Keychain,
 the Secret Service, or the Windows Credential Manager as `EnvRouter MCP secrets:wsl:<distro>:<home>#<n>`).

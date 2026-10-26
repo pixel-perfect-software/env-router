@@ -31,10 +31,23 @@
 //   (0.164.0, run with a scratch home). Not MCP OAuth tokens, which the OS keyring keeps by server
 //   name and URL for every home, nor `~/.agents/skills`, read from HOME; and install.sh puts a
 //   standalone install under CODEX_HOME, so an update run in a profile's folder lands in that
-//   profile. Codex exits when the folder is missing, so the shim makes it again. No MCP descriptor
-//   or `mcpFiles` yet: Codex takes servers as TOML in `--config`, and keeps its own in TOML. No
-//   editor hook: the VS Code extension (`openai.chatgpt`) runs its bundled binary as one app-server
-//   per window, with no wrapper setting. No `mark`: Simple Icons has no OpenAI logo.
+//   profile. Codex exits when the folder is missing, so the shim makes it again. No `mcpFiles` yet:
+//   Codex keeps its own servers in TOML, which importing needs a reader for (#162). No editor
+//   hook: the VS Code extension (`openai.chatgpt`) runs its bundled binary as one app-server per
+//   window, with no wrapper setting. No `mark`: Simple Icons has no OpenAI logo. The MCP
+//   descriptor, checked against the 0.164.0 source: `--config=` is global and appends one value
+//   per flag, so it can't swallow the user's next argument; the value is `mcp_servers.<name>=`
+//   and an inline TOML table, one per server, which Codex deep-merges into a server of the same
+//   name in its own config, and a transport that differs from that server's (a `url` beside a
+//   `command`) fails its config load. `denyArg` is null: disabled tools go inside the table, as
+//   `disabled_tools`. `skipAnyArgs` is empty, since no Codex flag means "only my own servers".
+//   `skipSubcommands`: any override but a feature toggle makes Codex run embedded rather than on
+//   its shared background server, which `queue` refuses ("remove configuration overrides or use
+//   --remote"), `archive`, `unarchive` and `delete` would write session state through a second
+//   server for, and `remote-control` answers by running in the foreground instead of the daemon;
+//   none has an alias. Re-sweep on a new release. `skipIfPresent` is empty: an admin's
+//   requirements.toml `[mcp_servers]` allowlist turns unlisted servers off without exiting.
+//   Codex has no SSE transport, so an SSE server isn't handed to it.
 // - `install` is each vendor's own one-line installer (claude: claude.ai/install.sh, the native
 //   installer in the Claude Code docs; copilot: gh.io/copilot-install, the install script in the
 //   Copilot CLI docs; both checked 2026-10-24; codex: chatgpt.com/codex/install.sh, in its README,

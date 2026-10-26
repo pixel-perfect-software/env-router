@@ -99,7 +99,7 @@ let failing: string | null = ['home', 'status', 'shell', 'editor', 'reveal', 'un
   : null
 
 /** `config::CONFIG_VERSION`: every save writes it. */
-const CONFIG_VERSION = 5
+const CONFIG_VERSION = 6
 
 /** What each platform's store says when it can't be used (`crates/keychain/src/store/`). */
 const storeError = {
@@ -450,9 +450,17 @@ const setTool = (p: Profile | null, tool: string) => {
   return settings?.path.trim() ? settings : undefined
 }
 
+/** `McpDialect::takes`: Codex has no SSE transport. */
+const dialectTakes = (dialect: McpDialect, server: McpServer) => !(dialect === 'codex' && server.transport === 'sse')
+
+/** `McpDialect::reserved_names`: the server names an agent keeps for its own servers. */
+const reservedNames = (dialect: McpDialect): string[] => (dialect === 'codex' ? ['codex_apps', 'codex_tui'] : [])
+
 /** `mcp::servers_for`: the library servers a profile hands a tool that takes them. */
-const mcpFor = (cfg: ConfigState, p: Profile | null, tool: string) =>
-  p && cfg.agents[tool]?.mcp ? sortedKeys(p.mcpServers).filter((name) => has(cfg.mcpServers, name)) : []
+const mcpFor = (cfg: ConfigState, p: Profile | null, tool: string) => {
+  const mcp = cfg.agents[tool]?.mcp
+  return p && mcp ? sortedKeys(p.mcpServers).filter((name) => has(cfg.mcpServers, name) && dialectTakes(mcp.dialect, cfg.mcpServers[name])) : []
+}
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -521,6 +529,8 @@ const validate = (cfg: ConfigState) => {
       throw `Profile "${p.name}" has the id "${p.id}", which can't name a folder. Use letters, digits, - and _.`
     for (const [server, use] of uses) {
       if (!has(cfg.mcpServers, server)) throw `Profile "${p.name}" uses the MCP server "${server}", which isn't in the server list.`
+      const keeper = sorted(cfg.agents).find(([, agent]) => agent.mcp && reservedNames(agent.mcp.dialect).includes(server))
+      if (keeper) throw `MCP server "${server}" has a name ${keeper[0]} keeps for its own servers. Rename it.`
       const bad = use.disabledTools.find((t) => !isMcpToolName(t))
       if (bad !== undefined) throw `"${bad}" in profile "${p.name}" isn't a valid MCP tool name.`
     }
