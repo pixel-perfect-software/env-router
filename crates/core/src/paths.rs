@@ -48,6 +48,13 @@ pub fn windows_keychain_helper(home: &Path) -> PathBuf {
     root(home).join("bin").join(format!("{KEYCHAIN_NAME}.exe"))
 }
 
+/// The name of the WSL distro, noted by the first store use that has `WSL_DISTRO_NAME`. The
+/// Windows Credential Manager item is keyed by it, and a process a distro starts without the
+/// variable (a systemd user unit, cron, an agent that passes a bare environment) reads it here.
+pub fn wsl_distro(home: &Path) -> PathBuf {
+    root(home).join("wsl-distro")
+}
+
 /// The file the desktop app holds a lock on for as long as it runs, so `envrouter uninstall`
 /// can tell the window is open: a window refocusing after the folder is gone would make it again.
 pub fn app_lock(home: &Path) -> PathBuf {

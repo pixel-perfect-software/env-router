@@ -572,10 +572,11 @@ machine imports on another, the window's and the CLI's alike.
    `secret list` data in `SetupStatus` or the editor. Also: `envrouter install` copies the CLI
    into `~/.envrouter/bin` unconditionally (`cli:341`), so a Homebrew install goes stale after
    `brew upgrade`; skip the copy when run from a keg.
-6. **Store edge cases.** WSL keys the item by `WSL_DISTRO_NAME`, so systemd user units and cron
-   look up `wsl::<home>` and drop servers (`wsl.rs:16-19`); Windows multi-part writes aren't
-   atomic (`windows.rs:107-120`). Fix: record the distro at first save; a generation header with
-   retry on read.
+6. **Store edge cases.** Windows multi-part writes aren't atomic (`windows.rs:107-120`). Fix: a
+   generation header with retry on read. The WSL half is fixed (#159): the item was keyed by
+   `WSL_DISTRO_NAME`, so systemd user units and cron looked up `wsl::<home>` and dropped servers;
+   any store use from a WSL terminal now notes the distro in `~/.envrouter/wsl-distro`, which a
+   process without the variable reads.
 7. **Backend test gaps.** `commands::save` (refusing an unused secret, pruning, tool folders only
    inside home, `save_from_cli`, a failure midway), `open_in_editor` escaping home,
    `check_http` entirely (401, bad header, timeout), `shims::sync` replacing a foreign link,
