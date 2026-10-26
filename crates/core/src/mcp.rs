@@ -3,8 +3,15 @@
 //! On every save the app renders, for each profile that uses servers and each agent with an
 //! MCP descriptor, one config file per server in the agent's dialect, plus a launch manifest
 //! listing the arguments that load them. The shim reads only the manifest, so it never needs
-//! an agent's file format. Secret values are nowhere on disk: a rendered file refers to
-//! `${ENVROUTER_SECRET_<ID>}`, which the shim sets on the agent's process from the Keychain.
+//! an agent's file format. Secret values are nowhere on disk, and a secret reaches only the
+//! process that uses it:
+//!
+//! - A stdio server that needs one is rendered as the secrets helper's `exec` entry, with a
+//!   [`StdioSpec`] beside it holding the real command and its secrets as references. The helper
+//!   reads the store when the agent starts the server and `exec`s the command with the values,
+//!   so they are in that server's environment or arguments and in no other process.
+//! - A remote server's file refers to `${ENVROUTER_SECRET_<ID>}` in its headers, which the agent
+//!   expands from its own environment, so the shim reads the store and sets it on the agent.
 
 #[cfg(unix)]
 use std::collections::HashSet;
@@ -60,7 +67,9 @@ pub struct LaunchServer {
     pub name: String,
     /// Each a single `--flag=value` argument, added before the user's own.
     pub args: Vec<String>,
-    /// The Keychain secrets the server's file refers to. Without all of them it's left out.
+    /// The Keychain secrets the agent's environment must carry for the server's file: a remote
+    /// server's header secrets. Without all of them it's left out. A stdio server that needs
+    /// secrets starts through the launcher, which reads them itself, so it lists none.
     #[serde(default)]
     pub secrets: Vec<String>,
 }
@@ -264,10 +273,15 @@ pub fn render(config: &ConfigState, home: &Path) -> Vec<(PathBuf, String)> {
                 let Some(server) = config.mcp_servers.get(name) else {
                     continue;
                 };
-                // In their own folder, so a server named `launch` can't collide.
+                // In their own folders, so a server named `launch` can't collide.
                 let file = dir.join("servers").join(format!("{name}.json"));
-                let contents = server_file(injection.dialect, name, server, home);
+                let spec_file = dir.join("stdio").join(format!("{name}.json"));
+                let (contents, spec) =
+                    server_file(injection.dialect, name, server, home, &spec_file);
                 files.push((file.clone(), pretty(&contents)));
+                if let Some(spec) = spec {
+                    files.push((spec_file, pretty(&spec)));
+                }
                 let mut args = vec![format!("{}{}", injection.config_arg, file.display())];
                 if let Some(deny_arg) = &injection.deny_arg {
                     args.extend(deny_args(injection.dialect, deny_arg, name, using));
@@ -275,7 +289,7 @@ pub fn render(config: &ConfigState, home: &Path) -> Vec<(PathBuf, String)> {
                 launch.servers.push(LaunchServer {
                     name: name.clone(),
                     args,
-                    secrets: server.secret_ids().into_iter().map(str::to_owned).collect(),
+                    secrets: agent_secret_ids(server),
                 });
             }
             files.push((launch_path, pretty(&launch)));
@@ -284,16 +298,19 @@ pub fn render(config: &ConfigState, home: &Path) -> Vec<(PathBuf, String)> {
     files
 }
 
-/// How long a server file outlives the save that stopped naming it. A shim that read the old
-/// manifest just before the save hands the agent that file, and the agent opens it as it starts.
+/// How long a server file, or a stdio spec, outlives the save that stopped naming it. A shim that
+/// read the old manifest just before the save hands the agent that file, and the agent opens it
+/// as it starts. A spec is read again at every reconnect, since an agent runs the launcher each
+/// time it starts the server: a session that began before the save finds a server removed more
+/// than this long ago gone (the launcher says to restart the agent).
 #[cfg(unix)]
 const RETIRED_GRACE: Duration = Duration::from_secs(600);
 
 /// Writes what [`render`] gives, then removes the rest of [`paths::mcp`]. New files land before
 /// old ones go, so a tool starting mid-save never finds a manifest missing. A manifest that's no
-/// longer rendered goes at once, so no new run gets servers the config dropped; a server file goes
-/// only once it's been unnamed for [`RETIRED_GRACE`], at a later save, since a run that read the
-/// old manifest may still open it.
+/// longer rendered goes at once, so no new run gets servers the config dropped; a server file or
+/// a spec goes only once it's been unnamed for [`RETIRED_GRACE`], at a later save, since a run
+/// that read the old manifest may still open it.
 #[cfg(unix)]
 pub fn sync(config: &ConfigState, home: &Path) -> Result<()> {
     sync_at(config, home, SystemTime::now())
@@ -354,8 +371,8 @@ struct Retired {
     seen: HashSet<PathBuf>,
 }
 
-/// Removes what in `dir` isn't in `keep`: a manifest at once, a server file once it's been
-/// retired for [`RETIRED_GRACE`], and folders left empty. Links are removed, never followed.
+/// Removes what in `dir` isn't in `keep`: a manifest at once, a server file or a spec once it's
+/// been retired for [`RETIRED_GRACE`], and folders left empty. Links are removed, never followed.
 /// Only [`sync`] uses it, which is Unix-only until Windows gets its own.
 #[cfg(unix)]
 fn remove_stale(dir: &Path, keep: &HashSet<&Path>, retired: &mut Retired) -> Result<()> {
@@ -401,54 +418,116 @@ fn pretty(value: &impl Serialize) -> String {
 /// user's own, among npx's options before the package, stays. The cost: npx no longer sees the
 /// project's own `node_modules/.bin` or its `.npmrc`, so a server installed only in the project,
 /// or from a registry only the project's `.npmrc` configures, needs its own `--prefix`.
-fn launch_args(command: &str, mut args: Vec<String>, home: &Path) -> Vec<String> {
+fn launch_args(command: &str, mut args: Vec<McpValue>, home: &Path) -> Vec<McpValue> {
     let npx = Path::new(command)
         .file_name()
         .is_some_and(|name| name == "npx");
+    // A locked value can't be an option of the user's own.
     let own_prefix = args
         .iter()
-        .take_while(|arg| arg.starts_with('-'))
+        .map_while(|arg| match arg {
+            McpValue::Plain(text) if text.starts_with('-') => Some(text),
+            _ => None,
+        })
         .any(|arg| arg.starts_with("--prefix"));
     if npx && !own_prefix {
-        args.insert(0, format!("--prefix={}", home.display()));
+        args.insert(0, McpValue::Plain(format!("--prefix={}", home.display())));
     }
     args
 }
 
-/// One server as an agent's config file in `dialect`.
-fn server_file(dialect: McpDialect, name: &str, server: &McpServer, home: &Path) -> Value {
-    let text = |value: &McpValue| match value {
+/// The text a rendered file holds for a value that is read from the agent's environment.
+fn text(value: &McpValue) -> String {
+    match value {
         McpValue::Plain(text) => text.clone(),
         McpValue::Secret { secret } => format!("${{{}}}", secret_var(secret)),
-    };
-    let map = |values: &BTreeMap<String, McpValue>| {
-        values
-            .iter()
-            .map(|(key, value)| (key.clone(), Value::String(text(value))))
-            .collect::<Map<_, _>>()
-    };
-    let mut entry = match server {
-        McpServer::Stdio { command, args, env } => json!({
-            "type": match dialect {
-                McpDialect::Claude => "stdio",
-                McpDialect::Copilot => "local",
-            },
-            "command": command,
-            "args": launch_args(command, args.iter().map(text).collect(), home),
-            "env": map(env),
-        }),
-        McpServer::Http { url, headers } => {
-            json!({ "type": "http", "url": url, "headers": map(headers) })
+    }
+}
+
+fn text_map(values: &BTreeMap<String, McpValue>) -> Map<String, Value> {
+    values
+        .iter()
+        .map(|(key, value)| (key.clone(), Value::String(text(value))))
+        .collect()
+}
+
+/// The secrets the agent's own environment has to carry for `server`: a remote server's header
+/// secrets, which the agent expands. A stdio server's are the launcher's, read when it starts.
+fn agent_secret_ids(server: &McpServer) -> Vec<String> {
+    match server {
+        McpServer::Stdio { .. } => Vec::new(),
+        McpServer::Http { .. } | McpServer::Sse { .. } => {
+            server.secret_ids().into_iter().map(str::to_owned).collect()
         }
-        McpServer::Sse { url, headers } => {
-            json!({ "type": "sse", "url": url, "headers": map(headers) })
+    }
+}
+
+/// One server as an agent's config file in `dialect`. A stdio server that needs a secret is the
+/// helper's `exec` of `spec_file`, and its [`StdioSpec`] is the second answer; any other stdio
+/// server keeps its real command, so an allowlist that names it still matches.
+fn server_file(
+    dialect: McpDialect,
+    name: &str,
+    server: &McpServer,
+    home: &Path,
+    spec_file: &Path,
+) -> (Value, Option<StdioSpec>) {
+    let (mut entry, spec) = match server {
+        McpServer::Stdio { command, args, env } => {
+            let args = launch_args(command, args.clone(), home);
+            if server.secret_ids().is_empty() {
+                let args: Vec<String> = args.iter().map(text).collect();
+                (stdio_entry(dialect, command, &args, &text_map(env)), None)
+            } else {
+                let helper = paths::keychain_helper(home).display().to_string();
+                let launcher_args = vec![
+                    LAUNCH_SUBCOMMAND.to_owned(),
+                    spec_file.display().to_string(),
+                ];
+                let spec = StdioSpec {
+                    server: name.to_owned(),
+                    home: home.display().to_string(),
+                    command: command.clone(),
+                    args,
+                    env: env.clone(),
+                };
+                (
+                    stdio_entry(dialect, &helper, &launcher_args, &Map::new()),
+                    Some(spec),
+                )
+            }
         }
+        McpServer::Http { url, headers } => (remote_entry("http", url, headers), None),
+        McpServer::Sse { url, headers } => (remote_entry("sse", url, headers), None),
     };
     if dialect == McpDialect::Copilot {
         // Required. Tools are turned off by flag (`deny_args`), so the list stays open.
         entry["tools"] = json!(["*"]);
     }
-    json!({ "mcpServers": { name: entry } })
+    (json!({ "mcpServers": { name: entry } }), spec)
+}
+
+/// A stdio server as an entry of `dialect`.
+fn stdio_entry(
+    dialect: McpDialect,
+    command: &str,
+    args: &[String],
+    env: &Map<String, Value>,
+) -> Value {
+    json!({
+        "type": match dialect {
+            McpDialect::Claude => "stdio",
+            McpDialect::Copilot => "local",
+        },
+        "command": command,
+        "args": args,
+        "env": env,
+    })
+}
+
+/// A remote server as an entry, whose header secrets the agent expands from its environment.
+fn remote_entry(kind: &str, url: &str, headers: &BTreeMap<String, McpValue>) -> Value {
+    json!({ "type": kind, "url": url, "headers": text_map(headers) })
 }
 
 /// The arguments that turn off a server's disabled tools, each in the `--flag=value` form:
@@ -515,8 +594,9 @@ mod tests {
         McpValue::Secret { secret: id.into() }
     }
 
-    /// Profile `work` uses `github` (a token from the Keychain, `delete_repo` off) and
-    /// `linear` (remote). Profile `home` uses nothing.
+    /// Profile `work` uses `github` (a stdio server with a token from the Keychain, `delete_repo`
+    /// off) and `linear` (remote, with a key from the Keychain in its `Authorization` header).
+    /// Profile `home` uses nothing.
     fn config() -> ConfigState {
         let using = |tools: &[&str]| McpUse {
             disabled_tools: tools.iter().copied().map(String::from).collect(),
@@ -551,7 +631,7 @@ mod tests {
                     "linear".into(),
                     McpServer::Http {
                         url: "https://mcp.linear.app/mcp".into(),
-                        headers: BTreeMap::new(),
+                        headers: BTreeMap::from([("Authorization".into(), secret("9B2C"))]),
                     },
                 ),
             ]),
@@ -574,39 +654,85 @@ mod tests {
     }
 
     #[test]
-    fn render_writes_one_file_per_server_and_a_manifest_per_agent() {
-        let files = rendered(&config());
+    fn render_starts_only_stdio_servers_with_a_secret_through_the_launcher() {
+        let mut config = config();
+        // A stdio server with nothing secret keeps its real command, so an allowlist naming it
+        // still matches, and gets no spec.
+        config.mcp_servers.insert(
+            "fs".into(),
+            McpServer::Stdio {
+                command: "npx".into(),
+                args: vec![McpValue::Plain("-y".into()), McpValue::Plain("fs".into())],
+                env: BTreeMap::new(),
+            },
+        );
+        config.profiles[0]
+            .mcp_servers
+            .insert("fs".into(), McpUse::default());
+        let files = rendered(&config);
         assert_eq!(
             files.keys().collect::<Vec<_>>(),
             [
                 "work/claude/launch.json",
+                "work/claude/servers/fs.json",
                 "work/claude/servers/github.json",
                 "work/claude/servers/linear.json",
+                "work/claude/stdio/github.json",
             ]
         );
-        let github: Value =
-            serde_json::from_str(&files["work/claude/servers/github.json"]).unwrap();
+        let entry = |file: &str, name: &str| -> Value {
+            let file: Value = serde_json::from_str(&files[file]).unwrap();
+            file["mcpServers"][name].clone()
+        };
         assert_eq!(
-            github,
-            json!({ "mcpServers": { "github": {
+            entry("work/claude/servers/fs.json", "fs"),
+            json!({
                 "type": "stdio",
                 "command": "npx",
-                "args": ["--prefix=/home/me", "-y", "gh"],
-                "env": { "GITHUB_TOKEN": "${ENVROUTER_SECRET_7F3A}" },
-            }}})
+                "args": ["--prefix=/home/me", "-y", "fs"],
+                "env": {},
+            })
         );
-        let linear: Value =
-            serde_json::from_str(&files["work/claude/servers/linear.json"]).unwrap();
         assert_eq!(
-            linear["mcpServers"]["linear"],
-            json!({ "type": "http", "url": "https://mcp.linear.app/mcp", "headers": {} })
+            entry("work/claude/servers/github.json", "github"),
+            json!({
+                "type": "stdio",
+                "command": "/home/me/.envrouter/bin/envrouter-keychain",
+                "args": ["exec", "/home/me/.envrouter/mcp/work/claude/stdio/github.json"],
+                "env": {},
+            })
+        );
+        // References to the store, never values; the prefix is already in the arguments.
+        let spec: Value = serde_json::from_str(&files["work/claude/stdio/github.json"]).unwrap();
+        assert_eq!(
+            spec,
+            json!({
+                "server": "github",
+                "home": "/home/me",
+                "command": "npx",
+                "args": ["--prefix=/home/me", "-y", "gh"],
+                "env": { "GITHUB_TOKEN": { "secret": "7F3A" } },
+            })
+        );
+        // A remote server's header is expanded by the agent, from the shim's environment.
+        assert_eq!(
+            entry("work/claude/servers/linear.json", "linear"),
+            json!({
+                "type": "http",
+                "url": "https://mcp.linear.app/mcp",
+                "headers": { "Authorization": "${ENVROUTER_SECRET_9B2C}" },
+            })
         );
     }
 
     #[test]
     fn only_npx_gets_the_home_prefix_and_only_once() {
         let home = home();
-        let args = |list: &[&str]| list.iter().map(|&a| a.to_owned()).collect::<Vec<_>>();
+        let args = |list: &[&str]| {
+            list.iter()
+                .map(|&a| McpValue::Plain(a.to_owned()))
+                .collect::<Vec<_>>()
+        };
         assert_eq!(
             launch_args("/opt/homebrew/bin/npx", args(&["-y", "pkg"]), &home),
             args(&["--prefix=/home/me", "-y", "pkg"])
@@ -619,6 +745,15 @@ mod tests {
         assert_eq!(
             launch_args("npx", args(&["pkg", "--prefix=/data"]), &home),
             args(&["--prefix=/home/me", "pkg", "--prefix=/data"])
+        );
+        // A locked value is the package or an argument, never an option of npx's.
+        assert_eq!(
+            launch_args(
+                "npx",
+                vec![secret("A1"), McpValue::Plain("--prefix=/data".into())],
+                &home
+            )[0],
+            McpValue::Plain("--prefix=/home/me".into())
         );
         for command in ["uvx", "docker", "npx-wrapper"] {
             assert_eq!(launch_args(command, args(&["pkg"]), &home), args(&["pkg"]));
@@ -643,7 +778,8 @@ mod tests {
                             format!("--mcp-config={}", dir.join("github.json").display()),
                             "--disallowedTools=mcp__github__delete_repo,mcp__github__fork".into(),
                         ],
-                        secrets: vec!["7F3A".into()],
+                        // The launcher reads this one's token itself.
+                        secrets: Vec::new(),
                     },
                     LaunchServer {
                         name: "linear".into(),
@@ -651,7 +787,7 @@ mod tests {
                             "--mcp-config={}",
                             dir.join("linear.json").display()
                         )],
-                        secrets: Vec::new(),
+                        secrets: vec!["9B2C".into()],
                     },
                 ],
             }
@@ -665,9 +801,17 @@ mod tests {
         let files = rendered(&config);
         let github: Value =
             serde_json::from_str(&files["work/copilot/servers/github.json"]).unwrap();
-        let entry = &github["mcpServers"]["github"];
-        assert_eq!(entry["type"], "local");
-        assert_eq!(entry["tools"], json!(["*"]));
+        // The launcher entry, in Copilot's dialect.
+        assert_eq!(
+            github["mcpServers"]["github"],
+            json!({
+                "type": "local",
+                "command": "/home/me/.envrouter/bin/envrouter-keychain",
+                "args": ["exec", "/home/me/.envrouter/mcp/work/copilot/stdio/github.json"],
+                "env": {},
+                "tools": ["*"],
+            })
+        );
         let launch: Launch = serde_json::from_str(&files["work/copilot/launch.json"]).unwrap();
         let args = &launch.servers[0].args;
         assert!(args[0].starts_with("--additional-mcp-config=@/"));
@@ -684,20 +828,21 @@ mod tests {
     fn inject_leaves_out_servers_whose_secrets_are_missing() {
         let files = rendered(&config());
         let launch: Launch = serde_json::from_str(&files["work/claude/launch.json"]).unwrap();
-        assert_eq!(launch.secret_ids(), BTreeSet::from(["7F3A"]));
+        // Only the remote server's header: the stdio server's token isn't the agent's to carry.
+        assert_eq!(launch.secret_ids(), BTreeSet::from(["9B2C"]));
 
         let without = launch.inject(&HashMap::new());
-        assert_eq!(without.servers, ["linear"]);
-        assert_eq!(without.dropped, ["github"]);
-        assert_eq!(without.args.len(), 1);
+        assert_eq!(without.servers, ["github"]);
+        assert_eq!(without.dropped, ["linear"]);
+        assert_eq!(without.args.len(), 2);
         assert!(without.env.is_empty());
 
-        let with = launch.inject(&HashMap::from([("7F3A".into(), "ghp_x".into())]));
+        let with = launch.inject(&HashMap::from([("9B2C".into(), "lin_x".into())]));
         assert_eq!(with.servers, ["github", "linear"]);
         assert_eq!(with.args.len(), 3);
         assert_eq!(
             with.env,
-            [("ENVROUTER_SECRET_7F3A".to_string(), "ghp_x".to_string())]
+            [("ENVROUTER_SECRET_9B2C".to_string(), "lin_x".to_string())]
         );
     }
 
@@ -788,6 +933,7 @@ mod tests {
         assert!(launch.exists());
         let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(&launch), 0o600);
+        assert_eq!(mode(&launch.with_file_name("stdio/github.json")), 0o600);
         assert_eq!(mode(&paths::mcp(home)), 0o700);
         assert_eq!(
             load_launch(home, "work", "claude")
@@ -819,7 +965,8 @@ mod tests {
 
     /// A shim that read the manifest just before a save starts the agent with the file it named;
     /// the agent opens it a moment later. The save used to delete it at once, handing that agent
-    /// `--mcp-config=<deleted file>`.
+    /// `--mcp-config=<deleted file>`. A stdio spec is kept the same way: the agent runs the
+    /// launcher on it again at every reconnect.
     #[cfg(unix)]
     #[test]
     fn a_save_keeps_the_files_the_last_manifest_named_for_a_while() {
@@ -854,6 +1001,25 @@ mod tests {
         sync_at(&config, home, saved + RETIRED_GRACE).unwrap();
         assert!(!file.exists());
         assert!(!paths::mcp_retired(home).exists());
+
+        let spec = paths::mcp_launch(home, "work", "claude").with_file_name("stdio/github.json");
+        assert!(spec.exists());
+        config.profiles[0].mcp_servers.remove("github");
+        let dropped = saved + RETIRED_GRACE;
+        sync_at(&config, home, dropped).unwrap();
+        assert!(
+            spec.exists(),
+            "a reconnecting agent runs the launcher on it"
+        );
+        sync_at(
+            &config,
+            home,
+            dropped + RETIRED_GRACE - Duration::from_secs(1),
+        )
+        .unwrap();
+        assert!(spec.exists());
+        sync_at(&config, home, dropped + RETIRED_GRACE).unwrap();
+        assert!(!spec.exists());
     }
 
     /// A server that's added back before its file is removed is current again, and its

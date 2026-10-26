@@ -178,7 +178,8 @@ const isReference = (value: string) => /^\$\{[^}]+\}$/.test(value.trim())
 /**
  * Where a draft holds what looks like a credential in plain text that saving won't lock: an
  * argument (by its option's name or its own shape) or the URL (a password, or a key in the query).
- * Arguments aren't locked for the user, since Copilot doesn't expand a stored secret there.
+ * Arguments aren't locked on the user's behalf, only flagged: a locked one still sits on the
+ * server's command line, so an env var is better where the server takes one.
  * Named for the editor and the import review: `argument 3`, `the URL`.
  */
 export function plainCredentials(draft: ServerDraft, canLock: boolean): string[] {
@@ -210,7 +211,7 @@ export function plainNote(where: string[], platform: Pick<PlatformInfo, 'canLock
     ? `the ${platform.secretStore} can't keep it, so it goes in config.json`
     : where.includes('the URL')
       ? 'use a header if the server takes one'
-      : 'pass it in an env var if the server takes one, or lock it (Claude Code only)'
+      : 'pass it in an env var if the server takes one, or lock it'
   return `${first} ${where.length > 1 ? 'look' : 'looks'} like a credential and would be saved as plain text: ${fix}.`
 }
 
@@ -232,8 +233,8 @@ const holdsCredential = (row: Pair) => (isPending(row.value) ? row.value.value !
  * A draft whose credential-looking env and header values are headed for the Keychain: by name,
  * as `SECRET_NAME` decides, or by shape (a URL with a password, a vendor's token prefix, a
  * `Bearer` credential). Imports and pastes use it: a token found in a plain file shouldn't stay
- * plain. A value that's only a `${VAR}` reference stays as it is. Arguments stay too: Copilot
- * doesn't expand a stored secret there, so `plainCredentials` flags them instead.
+ * plain. A value that's only a `${VAR}` reference stays as it is. Arguments stay too, for the
+ * reason `plainCredentials` gives, and are flagged there instead.
  */
 export function withSecretsLocked(draft: ServerDraft): ServerDraft {
   const lock = (row: Pair): Pair => (isUnlocked(row) ? { ...row, value: { secret: newSecretId(), value: row.value } } : row)

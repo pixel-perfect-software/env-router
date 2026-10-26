@@ -499,9 +499,18 @@ Parked.
 3. **#158: the server check opens every server with the 2025-11-25 `initialize`,** which MCP
    2026-07-28 lets a server drop. rmcp has spoken 2026-07-28 since 3.0; 3.7.0 only fixes `auth`,
    which isn't built (GHSA-5p52-q7pq-9fq2). Fix: rmcp 3.7.0 and `ClientLifecycleMode::Auto`.
-4. **#159: every command an agent runs can read the profile's MCP secrets.** Decide among a
-   launcher for stdio servers, Claude's `headersHelper`, a per-launch file, or documenting the
-   environment with Claude's scrub settings. Codex's stdio servers depend on it.
+4. **#159: every command an agent runs can read the profile's MCP secrets.** Decided
+   2026-10-26: a launcher for stdio servers. Done in three PRs (the WSL store's distro, the
+   launcher, rendering through it): a stdio server that needs a secret is rendered as
+   `envrouter-keychain exec <spec>`, which reads that server's values from the store at each
+   start and `exec`s the command with them, so they are in that server's environment and not the
+   agent's. Remote servers keep `${ENVROUTER_SECRET_<ID>}` in the agent's environment, since the
+   agent sends the headers; README's Privacy and security says so, with the allowlist cost. Still
+   to do: Codex's rendering of the same entry (#161), locking credential-looking arguments on
+   import, and moving remote secrets out of the environment through Claude's `headersHelper`.
+   Not verified: WSL, a Linux desktop's session bus from a stripped environment, Copilot's startup
+   timeout, a remote header secret under `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`, and both agents
+   starting a launcher entry.
 5. **#160: Codex CLI** as an agent with `CODEX_HOME`. A missing folder is fatal, MCP OAuth
    tokens and `~/.agents/skills` stay shared, and the VS Code extension has no wrapper setting.
 6. **#161: Codex's MCP dialect:** one `--config=mcp_servers.<name>={…}` inline table per server

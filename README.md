@@ -53,7 +53,9 @@ selection of MCP servers from a library you keep in the app:
   Duplicate a server or a profile to start from one you have.
 - 🔑 **Secrets in your system's store.** API keys and tokens you enter go to the macOS Keychain,
   the Linux keyring, or, inside WSL, the Windows Credential Manager. Never `config.json` or a
-  rendered file, and, kept in an environment variable or a header, never a command line.
+  rendered file. A server the agent runs as a command gets its own when it starts, in its own
+  environment rather than the agent's, and, kept in an environment variable or a header, never
+  on a command line.
 - 🧩 **Editor extensions too.** Claude Code for VS Code (and in Cursor, Windsurf, VSCodium) runs
   its own copy of `claude`; **Editors…** routes it through EnvRouter as well, including VS Code
   connected to WSL or over SSH.
@@ -256,9 +258,23 @@ plain text, such as an `--api-key=` argument or a password in a connection strin
 With no store to keep values in (no Secret Service running on Linux, say), the lock is off and the editor says why; values are saved in `config.json` and flagged as such.
 
 Give a server its secret through an environment variable or a header. An argument can hold one
-too, but the value then sits on the server's command line once it starts (and while you check
-it), where other programs you run can read it. Copilot CLI doesn't expand `${VAR}` in arguments
-at all, so there a secret in an argument never reaches the server.
+too, under every agent, but the value then sits on the server's command line once it starts (and
+while you check it), where other programs you run can read it.
+
+**A server the agent runs as a command** and that needs a secret starts through EnvRouter's
+helper. Where the agent would run the server, it runs `~/.envrouter/bin/envrouter-keychain exec
+<file>`; the helper reads that server's values from the store, then replaces itself with the
+server's own command, so the values are in that server's environment (or arguments) and nowhere
+else. It reads them every time the server starts, so a value you **Replace** applies the next
+time the server starts, with no need to restart the agent. If the store can't be read or a value
+isn't in it, that server doesn't start: the agent shows it as failed, and EnvRouter's reason is
+one line in the server's error output, wherever the agent shows that. The other servers load.
+
+**A remote server** (a URL) has no process of its own to start, since the agent sends its
+headers. The shim reads the values and gives them to the agent in its environment, which the
+agent puts into the headers. One it can't read is left out, with a warning when the agent
+starts. [Privacy and security](#-privacy-and-security) says what that means for who can see
+them.
 
 ### 🧰 Check a server and turn tools off
 
@@ -309,7 +325,7 @@ folder its MCP files are written to.
 | Command | Does |
 |---|---|
 | `envrouter` or `envrouter status` | The shim, each shell and editor, and the config. `--agents` also says which agents a new terminal doesn't find (an `Agents` line, or `missingAgents` in `--json`), by running your login shell; without it nothing runs one, and `missingAgents` is null |
-| `envrouter install` | Installs the shim, the secrets helper and the CLI into `~/.envrouter/bin`, and a shim per agent |
+| `envrouter install` | Installs the shim, the secrets helper and the CLI into `~/.envrouter/bin`, and a shim per agent. When that changes the installed files, it renders the MCP files again to match, and asks the system's store once to let the new helper in |
 | `envrouter shell on\|off <zsh\|bash\|fish>` | Adds or removes the block in that shell's startup files |
 | `envrouter editor on\|off <editor> [--agent <command>]` | Routes an editor extension (`code`, `cursor`, `remote-code` for the VS Code Server, …) |
 | `envrouter check [folder] [--tool <command>] [--shell <shell>]` | Starts a shell the way a new terminal would and reports what running the agent there does; exits 1 unless it's routed |
@@ -409,9 +425,11 @@ EnvRouter uses shims, like [mise](https://mise.jdx.dev) or [Volta](https://volta
   current folder, sets that tool's variable, adds that profile's MCP servers to the command
   line, and `exec`s the real tool found later on `PATH`.
 - When you save, the app writes each profile's MCP server files in each agent's own format, so
-  servers keep working with the app closed. When a server needs a secret, the shim asks a small
-  helper, `envrouter-keychain`, to read it from the system's store and passes it to the agent in
-  its environment.
+  servers keep working with the app closed. A server the agent runs as a command and that needs a
+  secret is written to run through a small helper, `envrouter-keychain exec`, which reads the
+  secret from the system's store as the agent starts the server and runs the server's command
+  with it. For a remote server, the shim asks the helper to read the secret and passes it to the
+  agent in its environment, where the agent puts it into the server's headers.
 - An editor extension that runs its own copy of the agent runs it through the shim instead
   (`envrouter-shim <its binary> <args>`, or `<interpreter> <script> <args>` for a build that
   ships a script), so the same routing applies there.
@@ -426,9 +444,9 @@ after resolving symlinks and letter case, and a trigger covers its whole subtree
 | Where | What |
 |---|---|
 | `~/.envrouter/config.json` | Your profiles and server library |
-| `~/.envrouter/bin/` | The shim and the secrets helper (on Linux also its Windows build, for WSL), and the CLI if you installed it from a release archive; updated by the app when it starts |
+| `~/.envrouter/bin/` | The shim and the secrets helper, which also starts the command servers that need a secret (on Linux also its Windows build, for WSL), and the CLI if you installed it from a release archive; updated by the app when it starts |
 | `~/.envrouter/shims/` | One symlink per routed command |
-| `~/.envrouter/mcp/` | Rendered MCP server files per profile and agent (readable only by you) |
+| `~/.envrouter/mcp/` | Rendered MCP server files per profile and agent (readable only by you). For a command server that needs a secret, `stdio/<server>.json` holds what the helper starts it from: the server's command, with each secret as a reference to the store, never the value. A server you remove stays there for ten minutes, since a running agent may start it again |
 | `~/.envrouter/mcp-tools.json` | Tool lists from server checks |
 | `~/.envrouter/last-folder.json` | The folder you last checked, for the menu bar's **Check Last Folder** |
 | `~/.envrouter/wsl-distro` | In WSL only: the distro's name, noted the first time a terminal uses the secret store. The Credential Manager item is keyed by it, and a process the distro starts without `WSL_DISTRO_NAME` (a systemd user unit, cron, an agent that passes a bare environment) reads it here |
@@ -445,10 +463,30 @@ Your agents' own config folders are yours; EnvRouter only creates missing ones.
 EnvRouter has no account, no telemetry and no background process. It makes network requests
 only when you check an MCP server (a remote one, or an `npx` one npm has to download) or look up
 a package's version, which runs your own npm. Secret values never appear in `config.json` or in
-a rendered file, and the window never reads them back once they're saved. They reach an agent
-through its environment, never its command line; a server gets one the way you wrote it, so a
-secret in an environment variable or header stays off command lines, and one in an argument
-appears on that server's command line while it runs.
+a rendered file, and the window never reads them back once they're saved. Where they go depends
+on the server:
+
+- **A server the agent runs as a command** gets its secrets from EnvRouter's helper, which reads
+  them from the system's store as the server starts and puts them in that server's own
+  environment. They are not in the agent's environment, so not in anything else the agent runs.
+  The helper also removes any `ENVROUTER_SECRET_*` variable it inherited before it starts the
+  server, so a server never gets the secrets of the agent's remote servers.
+- **A remote server's header secrets are still in the agent's environment**, as
+  `ENVROUTER_SECRET_<ID>`, for as long as the agent runs: the agent expands them into the headers
+  it sends, so it has to have them. Claude Code passes its environment on to the commands it runs
+  for you, its hooks, and its command servers that need no secret, so those can read them.
+- **A secret in an argument** is on that server's command line while it runs, where other
+  programs you run can read it; one in an environment variable or a header isn't.
+- **Any program that runs as you can run the helper** and ask it for the secrets, the same as it
+  could before: the system's store is what stops it (on macOS, the Keychain asks the first time
+  and each time the helper changes; choose **Always Allow**). The protection is against
+  accidental exposure, such as the agent's environment, its logs and the commands it runs, not
+  against another program you run.
+- **An allowlist that matches a server's exact command** sees `envrouter-keychain exec <file>`
+  instead of that command, for a server that needs a secret. An administrator who keeps such a
+  list has to allow the helper (the server's real command is then not checked), or the server's
+  value has to stay plain, unlocked, in `config.json`. A server with no secret keeps its own
+  command.
 
 ## 🩺 Troubleshooting
 
@@ -459,7 +497,11 @@ appears on that server's command line while it runs.
 | You want one run without EnvRouter's MCP servers | `ENVROUTER_MCP=0 claude`, or pass `--strict-mcp-config` to `claude`. |
 | Claude Code exits at startup with `You cannot dynamically configure MCP servers when an enterprise MCP config is present` | Your organization manages MCP servers on this machine (`managed-mcp.json` in `/Library/Application Support/ClaudeCode/` or `/etc/claude-code/`). EnvRouter leaves its servers off wherever that file exists and says so when `claude` starts; the folder still gets its profile's config. If you've just updated EnvRouter, save once in the app (or run `envrouter apply`) so the profiles' MCP files pick this up. |
 | An MCP server doesn't show in `claude mcp list` or `copilot mcp list` | Expected: those commands don't list servers passed on the command line. Use `/mcp` inside the agent. |
-| Saving a secret fails on Linux with "there's no Secret Service" | Install and start GNOME Keyring or KWallet, then save again. Servers that need a secret are left out until then; the rest still load. |
+| Saving a secret fails on Linux with "there's no Secret Service" | Install and start GNOME Keyring or KWallet, then save again. Until then a remote server that needs a secret is left out, and a command server that needs one doesn't start (the agent shows it as failed); the rest still load. |
+| A server fails with `envrouter: … is gone, so EnvRouter no longer starts the MCP server …` | The profile no longer has that server, and the agent session began before you removed it. Restart the agent. EnvRouter keeps a removed server's file for ten minutes, so a session can still reconnect to it for a while. |
+| A server fails with `envrouter: couldn't read the secrets the MCP server … needs` | The store refused, or didn't answer within 20 seconds. On macOS a Keychain prompt for `envrouter-keychain` may be waiting behind another window; choose **Always Allow**, then restart the agent or reconnect the server. The store's own reason is in the parentheses. |
+| A server fails with `usage: envrouter-keychain read [ID...]` | The helper in `~/.envrouter/bin` is older than the files that name it, which happens when an older app starts after a newer CLI and puts its own helper back. Update the app and the CLI together, then save once in the app or run `envrouter apply`. |
+| A command server that needs a secret is blocked by your organization's MCP allowlist | The agent runs `~/.envrouter/bin/envrouter-keychain exec <file>`, not the server's command (see [Privacy and security](#-privacy-and-security)). Ask for the helper to be allowed, or unlock the value so the server keeps its own command. |
 | Saving a secret fails in WSL with "couldn't reach the Windows Credential Manager" | Run `envrouter install` so `~/.envrouter/bin/envrouter-keychain.exe` is there, and check that WSL interop is on (`[interop] enabled` isn't `false` in `/etc/wsl.conf`). |
 | The window says it can't read `config.json` | It isn't valid JSON, usually a hand edit that stopped halfway. **Open config.json** (or **Reveal**) lets you fix it, and the window reads it again. **Back Up and Start Over…** copies the file to `~/.envrouter/config.json.bak` (`config.json.bak-2`, … if one is already there; earlier backups are never replaced) and starts with no profiles or servers. It offers nothing for a file from a newer EnvRouter or one it can't read at all. Your MCP secrets, shims and agents' config folders stay as they were, and the secrets the backup names stay in the store for as long as the backup is there, so putting it back (`mv config.json.bak config.json`) brings its servers' secrets with it. Agents keep running without a profile meanwhile. |
 | macOS says EnvRouter can't be opened | The app is signed ad hoc, not notarized. Homebrew's cask clears the quarantine flag that triggers this; for a copy you downloaded or built elsewhere, run `xattr -dr com.apple.quarantine /Applications/EnvRouter.app`. |
@@ -471,7 +513,15 @@ it again afterwards), and `brew upgrade envrouter-cli` for the CLI, followed by 
 install` where the CLI is what installed the shim. On Linux, install the new `.deb` or AppImage
 over the old one. From source, pull the latest code,
 quit EnvRouter, and run the build and install commands again. When a new version of the app
-starts, it updates the shim and helpers in `~/.envrouter/bin` itself.
+starts, it updates the shim and helpers in `~/.envrouter/bin` itself, and renders the MCP files
+again so they match. `envrouter install` does the same when it installs something new.
+
+Update the app and the CLI together. The helper in `~/.envrouter/bin` is whichever one was
+installed last, and the MCP files of servers that need a secret depend on it: if an older app
+starts after a newer CLI, it puts its older helper back without rendering anything, and those
+servers fail with a usage line until you save once in the app or run `envrouter apply`. Files
+rendered before this change keep working with the new shim and helper, with the secrets read as
+before, until the next time they're rendered.
 
 ## 🗑️ Uninstall
 

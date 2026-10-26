@@ -536,6 +536,28 @@ fn leave_legacy_identifier() -> TauriPlugin<Wry> {
         .build()
 }
 
+/// What a new shim and helper, installed as the app starts, leave to do: the MCP files are
+/// rendered again (a server that needs a secret starts through the helper, and files an earlier
+/// build rendered start it the old way), and the store is asked to let the new helper read the
+/// secrets. On a thread of its own, so the launch waits for neither the save lock (a CLI save may
+/// hold it) nor the helper's prompt. The thread owns `home`, and with it the [`Lease`] that makes
+/// an uninstall wait for the render, so it can't recreate `~/.envrouter` afterwards.
+fn after_install(home: Home) {
+    std::thread::spawn(move || {
+        if let Err(err) = commands::render_saved(&home) {
+            eprintln!("envrouter: couldn't render the MCP files: {err}");
+        }
+        let uses_secrets = config::load(&paths::root(&home))
+            .ok()
+            .flatten()
+            .is_some_and(|config| !config::secret_ids(&config).is_empty());
+        if uses_secrets {
+            // The prompt is the user's to answer whenever; nothing waits for it.
+            drop(shims::ask_keychain_access(&home));
+        }
+    });
+}
+
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -563,16 +585,7 @@ pub fn run() {
                     Err(err) => eprintln!("envrouter: couldn't mark the app as running: {err}"),
                 }
                 match shims::install_bundled(&home) {
-                    // A new helper needs macOS's go-ahead before it can read the secrets.
-                    Ok(true) => {
-                        let uses_secrets = config::load(&paths::root(&home))
-                            .ok()
-                            .flatten()
-                            .is_some_and(|config| !config::secret_ids(&config).is_empty());
-                        if uses_secrets {
-                            shims::ask_keychain_access(&home);
-                        }
-                    }
+                    Ok(true) => after_install(home),
                     Ok(false) => {}
                     Err(err) => eprintln!("envrouter: couldn't install the shim: {err}"),
                 }
@@ -710,6 +723,42 @@ mod tests {
     /// A gate of its own, so tests don't meet each other's flag.
     fn gate() -> &'static Gate {
         Box::leak(Box::new(Gate::new()))
+    }
+
+    /// What the launch does after installing a new helper renders the MCP files under the save
+    /// lock, which a CLI save may be holding. The launch mustn't wait for it, and an uninstall
+    /// must: the render would otherwise write `~/.envrouter/mcp` after the folder is deleted.
+    #[test]
+    fn the_follow_up_to_an_install_leaves_the_launch_alone_and_makes_an_uninstall_wait() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = paths::root(dir.path());
+        std::fs::create_dir_all(&root).unwrap();
+        config::save(&root, &ConfigState::default()).unwrap();
+        let gate = gate();
+        let _uninstalling = gate.enter().unwrap();
+        let home = Home {
+            path: dir.path().to_path_buf(),
+            _lease: gate.enter().unwrap(),
+        };
+
+        // A save in progress.
+        let saving = config::lock(&root).unwrap();
+        let (returned, launch) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            after_install(home);
+            let _ = returned.send(());
+        });
+        launch
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the launch waited for the save lock");
+        let busy = gate.uninstall(false, Duration::from_millis(100), || {
+            panic!("it must not run beside the render")
+        });
+        assert!(busy.unwrap_err().to_string().contains("still busy"));
+
+        drop(saving);
+        let done = gate.uninstall(false, Duration::from_secs(30), || Ok(report(&[])));
+        assert!(done.unwrap().finished());
     }
 
     /// A command that began before the uninstall can still write the folder, so the uninstall

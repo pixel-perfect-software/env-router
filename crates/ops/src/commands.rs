@@ -99,8 +99,8 @@ pub fn save_config(
 /// the save names what it read as its base. When the window or a hand edit saved in between,
 /// the edit is made again over the file as it is now instead of overwriting it (`edit` may run
 /// more than once). Answers the config as saved, whether it took more than one try, and the
-/// save's warning, if any. It installs its own shim and helper only where the installed shim
-/// can't read the config it writes (none, or an older one): where the app is in use, its builds
+/// save's warning, if any. It installs its own shim and helper only where the installed ones
+/// can't do what this save needs (see `cli_installs`): where the app is in use, its builds
 /// stay; `envrouter install` replaces them on purpose.
 pub fn save_from_cli(
     home: &Path,
@@ -110,11 +110,32 @@ pub fn save_from_cli(
     edit_and_save(home, secrets, cli_installs(home), &Keychain, edit)
 }
 
-/// Whether a CLI save installs its own shim and helper: where none is, or where the installed
-/// shim doesn't read the version this save writes. After `brew upgrade envrouter-cli` the old
-/// shim stays in ~/.envrouter/bin, and it would run every agent without a profile.
+/// Whether a CLI save installs its own shim and helper: where none is, where the installed shim
+/// doesn't read the version this save writes, or where the installed helper doesn't start
+/// servers from the specs this save renders. After `brew upgrade envrouter-cli` the old shim
+/// stays in ~/.envrouter/bin, and it would run every agent without a profile; the old helper
+/// would fail every server that needs a secret with its usage line.
 fn cli_installs(home: &Path) -> bool {
     shims::installed_config_version(home).is_none_or(|version| version < config::CONFIG_VERSION)
+        || shims::installed_launcher_version(home)
+            .is_none_or(|version| version < mcp::LAUNCHER_VERSION)
+}
+
+/// Renders the MCP files of the config.json as it is now, as a save would, without saving
+/// anything. For an install that has just put a new shim and helper in place, so the files the
+/// servers start from match them. It takes the save lock, so a save in progress is rendered
+/// whole. A home with no config.json has nothing to render and is left as it is: the lock would
+/// make `~/.envrouter` and `config.lock`.
+pub fn render_saved(home: &Path) -> Result<()> {
+    let root = paths::root(home);
+    if !paths::config_file(home).exists() {
+        return Ok(());
+    }
+    let _lock = config::lock(&root)?;
+    match config::load(&root)? {
+        Some(config) => mcp::sync(&config, home),
+        None => Ok(()),
+    }
 }
 
 /// What a CLI save did: see [`save_from_cli`].
@@ -258,7 +279,8 @@ fn save(
         None
     };
     if fresh_shim && !referenced.is_empty() {
-        shims::ask_keychain_access(home);
+        // Not waited for: the answer to its prompt is the user's to give, whenever.
+        drop(shims::ask_keychain_access(home));
     }
     Ok(SaveOutcome::Saved {
         config: config::as_saved(payload),
@@ -1135,6 +1157,13 @@ mod tests {
             crate::shims::install_file_with(&shim, source, false).unwrap();
         };
         let install_script = |script: &str| crate::shims::write_executable(&shim, script);
+        // A helper that starts servers, so only the shim decides below.
+        crate::shims::install_file_with(
+            &paths::keychain_helper(home),
+            Path::new(env!("ENVROUTER_STAGED_KEYCHAIN")),
+            false,
+        )
+        .unwrap();
         // A shim from 0.7.0 or earlier doesn't know the question: it exits 2, as 0.6.0's does.
         // One that answers an older version is older too.
         for old in [
@@ -1150,6 +1179,61 @@ mod tests {
         assert!(!cli_installs(home));
         install(Path::new(env!("ENVROUTER_STAGED_SHIM")));
         assert!(!cli_installs(home));
+    }
+
+    /// A save renders a server that needs a secret as the helper's `exec` of a spec. After
+    /// `brew upgrade envrouter-cli` the helper in ~/.envrouter/bin is still the old one, which
+    /// answers that with its usage line, so every such server would fail when an agent started it.
+    #[test]
+    fn a_cli_save_replaces_a_helper_that_cant_start_stdio_servers() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let shim = Path::new(env!("ENVROUTER_STAGED_SHIM"));
+        let keychain = Path::new(env!("ENVROUTER_STAGED_KEYCHAIN"));
+        // A shim that reads this version, so only the helper decides below.
+        crate::shims::install_file_with(&paths::shim_binary(home), shim, false).unwrap();
+        let helper = paths::keychain_helper(home);
+        assert!(cli_installs(home), "no helper yet");
+        // A helper from before the launcher prints its usage and exits 2. One that answers an
+        // older spec version is older too.
+        for old in [
+            "#!/bin/sh\nexit 2\n".to_string(),
+            format!("#!/bin/sh\necho {}\n", mcp::LAUNCHER_VERSION - 1),
+        ] {
+            crate::shims::write_executable(&helper, &old);
+            assert!(cli_installs(home), "{old}");
+        }
+        crate::shims::write_executable(
+            &helper,
+            &format!("#!/bin/sh\necho {}\n", mcp::LAUNCHER_VERSION + 1),
+        );
+        assert!(!cli_installs(home));
+        crate::shims::install_file_with(&helper, keychain, false).unwrap();
+        assert!(!cli_installs(home));
+    }
+
+    /// An install puts a new helper in place, and the files that name it have to follow: it
+    /// renders config.json as it is, so an install doesn't write one, and a home with no
+    /// config.json is left without even the folder the save lock would make.
+    #[test]
+    fn render_saved_renders_config_json_as_it_is_and_creates_nothing_without_one() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        render_saved(home).unwrap();
+        assert!(!paths::root(home).exists());
+
+        let mut config = with_secret_server(&ConfigState::default(), "github", "7F3A");
+        config.agents = agents::with_agents(ConfigState::default()).agents;
+        std::fs::create_dir_all(paths::root(home)).unwrap();
+        // Compact, which a save would not write: a rewrite shows.
+        let written = serde_json::to_vec(&config).unwrap();
+        std::fs::write(paths::config_file(home), &written).unwrap();
+
+        render_saved(home).unwrap();
+        let launch = paths::mcp_launch(home, "p1", "claude");
+        assert!(launch.exists());
+        assert!(launch.with_file_name("stdio/github.json").exists());
+        assert_eq!(std::fs::read(paths::config_file(home)).unwrap(), written);
     }
 
     /// The store isn't touched and config.json isn't written when a shim can't be made.

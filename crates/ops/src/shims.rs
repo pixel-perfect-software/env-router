@@ -199,8 +199,12 @@ pub(crate) fn write_executable(path: &Path, contents: &str) {
 
 /// Runs the installed Keychain helper once, in the background. A new build has a new ad hoc
 /// signature, so macOS asks again before letting it read the secrets: better now, with the app
-/// in front, than in the middle of someone's `claude`.
-pub fn ask_keychain_access(home: &Path) {
+/// in front, than in the middle of someone's `claude`. It matters more since the helper started
+/// MCP servers: it reads the store at every start of a server that needs a secret, several at
+/// once as an agent connects, so the grant is asked for here, once, rather than by each of them.
+/// The thread ends when the helper does, which waits for the answer to the prompt; the CLI joins
+/// it, so its process doesn't end with the question unanswered.
+pub fn ask_keychain_access(home: &Path) -> std::thread::JoinHandle<()> {
     let helper = paths::keychain_helper(home);
     let home = home.to_path_buf();
     std::thread::spawn(move || {
@@ -211,7 +215,7 @@ pub fn ask_keychain_access(home: &Path) {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status();
-    });
+    })
 }
 
 /// Whether the installed shim and Keychain helper match these copies.
@@ -227,8 +231,24 @@ pub fn is_installed(home: &Path, shim: &Path, keychain: &Path) -> bool {
 /// shim, or with one from 0.7.0 or earlier, which doesn't know the question (it exits 2): those
 /// may read an older version than this build writes.
 pub fn installed_config_version(home: &Path) -> Option<u32> {
-    let output = std::process::Command::new(paths::shim_binary(home))
-        .arg(paths::SHIM_CONFIG_VERSION_ARG)
+    version_asked(&paths::shim_binary(home), paths::SHIM_CONFIG_VERSION_ARG)
+}
+
+/// The newest spec version the installed Keychain helper's `exec` reads, as it answers itself.
+/// `None` without a helper, or with one from before the launcher, which prints its usage and
+/// exits 2: a server rendered through it would fail with that usage when the agent starts it.
+pub fn installed_launcher_version(home: &Path) -> Option<u32> {
+    version_asked(
+        &paths::keychain_helper(home),
+        paths::KEYCHAIN_LAUNCHER_VERSION_ARG,
+    )
+}
+
+/// What `binary` prints for `flag`, as a version number. Neither binary asked touches the secret
+/// store or reads a config for this.
+fn version_asked(binary: &Path, flag: &str) -> Option<u32> {
+    let output = std::process::Command::new(binary)
+        .arg(flag)
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .output()
