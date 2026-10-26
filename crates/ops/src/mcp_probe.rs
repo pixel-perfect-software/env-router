@@ -18,14 +18,18 @@ use envrouter_core::{paths, Error, Result};
 use nix::sys::signal::Signal;
 use process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop, ProcessGroup};
 use rmcp::model::{ClientConfig, ProtocolVersion};
+use rmcp::service::ClientInitializeError;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use rmcp::transport::StreamableHttpClientTransport;
-use rmcp::ServiceExt;
+use rmcp::{ClientLifecycleMode, ClientServiceExt};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 /// Long enough for a first `npx` run to download its package.
 const TIMEOUT: Duration = Duration::from_secs(45);
+/// For asking again with `server/discover` after a server refused `initialize`: it has just
+/// started once, so it's installed and starts quickly.
+const DISCOVER_TIMEOUT: Duration = Duration::from_secs(10);
 /// How a checked stdio server is stopped once its stdin is closed: each signal goes to its
 /// process group, then it gets this long to exit before the next.
 const STOP: [(Option<Signal>, Duration); 3] = [
@@ -68,6 +72,15 @@ pub struct ToolInfo {
 }
 
 impl ServerCheck {
+    fn listed(tools: Vec<ToolInfo>) -> Self {
+        Self {
+            status: CheckStatus::Ok,
+            tools,
+            message: None,
+            log: None,
+        }
+    }
+
     fn failed(status: CheckStatus, message: impl Into<String>, log: Option<String>) -> Self {
         Self {
             status,
@@ -132,6 +145,9 @@ fn text(value: &McpValue, secrets: &HashMap<String, String>) -> String {
     }
 }
 
+/// Starts the server and asks with `initialize`, which every server before MCP 2026-07-28
+/// answers, as most since do. One that speaks only 2026-07-28 refuses it, so it's started again
+/// and asked with `server/discover`.
 async fn check_stdio(
     command: &str,
     args: &[McpValue],
@@ -140,15 +156,37 @@ async fn check_stdio(
     home: &Path,
     path: &str,
 ) -> ServerCheck {
-    let mut cmd = tokio::process::Command::new(command);
-    cmd.args(args.iter().map(|arg| text(arg, secrets)))
-        .env("PATH", path)
-        .env("HOME", home)
-        .envs(env.iter().map(|(key, value)| (key, text(value, secrets))))
-        .current_dir(home)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    let start = || {
+        let mut cmd = tokio::process::Command::new(command);
+        cmd.args(args.iter().map(|arg| text(arg, secrets)))
+            .env("PATH", path)
+            .env("HOME", home)
+            .envs(env.iter().map(|(key, value)| (key, text(value, secrets))))
+            .current_dir(home)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        cmd
+    };
+    let (check, refused) =
+        run_stdio(command, start(), ClientLifecycleMode::Initialize, TIMEOUT).await;
+    if !refused {
+        return check;
+    }
+    match run_stdio(command, start(), discover(), DISCOVER_TIMEOUT).await {
+        (modern, _) if modern.status == CheckStatus::Ok => modern,
+        _ => check,
+    }
+}
+
+/// One start of a stdio server, listing its tools with `lifecycle`, and whether it refused
+/// `initialize`.
+async fn run_stdio(
+    command: &str,
+    cmd: tokio::process::Command,
+    lifecycle: ClientLifecycleMode,
+    timeout: Duration,
+) -> (ServerCheck, bool) {
     // A group of its own, so stopping it reaches whatever it starts.
     let mut child = match CommandWrap::from(cmd)
         .wrap(ProcessGroup::leader())
@@ -157,19 +195,19 @@ async fn check_stdio(
     {
         Ok(child) => child,
         Err(err) => {
-            return ServerCheck::failed(
-                CheckStatus::Failed,
-                format!("Couldn't start {command}: {err}."),
-                None,
-            )
+            let message = format!("Couldn't start {command}: {err}.");
+            return (
+                ServerCheck::failed(CheckStatus::Failed, message, None),
+                false,
+            );
         }
     };
     let (Some(stdin), Some(stdout)) = (child.stdin().take(), child.stdout().take()) else {
         stop(child.as_mut()).await;
-        return ServerCheck::failed(
-            CheckStatus::Failed,
-            format!("Couldn't talk to {command}."),
-            None,
+        let message = format!("Couldn't talk to {command}.");
+        return (
+            ServerCheck::failed(CheckStatus::Failed, message, None),
+            false,
         );
     };
     // Kept while the check runs; read again once it's over, for a failure.
@@ -189,7 +227,7 @@ async fn check_stdio(
             }
         });
     }
-    let result = tokio::time::timeout(TIMEOUT, list_tools((stdout, stdin))).await;
+    let result = tokio::time::timeout(timeout, list_tools((stdout, stdin), lifecycle)).await;
     stop(child.as_mut()).await;
     let tail = || {
         let log = log
@@ -198,20 +236,21 @@ async fn check_stdio(
         (!log.is_empty()).then(|| log.iter().cloned().collect::<Vec<_>>().join("\n"))
     };
     match result {
-        Ok(Ok(tools)) => ServerCheck {
-            status: CheckStatus::Ok,
-            tools,
-            message: None,
-            log: None,
-        },
-        Ok(Err(message)) => ServerCheck::failed(CheckStatus::Failed, message, tail()),
-        Err(_) => ServerCheck::failed(
-            CheckStatus::TimedOut,
-            format!(
-                "{command} didn't answer within {} seconds.",
-                TIMEOUT.as_secs()
+        Ok(Ok(tools)) => (ServerCheck::listed(tools), false),
+        Ok(Err(failure)) => (
+            ServerCheck::failed(CheckStatus::Failed, failure.message, tail()),
+            failure.refused_initialize,
+        ),
+        Err(_) => (
+            ServerCheck::failed(
+                CheckStatus::TimedOut,
+                format!(
+                    "{command} didn't answer within {} seconds.",
+                    timeout.as_secs()
+                ),
+                tail(),
             ),
-            tail(),
+            false,
         ),
     }
 }
@@ -248,24 +287,56 @@ async fn check_http(
             }
         }
     }
-    let transport = StreamableHttpClientTransport::from_config(config.custom_headers(custom));
-    match tokio::time::timeout(TIMEOUT, list_tools(transport)).await {
-        Ok(Ok(tools)) => ServerCheck {
-            status: CheckStatus::Ok,
-            tools,
-            message: None,
-            log: None,
-        },
-        Ok(Err(message)) if message.contains("Auth required") => ServerCheck::failed(
-            CheckStatus::NeedsLogin,
-            "The server wants a sign-in. Run the agent in a profile folder and use /mcp to sign in.",
-            None,
+    let config = config.custom_headers(custom);
+    // Like a stdio server's (`check_stdio`): `initialize` first, then `server/discover` for a
+    // server that refuses it. Over HTTP the refusal is a 400 whose body rmcp reads as a JSON-RPC
+    // error; a 400 without one isn't asked again.
+    let (check, refused) = run_http(
+        url,
+        config.clone(),
+        ClientLifecycleMode::Initialize,
+        TIMEOUT,
+    )
+    .await;
+    if !refused {
+        return check;
+    }
+    match run_http(url, config, discover(), DISCOVER_TIMEOUT).await {
+        (modern, _) if modern.status == CheckStatus::Ok => modern,
+        _ => check,
+    }
+}
+
+/// One connection to a remote server, listing its tools with `lifecycle`, and whether it
+/// refused `initialize`.
+async fn run_http(
+    url: &str,
+    config: StreamableHttpClientTransportConfig,
+    lifecycle: ClientLifecycleMode,
+    timeout: Duration,
+) -> (ServerCheck, bool) {
+    let transport = StreamableHttpClientTransport::from_config(config);
+    match tokio::time::timeout(timeout, list_tools(transport, lifecycle)).await {
+        Ok(Ok(tools)) => (ServerCheck::listed(tools), false),
+        Ok(Err(failure)) if failure.message.contains("Auth required") => (
+            ServerCheck::failed(
+                CheckStatus::NeedsLogin,
+                "The server wants a sign-in. Run the agent in a profile folder and use /mcp to sign in.",
+                None,
+            ),
+            false,
         ),
-        Ok(Err(message)) => ServerCheck::failed(CheckStatus::Failed, message, None),
-        Err(_) => ServerCheck::failed(
-            CheckStatus::TimedOut,
-            format!("{url} didn't answer within {} seconds.", TIMEOUT.as_secs()),
-            None,
+        Ok(Err(failure)) => (
+            ServerCheck::failed(CheckStatus::Failed, failure.message, None),
+            failure.refused_initialize,
+        ),
+        Err(_) => (
+            ServerCheck::failed(
+                CheckStatus::TimedOut,
+                format!("{url} didn't answer within {} seconds.", timeout.as_secs()),
+                None,
+            ),
+            false,
         ),
     }
 }
@@ -286,20 +357,50 @@ async fn stop(child: &mut dyn ChildWrapper) {
     let _ = Box::into_pin(child.kill()).await;
 }
 
-/// Initializes, lists every page of tools, then closes the server's stdin.
-async fn list_tools<T, E, A>(transport: T) -> std::result::Result<Vec<ToolInfo>, String>
+/// Why a server's tools couldn't be listed.
+struct Failure {
+    message: String,
+    /// It answered `initialize` with a JSON-RPC error, as a server that speaks only MCP
+    /// 2026-07-28 does: that version has no `initialize`.
+    refused_initialize: bool,
+}
+
+/// MCP 2026-07-28's lifecycle: `server/discover`, then the version on every request.
+fn discover() -> ClientLifecycleMode {
+    ClientLifecycleMode::Discover {
+        preferred_versions: vec![ProtocolVersion::LATEST],
+    }
+}
+
+/// Opens the session with `lifecycle`, lists every page of tools, then closes the server's
+/// stdin.
+async fn list_tools<T, E, A>(
+    transport: T,
+    lifecycle: ClientLifecycleMode,
+) -> std::result::Result<Vec<ToolInfo>, Failure>
 where
     T: rmcp::transport::IntoTransport<rmcp::RoleClient, E, A>,
     E: std::error::Error + Send + Sync + 'static,
 {
-    // `serve` opens with `initialize`, but on its own it asks for rmcp's newest protocol
-    // version, 2026-07-28, which has no `initialize`: a server that knows that version (MCP
-    // Toolbox 1.14) answers "invalid method initialize". Ask for the newest one that has it;
-    // a server that only knows older versions still answers with one of its own.
+    // On its own, `initialize` asks for rmcp's newest protocol version, 2026-07-28, which has
+    // no `initialize`: a server that knows that version (MCP Toolbox 1.14) answers "invalid
+    // method initialize". Ask for the newest one that has it; a server that only knows older
+    // versions still answers with one of its own.
     let info =
         ClientConfig::default().with_protocol_version(ProtocolVersion::LATEST_WITH_INITIALIZE);
-    let client = info.serve(transport).await.map_err(|err| chain(&err))?;
-    let tools = client.list_all_tools().await.map_err(|err| chain(&err));
+    let initializing = lifecycle == ClientLifecycleMode::Initialize;
+    let client = info
+        .serve_with_lifecycle(transport, lifecycle)
+        .await
+        .map_err(|err| Failure {
+            refused_initialize: initializing
+                && matches!(err, ClientInitializeError::JsonRpcError(_)),
+            message: chain(&err),
+        })?;
+    let tools = client.list_all_tools().await.map_err(|err| Failure {
+        message: chain(&err),
+        refused_initialize: false,
+    });
     let _ = client.cancel().await;
     Ok(tools?
         .into_iter()
@@ -417,6 +518,74 @@ while IFS= read -r line; do
   esac
 done
 "#;
+
+    /// A server that speaks only MCP 2026-07-28: it answers `server/discover` and `tools/list`,
+    /// and refuses `initialize`, which that version doesn't have.
+    const MODERN_SERVER: &str = r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":"Method not found: initialize. Supported versions: 2026-07-28"}}\n' "$id" ;;
+    *'"method":"server/discover"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"resultType":"complete","supportedVersions":["2026-07-28"],"capabilities":{"tools":{}},"ttlMs":0,"cacheScope":"public","_meta":{"io.modelcontextprotocol/serverInfo":{"name":"modern","version":"1"}}}}\n' "$id" ;;
+    *'"method":"tools/list"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"resultType":"complete","tools":[{"name":"lookup","inputSchema":{"type":"object"}}],"ttlMs":0,"cacheScope":"public"}}\n' "$id" ;;
+  esac
+done
+"#;
+
+    #[tokio::test]
+    async fn lists_the_tools_of_a_server_that_speaks_only_mcp_2026_07_28() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = dir.path().join("server");
+        write_executable(&server, MODERN_SERVER);
+        let check = check(
+            &stdio(&server, &[]),
+            &HashMap::new(),
+            dir.path(),
+            "/usr/bin:/bin",
+        )
+        .await;
+        assert_eq!(check.status, CheckStatus::Ok, "{check:?}");
+        assert_eq!(
+            check.tools,
+            [ToolInfo {
+                name: "lookup".into(),
+                description: None
+            }]
+        );
+    }
+
+    /// A server that refuses `initialize` and `server/discover` alike is reported by what it
+    /// said to `initialize`, the request every server before 2026-07-28 answers.
+    #[tokio::test]
+    async fn reports_a_refused_initialize_when_discover_fails_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = dir.path().join("server");
+        write_executable(
+            &server,
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":"GITHUB_TOKEN is not set"}}\n' "$id" ;;
+    *) printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":"Method not found"}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let check = check(
+            &stdio(&server, &[]),
+            &HashMap::new(),
+            dir.path(),
+            "/usr/bin:/bin",
+        )
+        .await;
+        assert_eq!(check.status, CheckStatus::Failed, "{check:?}");
+        let message = check.message.unwrap_or_default();
+        assert!(message.contains("GITHUB_TOKEN is not set"), "{message}");
+    }
 
     fn stdio(command: &Path, env: &[(&str, McpValue)]) -> McpServer {
         McpServer::Stdio {
