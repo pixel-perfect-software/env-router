@@ -23,7 +23,17 @@ use crate::config::{self, ConfigState, McpDialect, McpServer, McpUse, McpValue, 
 use crate::error::{Error, Result};
 use crate::paths;
 
-const SECRET_VAR_PREFIX: &str = "ENVROUTER_SECRET_";
+/// What a secret's variable begins with. The launcher removes every variable with it from a
+/// server's environment, so a server never sees the secrets of the agent's remote servers.
+pub const SECRET_VAR_PREFIX: &str = "ENVROUTER_SECRET_";
+
+/// The first argument of `envrouter-keychain` that starts a stdio server from its [`StdioSpec`].
+pub const LAUNCH_SUBCOMMAND: &str = "exec";
+
+/// The spec format `exec` reads, which the helper prints for `--launcher-version`
+/// ([`paths::KEYCHAIN_LAUNCHER_VERSION_ARG`]). A renderer writes specs only for a helper that
+/// reads this version or a newer one.
+pub const LAUNCHER_VERSION: u32 = 1;
 
 /// The manifest at [`paths::mcp_launch`]: what to add to one agent's command line in one
 /// profile's folders.
@@ -114,6 +124,85 @@ impl Launch {
         injection.env = env.into_iter().collect();
         injection
     }
+}
+
+/// What `envrouter-keychain exec` starts for one stdio server that needs a secret: the server's
+/// command with its values still references to the store, never the secrets themselves.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StdioSpec {
+    /// The server's name, for the launcher's messages.
+    pub server: String,
+    /// The home the helper and the secret store belong to. Rendered, not read from `HOME`,
+    /// which some agents (Copilot) don't pass to a server.
+    pub home: String,
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<McpValue>,
+    #[serde(default)]
+    pub env: BTreeMap<String, McpValue>,
+}
+
+/// A [`StdioSpec`] with its secrets filled in: what the launcher runs.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StdioCommand {
+    pub program: String,
+    pub args: Vec<String>,
+    pub env: Vec<(String, String)>,
+}
+
+impl StdioSpec {
+    /// The ids of the secrets the command refers to.
+    pub fn secret_ids(&self) -> BTreeSet<&str> {
+        self.args
+            .iter()
+            .chain(self.env.values())
+            .filter_map(McpValue::secret_id)
+            .collect()
+    }
+
+    /// Every secret filled in from `secrets`, or the id of the first one missing.
+    pub fn resolve(
+        &self,
+        secrets: &HashMap<String, String>,
+    ) -> std::result::Result<StdioCommand, String> {
+        let fill = |value: &McpValue| -> std::result::Result<String, String> {
+            match value {
+                McpValue::Plain(text) => Ok(text.clone()),
+                McpValue::Secret { secret } => {
+                    secrets.get(secret).cloned().ok_or_else(|| secret.clone())
+                }
+            }
+        };
+        let args = self
+            .args
+            .iter()
+            .map(fill)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut env = Vec::with_capacity(self.env.len());
+        for (name, value) in &self.env {
+            env.push((name.clone(), fill(value)?));
+        }
+        Ok(StdioCommand {
+            program: self.command.clone(),
+            args,
+            env,
+        })
+    }
+}
+
+/// Reads a spec the launcher was given. One a save stopped rendering is removed after
+/// `RETIRED_GRACE`, so a missing spec is an `Error::Io` of kind `NotFound`; a file that isn't a
+/// spec is an `Error::Json`.
+pub fn load_stdio_spec(path: &Path) -> Result<StdioSpec> {
+    let text = fs::read_to_string(path).map_err(|source| Error::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    serde_json::from_str(&text).map_err(|source| Error::Json {
+        path: path.to_path_buf(),
+        source,
+    })
 }
 
 /// The variable a rendered file reads a secret from.
@@ -610,6 +699,41 @@ mod tests {
             with.env,
             [("ENVROUTER_SECRET_7F3A".to_string(), "ghp_x".to_string())]
         );
+    }
+
+    #[test]
+    fn resolve_fills_secrets_in_args_and_env_and_names_a_missing_one() {
+        let spec = StdioSpec {
+            server: "github".into(),
+            home: "/home/me".into(),
+            command: "npx".into(),
+            args: vec![McpValue::Plain("-y".into()), secret("A1")],
+            env: BTreeMap::from([
+                ("GITHUB_TOKEN".into(), secret("7F3A")),
+                ("LOG".into(), McpValue::Plain("debug".into())),
+            ]),
+        };
+        assert_eq!(spec.secret_ids(), BTreeSet::from(["7F3A", "A1"]));
+
+        let stored = HashMap::from([
+            ("7F3A".to_string(), "ghp_x".to_string()),
+            ("A1".to_string(), "arg".to_string()),
+        ]);
+        assert_eq!(
+            spec.resolve(&stored),
+            Ok(StdioCommand {
+                program: "npx".into(),
+                args: vec!["-y".into(), "arg".into()],
+                env: vec![
+                    ("GITHUB_TOKEN".into(), "ghp_x".into()),
+                    ("LOG".into(), "debug".into()),
+                ],
+            })
+        );
+
+        let without_the_token = HashMap::from([("A1".to_string(), "arg".to_string())]);
+        assert_eq!(spec.resolve(&without_the_token), Err("7F3A".to_string()));
+        assert_eq!(spec.resolve(&HashMap::new()), Err("A1".to_string()));
     }
 
     #[test]

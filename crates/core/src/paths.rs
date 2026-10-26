@@ -8,6 +8,10 @@ pub const CLI_NAME: &str = "envrouter";
 /// `envrouter-shim --config-version` prints the newest config version the shim reads. A CLI
 /// asks before saving, so it never leaves an older shim than its own facing a config it refuses.
 pub const SHIM_CONFIG_VERSION_ARG: &str = "--config-version";
+/// `envrouter-keychain --launcher-version` prints the newest spec version its `exec` reads
+/// ([`crate::mcp::LAUNCHER_VERSION`]). A save asks before it renders a server through the
+/// launcher, so no rendered file names a helper that can't start it.
+pub const KEYCHAIN_LAUNCHER_VERSION_ARG: &str = "--launcher-version";
 
 pub fn root(home: &Path) -> PathBuf {
     home.join(".envrouter")

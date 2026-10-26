@@ -1,7 +1,7 @@
 [package]
 name = "envrouter-keychain"
 version.workspace = true
-description = "EnvRouter's MCP secrets in the platform's secret store, and the helper binary the shim runs to read them"
+description = "EnvRouter's MCP secrets in the platform's secret store, and the helper binary that reads them for the shim and starts the stdio servers that need them"
 license = "GPL-3.0-or-later"
 edition = "2021"
 publish = false
