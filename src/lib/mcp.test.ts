@@ -132,6 +132,17 @@ describe('imports and the catalog', () => {
     expect('secrets' in built && Object.values(built.secrets)).toEqual(['ghp_x'])
   })
 
+  it('keeps a Bearer reference to a variable as typed, since the agent fills it in', () => {
+    const server: McpServer = {
+      transport: 'http',
+      url: 'https://mcp.figma.com/mcp',
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: an agent-side ${VAR} reference, kept as typed
+      headers: { Authorization: 'Bearer ${FIGMA_TOKEN}', 'X-Api-Key': 'abc123' },
+    }
+    const locked = withSecretsLocked(draftOf('figma', server))
+    expect(Object.fromEntries(locked.headers.map((row) => [row.key, isPending(row.value)]))).toEqual({ Authorization: false, 'X-Api-Key': true })
+  })
+
   it('reads a vendor-specific password name as a credential, but not the shell working folder', () => {
     const server: McpServer = {
       transport: 'stdio',

@@ -48,7 +48,7 @@ selection of MCP servers from a library you keep in the app:
 - 🔌 **Per-folder MCP servers.** Keep one server library and choose which profiles load each
   server. Turn off individual tools per profile once a check has listed them.
 - 📥 **Import, paste and catalog.** Bring in the servers your agents already define (EnvRouter only
-  reads their files), paste a server's JSON straight from its README, search a catalog of nearly 90
+  reads their files, Codex's TOML included), paste a server's JSON or TOML straight from its README, search a catalog of nearly 90
   vendors' own servers (hosted or local, and what each needs to sign in), or add one by hand.
   Duplicate a server or a profile to start from one you have.
 - 🔑 **Secrets in your system's store.** API keys and tokens you enter go to the macOS Keychain,
@@ -231,13 +231,28 @@ its row, for **Duplicate…**, **Check Server** and **Delete…**.
   Claude Code's `.claude.json` (your home folder and each profile's config folder) and any
   `.mcp.json` in a trigger folder, and in Copilot's `mcp-config.json` and the `.mcp.json` and
   `.github/mcp.json` in a trigger folder, each written with an `mcpServers` wrapper or as a bare
-  table of named servers. Tick the ones to bring in.
+  table of named servers. Codex CLI keeps its servers in TOML, so the `[mcp_servers.<name>]`
+  tables of `config.toml` (your `~/.codex` and each profile's `CODEX_HOME`) and of a trigger
+  folder's `.codex/config.toml` are listed too. Tick the ones to bring in.
   Values that look like credentials go to your system's secret store, and Docker or Podman
   servers get `--init` so the container stops with the agent. EnvRouter never changes those
   files, and a server already in the library is shown as such.
+
+  From Codex, a server's `command`, `args`, `env`, `url` and `http_headers` come as they are, and
+  the variables Codex passes by name (`env_vars`, `env_http_headers`, `bearer_token_env_var`)
+  come as `${NAME}` references, which go back to Codex as the same fields. A server that signs
+  in its own way (`oauth`, `oauth_resource`, `scopes`, `http_headers_helper`, an `auth` other
+  than `oauth`), runs somewhere else (`cwd`, a remote `environment_id` or `env_vars` source),
+  holds an inline `bearer_token`, or sets both `command` and `url` is left out, since it
+  couldn't be imported right, and so is one you turned off there (`enabled = false`). Codex's own tool filters (`enabled_tools`, `disabled_tools`),
+  timeouts and the like aren't carried: set the tools in the profile instead, or they all show
+  until you do. A name Codex allows and agents don't (`docs.search`) is offered under one they
+  accept (`docs-search`), so the original in `config.toml` runs beside it under Codex until you
+  remove it.
 - **Paste JSON** (the clipboard icon): paste a server's config as its README or an agent's file
   writes it: an `mcpServers` block, VS Code's `servers`, a bare table of servers, or one server on
-  its own. Comments and trailing commas are fine. One server opens in the editor; several open
+  its own. Codex's TOML works too: `[mcp_servers.<name>]` blocks, bare `[<name>]` ones, or one
+  server's `command` or `url` fields. Comments and trailing commas are fine. One server opens in the editor; several open
   the import review. ⌘Return (Ctrl+Return) continues.
 - **Add Server** (the plus): fill in the editor by hand. **Connects with** picks a command the
   agent starts (with arguments and environment variables), or a URL (HTTP or SSE) with headers.

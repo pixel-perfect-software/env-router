@@ -82,6 +82,7 @@ import type {
   ToolInfo,
   UninstallReport,
 } from '../lib/types'
+import { parseToml, TomlError } from './miniToml'
 
 const params = new URLSearchParams(location.search)
 const platform: Platform = params.get('platform') === 'linux' ? 'linux' : params.get('platform') === 'wsl' ? 'wsl' : 'macos'
@@ -426,6 +427,14 @@ const agentFiles: Record<string, unknown> = populated
       [`${HOME}/.copilot-work/mcp-config.json`]: {
         mcpServers: { playwright: { type: 'local', command: 'npx', args: ['@playwright/mcp@latest'], tools: ['*'] } },
       },
+      // Codex's config.toml, as parsed: its dotted server name needs EnvRouter's own, and its variables are passed by name.
+      [`${HOME}/.codex/config.toml`]: {
+        model: 'gpt-5',
+        mcp_servers: {
+          'docs.search': { command: 'npx', args: ['-y', '@acme/docs-mcp'], env_vars: ['DOCS_API_KEY'], startup_timeout_sec: 20 },
+          figma: { url: 'https://mcp.figma.com/mcp', bearer_token_env_var: 'FIGMA_TOKEN' },
+        },
+      },
     }
   : {}
 
@@ -594,6 +603,73 @@ const parseEntry = (value: unknown): McpServer | null => {
   return kind === 'sse' ? { transport: 'sse', url: entry.url, headers } : null
 }
 
+const isTomlEntry = (v: unknown) => {
+  const t = obj(v)
+  return !!t && ('command' in t || 'url' in t)
+}
+
+/** `mcp_import::codex_entry`: one `[mcp_servers.<name>]` table, its variables by name as `${NAME}` references, what can't be represented left out. */
+const codexEntry = (value: unknown): McpServer | null => {
+  const entry = obj(value)
+  if (!entry) return null
+  if (['oauth', 'oauth_resource', 'scopes', 'http_headers_helper', 'cwd', 'bearer_token'].some((k) => k in entry)) return null
+  if (('environment_id' in entry && entry.environment_id !== 'local') || ('auth' in entry && entry.auth !== 'oauth')) return null
+  if (('command' in entry && 'url' in entry) || entry.enabled === false) return null
+  const text = (v: unknown) => (typeof v === 'string' ? v : typeof v === 'number' || typeof v === 'boolean' ? String(v) : null)
+  const strings = (v: unknown): Record<string, string> | null => {
+    if (v === undefined) return {}
+    const map = obj(v)
+    if (!map) return null
+    const out: Record<string, string> = {}
+    for (const k of sortedKeys(map)) {
+      const t = text(map[k])
+      if (t === null) return null
+      out[k] = t
+    }
+    return out
+  }
+  const reference = (name: string) => `\${${name}}`
+  if ('command' in entry) {
+    if (typeof entry.command !== 'string') return null
+    let args: string[] = []
+    if (Array.isArray(entry.args)) {
+      const texts = entry.args.map(text)
+      if (texts.some((t) => t === null)) return null
+      args = texts as string[]
+    } else if (entry.args !== undefined) return null
+    const env = strings(entry.env)
+    if (!env) return null
+    if (entry.env_vars !== undefined && !Array.isArray(entry.env_vars)) return null
+    for (const item of (entry.env_vars as unknown[] | undefined) ?? []) {
+      const table = obj(item)
+      const name = typeof item === 'string' ? item : table && (table.source === undefined || table.source === 'local') ? table.name : null
+      if (typeof name !== 'string') return null
+      // A value typed in `env` is the one Codex starts the server with.
+      if (!(name in env)) env[name] = reference(name)
+    }
+    return { transport: 'stdio', command: entry.command, args, env }
+  }
+  if (typeof entry.url !== 'string') return null
+  const headers = strings(entry.http_headers)
+  if (!headers) return null
+  if (entry.env_http_headers !== undefined) {
+    const map = obj(entry.env_http_headers)
+    if (!map) return null
+    for (const header of sortedKeys(map)) {
+      const name = map[header]
+      if (typeof name !== 'string') return null
+      if (!(header in headers)) headers[header] = reference(name)
+    }
+  }
+  if (entry.bearer_token_env_var !== undefined) {
+    if (typeof entry.bearer_token_env_var !== 'string') return null
+    // A second Authorization header would be a different server than the one Codex runs.
+    if (Object.keys(headers).some((h) => h.toLowerCase() === 'authorization')) return null
+    headers.Authorization = `Bearer ${reference(entry.bearer_token_env_var)}`
+  }
+  return { transport: 'http', url: entry.url, headers }
+}
+
 /** What `jsonc_parser` takes beyond JSON, made plain: comments go, and so do commas before a closing bracket. */
 const stripJsonc = (text: string) => {
   // Each pass copies strings as they are, so `//` in a URL is never a comment.
@@ -633,7 +709,45 @@ const stripJsonc = (text: string) => {
   return scan(uncommented, (i) => (uncommented[i] === ',' && /^\s*[}\]]/.test(uncommented.slice(i + 1)) ? { skip: 1 } : null))
 }
 
-/** `mcp_import::parse_pasted`: the same shapes, entries and messages. */
+/** `mcp_import::pasted_of`: the servers a table's entries make, and the names of those that can't be used. */
+const pastedOf = (entries: [string, McpServer | null][]): Pasted => {
+  const pasted: Pasted = { servers: [], skipped: [] }
+  for (const [name, server] of entries) {
+    if (server) pasted.servers.push({ name, server })
+    else pasted.skipped.push(name)
+  }
+  if (pasted.servers.length === 0 && pasted.skipped.length === 0) throw 'There are no MCP servers in it.'
+  if (pasted.servers.length === 0)
+    throw `EnvRouter can't use ${pasted.skipped.join(', ')}: their transports, values or sign-in aren't ones it supports.`
+  return pasted
+}
+
+const LONE_SERVER_UNUSABLE = "EnvRouter can't use this server's transport, values or sign-in."
+
+/** `mcp_import::looks_like_toml`: the first line is a `[table]` header or a `key = value` with no `:` ahead of the `=`. */
+const looksLikeToml = (text: string) => {
+  const first = text
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l && !l.startsWith('#') && !l.startsWith('//'))
+  if (!first) return false
+  const equals = first.indexOf('=')
+  return first.startsWith('[') || (equals >= 0 && !/[:{]/.test(first.slice(0, equals)))
+}
+
+/** `mcp_import::pasted_toml`. */
+const pastedToml = (table: Record<string, unknown>): Pasted => {
+  if (isTomlEntry(table)) {
+    const server = codexEntry(table)
+    if (!server) throw LONE_SERVER_UNUSABLE
+    return { servers: [{ name: null, server }], skipped: [] }
+  }
+  const servers = obj(table.mcp_servers) ?? (Object.keys(table).length > 0 && Object.values(table).every(isTomlEntry) ? table : null)
+  if (!servers) throw 'There are no MCP servers in it. Paste the [mcp_servers.<name>] part, or one server with its command or url.'
+  return pastedOf(sorted(servers).map(([name, value]) => [name, codexEntry(value)]))
+}
+
+/** `mcp_import::parse_pasted`: the same shapes, entries and messages, except the TOML parser's own wording. */
 const parsePasted = (text: string): Pasted => {
   if (!text.trim()) throw "Paste a server's JSON first."
   let json: unknown
@@ -644,12 +758,18 @@ const parsePasted = (text: string): Pasted => {
       // The brace goes on its own line, so a trailing `//` comment can't swallow it.
       json = JSON.parse(stripJsonc(`{${text}\n}`))
     } catch {
-      throw `That isn't JSON EnvRouter can read: ${(err as Error).message}.`
+      try {
+        return pastedToml(parseToml(text))
+      } catch (tomlErr) {
+        if (!(tomlErr instanceof TomlError)) throw tomlErr
+        const why = looksLikeToml(text) ? `${tomlErr.message} (line ${tomlErr.line})` : (err as Error).message
+        throw `That isn't JSON or TOML EnvRouter can read: ${why}.`
+      }
     }
   }
   if (isEntry(json)) {
     const server = parseEntry(json)
-    if (!server) throw "EnvRouter can't use this server's transport, values or sign-in."
+    if (!server) throw LONE_SERVER_UNUSABLE
     return { servers: [{ name: null, server }], skipped: [] }
   }
   const root = obj(json)
@@ -659,22 +779,20 @@ const parsePasted = (text: string): Pasted => {
     obj(obj(root?.mcp)?.servers) ??
     (root && Object.keys(root).length > 0 && Object.values(root).every(isEntry) ? root : null)
   if (!table) throw 'There are no MCP servers in it. Paste the part with mcpServers, or one server with its command or url.'
-  const pasted: Pasted = { servers: [], skipped: [] }
-  for (const [name, value] of sorted(table)) {
-    const server = parseEntry(value)
-    if (server) pasted.servers.push({ name, server })
-    else pasted.skipped.push(name)
-  }
-  if (pasted.servers.length === 0 && pasted.skipped.length === 0) throw 'There are no MCP servers in it.'
-  if (pasted.servers.length === 0)
-    throw `EnvRouter can't use ${pasted.skipped.join(', ')}: their transports, values or sign-in aren't ones it supports.`
-  return pasted
+  return pastedOf(sorted(table).map(([name, value]) => [name, parseEntry(value)]))
 }
 
-/** `mcp_import::read_servers`: a file's `mcpServers` (or a bare table of named servers), plus each project's in Claude's `.claude.json`. */
+/** `mcp_import::read_servers`: a JSON file's `mcpServers` (or a bare table of named servers), plus each project's in Claude's `.claude.json`; a Codex file's `mcp_servers`. */
 const readServers = (path: string, dialect: McpDialect): [string, McpServer][] => {
   const file = obj(agentFiles[path])
   if (!file) return []
+  if (dialect === 'codex') {
+    // The file stands for a parsed config.toml; only its `mcp_servers` are read.
+    return sorted(obj(file.mcp_servers) ?? {}).flatMap(([name, entry]): [string, McpServer][] => {
+      const server = codexEntry(entry)
+      return server ? [[name, server]] : []
+    })
+  }
   // Copilot alone reads a bare table, and only with no mcpServers key.
   const isBare = dialect === 'copilot' && !('mcpServers' in file) && Object.keys(file).length > 0 && Object.values(file).every(isEntry)
   const tables = [isBare ? file : file.mcpServers]

@@ -12,6 +12,7 @@ envrouter-keychain.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
+toml.workspace = true
 http = "1"
 jsonc-parser = { version = "0.34", features = ["cst", "serde"] }
 nix = { workspace = true, features = ["signal", "user"] }

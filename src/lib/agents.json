@@ -68,6 +68,7 @@
       "skipSubcommands": ["archive", "delete", "queue", "remote-control", "unarchive"],
       "skipIfPresent": []
     },
+    "mcpFiles": { "userFile": "config.toml", "defaultDir": "~/.codex", "projectFiles": [".codex/config.toml"] },
     "note": "MCP sign-ins and ~/.agents/skills are shared by every profile, a standalone install updates into the folder of the profile it runs in, and in a folder with MCP servers Codex runs without its shared background server."
   }
 ]
