@@ -345,7 +345,7 @@ fn sync_at(config: &ConfigState, home: &Path, now: SystemTime) -> Result<()> {
         now,
         seen: HashSet::new(),
     };
-    remove_stale(&root, &keep, &mut retired)?;
+    remove_stale(&root, 0, &keep, &mut retired)?;
     let since: BTreeMap<_, _> = retired
         .since
         .into_iter()
@@ -373,9 +373,16 @@ struct Retired {
 
 /// Removes what in `dir` isn't in `keep`: a manifest at once, a server file or a spec once it's
 /// been retired for [`RETIRED_GRACE`], and folders left empty. Links are removed, never followed.
+/// `depth` counts folders below [`paths::mcp`]: a manifest is the `launch.json` in
+/// `<profile>/<agent>/`, so a server named `launch` keeps its grace like any other.
 /// Only [`sync`] uses it, which is Unix-only until Windows gets its own.
 #[cfg(unix)]
-fn remove_stale(dir: &Path, keep: &HashSet<&Path>, retired: &mut Retired) -> Result<()> {
+fn remove_stale(
+    dir: &Path,
+    depth: usize,
+    keep: &HashSet<&Path>,
+    retired: &mut Retired,
+) -> Result<()> {
     let io_err = |path: &Path| {
         let path = path.to_path_buf();
         move |source| Error::Io { path, source }
@@ -384,7 +391,7 @@ fn remove_stale(dir: &Path, keep: &HashSet<&Path>, retired: &mut Retired) -> Res
         let path = entry.map_err(io_err(dir))?.path();
         let meta = fs::symlink_metadata(&path).map_err(io_err(&path))?;
         if meta.is_dir() {
-            remove_stale(&path, keep, retired)?;
+            remove_stale(&path, depth + 1, keep, retired)?;
             if fs::read_dir(&path).map_err(io_err(&path))?.next().is_none() {
                 fs::remove_dir(&path).map_err(io_err(&path))?;
             }
@@ -394,9 +401,10 @@ fn remove_stale(dir: &Path, keep: &HashSet<&Path>, retired: &mut Retired) -> Res
             continue;
         }
         let since = *retired.since.entry(path.clone()).or_insert(retired.now);
-        let manifest = path
-            .file_name()
-            .is_some_and(|name| name == paths::MCP_LAUNCH_FILE);
+        let manifest = depth == 2
+            && path
+                .file_name()
+                .is_some_and(|name| name == paths::MCP_LAUNCH_FILE);
         if manifest || retired.now.saturating_sub(since) >= RETIRED_GRACE.as_secs() {
             fs::remove_file(&path).map_err(io_err(&path))?;
         } else {
@@ -1020,6 +1028,29 @@ mod tests {
         assert!(spec.exists());
         sync_at(&config, home, dropped + RETIRED_GRACE).unwrap();
         assert!(!spec.exists());
+    }
+
+    /// Only the manifest beside an agent's `servers/` goes at once: a server named `launch`
+    /// has a `servers/launch.json` and a `stdio/launch.json` that a run may still open.
+    #[cfg(unix)]
+    #[test]
+    fn a_server_named_launch_is_kept_like_any_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let mut config = config();
+        let github = config.mcp_servers.remove("github").unwrap();
+        config.mcp_servers.insert("launch".into(), github);
+        let using = config.profiles[0].mcp_servers.remove("github").unwrap();
+        config.profiles[0]
+            .mcp_servers
+            .insert("launch".into(), using);
+        sync(&config, home).unwrap();
+
+        config.profiles[0].mcp_servers.remove("launch");
+        sync(&config, home).unwrap();
+        let agent = paths::mcp_launch(home, "work", "claude").with_file_name("");
+        assert!(agent.join("servers/launch.json").exists());
+        assert!(agent.join("stdio/launch.json").exists());
     }
 
     /// A server that's added back before its file is removed is current again, and its
