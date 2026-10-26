@@ -521,11 +521,14 @@ Parked.
     50,434 entries, so no full snapshot), mapping `registryType` rather than the mostly absent
     `runtimeHint`.
 12. **#167: OpenCode** has no variable that moves its logins (`OPENCODE_HOME` is an open request,
-    anomalyco/opencode#58214): amend PRODUCT.md's rule for an MCP-only agent, or wait.
+    anomalyco/opencode#58214). Decided on 2026-10-26: wait for it and add OpenCode as a full agent
+    then, rather than amend PRODUCT.md's rule for an MCP-only one (Parked).
 13. **#168: Qwen Code** with `QWEN_HOME`, injected through `QWEN_CODE_SYSTEM_DEFAULTS_PATH`, with
     `skipIfPresent` for an admin's defaults file.
 14. **#169: PRODUCT.md records M4's decisions:** the agents, the features every competitor has,
-    and the OAuth-clients shelf closed as won't-do.
+    and the OAuth-clients shelf closed as won't-do. Decided on 2026-10-26: EnvRouter's features are
+    about local configs, so export and import of profiles fits (M5, issue 9), while usage display,
+    failover, provider routing and adopting a login, which belong to a control panel, don't.
 
 ---
 
@@ -537,10 +540,11 @@ Parked.
 (add, edit, remove, folders, servers); rpc serves secrets and install and handles requests
 concurrently; the CLI gets a test suite; the window can install the CLI and shows whether a
 secret is really stored; WSL and Windows store edge cases; documented launch paths that bypass
-PATH.
+PATH; export and import of profiles and the server library.
 
 **Done when:** the parity table has no empty cell except `open_in_editor`; CLI tests run in CI;
-a WSL user can set up profiles and servers without hand-editing JSON.
+a WSL user can set up profiles and servers without hand-editing JSON; a setup exported on one
+machine imports on another, the window's and the CLI's alike.
 
 | Capability | Window | rpc | CLI today |
 |---|---|---|---|
@@ -584,6 +588,12 @@ a WSL user can set up profiles and servers without hand-editing JSON.
    with VS Code's auth; Zed launches agents over ACP. `check_folder` can confirm a route with
    `claude auth status`'s `configDirectory` (v2.1.268+). Also document that `status`, `explain`
    and `editor` create `config.json`, and the file modes EnvRouter uses.
+9. **Export and import profiles** (decided in M4's #169). A file with the profiles and the server
+   library, for moving a setup to another machine or a WSL distro: secret values stay out (each
+   server names the secrets it needs, entered again after the import), and trigger and config
+   folders under `~` stay that way, while an absolute path outside home is flagged. An import
+   merges per profile and per server as a save does (`src/lib/merge.ts`) and asks before
+   replacing one. In the window and as `envrouter export` and `envrouter import`.
 
 ---
 
@@ -668,7 +678,12 @@ Looked at and left out on purpose, with the reason, so they aren't re-litigated:
   Principle 1 (invisible when it works) and DESIGN.md (follow the system).
 - **A default or fallback profile toggle.** No fallback is the product's one rule; a `~` trigger
   already gives a default. Everywhere else can hint at that.
-- **Per-profile env vars, OAuth clients.** Shelved earlier; CIMD makes the OAuth shelf moot.
-- **Failover at a rate limit and provider routing.** Common in competitors, not this product.
+- **Per-profile env vars.** Shelved earlier; MCP server env covers the need.
+- **Pre-registered OAuth clients.** Closed as won't-do (#169): both agents register themselves
+  through CIMD or dynamic registration, and neither takes a client secret from an injected config.
+- **Usage and quota display, failover at a rate limit, provider routing, adopting an existing
+  login.** Common in competitors, but control-panel features, not config ones (#169).
+- **OpenCode, until a variable moves its logins** (#167; `OPENCODE_HOME` is
+  anomalyco/opencode#58214). Then it comes in as a full agent, through `OPENCODE_CONFIG_CONTENT`.
 - **Arguments after a subcommand** (Goose `--with-extension`, Warp `oz agent run --mcp`). No agent
   EnvRouter plans needs them; the descriptor grows them with the first one that does.
