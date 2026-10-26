@@ -224,6 +224,8 @@ export type FolderCheck =
       mcp: string[]
       /** A file that turns the profile's MCP servers off on this machine, such as Claude Code's `managed-mcp.json`. `mcp` is empty then. */
       mcpManagedBy: string | null
+      /** Servers the shim adds that one of the agent's own files defines with the other transport (a command, a URL), which the agent won't start with. `file`: that file; `openable`: whether Open will open it (only files in the home folder). */
+      mcpClashes: { server: string; file: string; openable: boolean }[]
       /** The run goes through an alias with the tool's name that runs the tool itself (`alias claude='claude --model opus'`): what it expands to. */
       viaAlias: string | null
       real: string
@@ -259,8 +261,9 @@ export interface ToolInfo {
 }
 
 /**
- * `commands::SaveOutcome`. `saved`: `config` is what the file holds now, and `warning` is something the save couldn't finish after
- * writing it (the secret store wouldn't drop a secret no server uses any more), worded to show as it is. `changed`: nothing was
+ * `commands::SaveOutcome`. `saved`: `config` is what the file holds now, and `warning` is something to know after the save wrote it
+ * (the secret store wouldn't drop a secret no server uses any more; Codex won't start in some folders because its own file defines a
+ * server the profile hands it with the other transport), worded to show as it is. `changed`: nothing was
  * saved, because config.json no longer holds the `base` the save named (the CLI or a hand edit changed it); `config` is what the
  * file holds now. `missing`: nothing was saved, because config.json is gone since the edit started; saving again without a base
  * writes the window's version.

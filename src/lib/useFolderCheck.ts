@@ -6,7 +6,7 @@ import type { Blocked } from './health'
 import { owningTrigger } from './paths'
 import { KNOWN_TOOLS } from './tools'
 import type { ConfigState, SetupStatus, Shell } from './types'
-import { verdictOf } from './verdict'
+import { routedAndStarts, verdictOf } from './verdict'
 
 /**
  * The folder check: the docket's result, the slip filed on the map, and what the check found
@@ -54,13 +54,13 @@ export function useFolderCheck(config: ConfigState | null, setup: SetupStatus | 
       const result = await checkFolder(shell, folder, tool)
       if (key !== checkKey.current) return
       setCheck((c) => (c && c.key === key ? { ...c, result } : c))
-      setSlip((s) => (s && s.key === key ? { ...s, mark: result.status === 'routed' ? 'on' : 'problem' } : s))
+      setSlip((s) => (s && s.key === key ? { ...s, mark: routedAndStarts(result) ? 'on' : 'problem' } : s))
       const latest = latestSetup.current
       const status = latest?.shells.find((s) => s.shell === shell)
       const verdict = status && latest ? verdictOf(result, status, tool, routedTools.includes(tool), latest.shimsDir, home, trigger) : null
       if (verdict?.blocksShell) setBlocked({ shell, tool, headline: verdict.headline, folder })
       else setBlocked((b) => (b && b.shell === shell && b.tool === tool ? null : b))
-      if (result.status === 'routed') {
+      if (routedAndStarts(result)) {
         setCheckedOnce(true)
       }
     } catch (err) {

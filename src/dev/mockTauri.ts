@@ -12,7 +12,8 @@
 //   ~/.config editor settings, a keyring); `&platform=wsl` as a WSL distro (bash reading
 //   .profile and .bashrc, VS Code Server's machine settings, Windows editors connected remotely).
 // - `&check=` forces what Check Folder finds: routed (default: worked out from the config),
-//   managed (an admin's managed-mcp.json turns the profile's MCP servers off), alias (the run
+//   managed (an admin's managed-mcp.json turns the profile's MCP servers off), clash (the agent's own ~/.codex/config.toml defines
+//   the first server the profile hands it with the other transport; none if it hands none, as the backend only reports servers the shim adds), alias (the run
 //   goes through `alias claude='claude --model opus'`), shadowedOnPath,
 //   byPromptHook, shadowedByShell (an alias, so no origin), notFound,
 //   notInstalled, owned (the owner sets no config for the agent), unowned (no profile owns the folder), shimFailed (empty message, as when macOS kills a shim), timeout or noPath (the
@@ -1355,6 +1356,7 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
           value: null,
           mcp: [],
           mcpManagedBy: null,
+          mcpClashes: [],
           viaAlias: null,
           real: `${HOME}/.local/bin/${command}`,
         } satisfies FolderCheck
@@ -1367,19 +1369,21 @@ const respond = async (cmd: string, args: unknown): Promise<unknown> => {
         return { status: 'shadowedOnPath', path: `${HOME}/.local/bin/${command}`, byPromptHook: false } satisfies FolderCheck
       const p = owner(config, folder)
       const settings = setTool(p, command)
+      const mcp = forcedCheck === 'managed' ? [] : mcpFor(config, p, command)
       return {
         status: 'routed',
         profile: p?.name ?? null,
         profileId: p?.id ?? null,
         envVar: settings ? settings.envVar : null,
         value: settings ? expandHome(settings.path.trim()) : null,
-        mcp: forcedCheck === 'managed' ? [] : mcpFor(config, p, command),
+        mcp,
         mcpManagedBy:
           forcedCheck === 'managed'
             ? macos
               ? '/Library/Application Support/ClaudeCode/managed-mcp.json'
               : '/etc/claude-code/managed-mcp.json'
             : null,
+        mcpClashes: forcedCheck === 'clash' ? mcp.slice(0, 1).map((server) => ({ server, file: `${HOME}/.codex/config.toml`, openable: true })) : [],
         viaAlias: forcedCheck === 'alias' ? `${command} --model opus` : null,
         real: `${HOME}/.local/bin/${command}`,
       } satisfies FolderCheck

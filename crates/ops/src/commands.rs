@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::editors::{self, Editor, EditorStatus};
 use crate::shell::{self, FolderCheck, Preview, Shell, ShellStatus};
 use crate::uninstall::{self, AppData, Caller, UninstallReport};
-use crate::{checked_once, installed, mcp_import, mcp_probe, npm, shims};
+use crate::{checked_once, installed, mcp_clash, mcp_import, mcp_probe, npm, shims};
 
 pub fn get_config(home: &Path) -> Result<ConfigState> {
     config::load_or_init(&paths::root(home))
@@ -67,8 +67,9 @@ impl ConfigFault {
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum SaveOutcome {
     /// `config` is what config.json holds now: the payload at the current version. `warning`:
-    /// something the save couldn't finish after writing the config (the secret store wouldn't
-    /// drop a secret nothing uses any more), worded to show as it is. The save still counts.
+    /// something to know after the config was written, worded to show as it is: the secret store
+    /// wouldn't drop a secret nothing uses any more, or Codex won't start in some folders
+    /// ([`mcp_clash::save_warning`]). The save still counts.
     Saved {
         config: ConfigState,
         warning: Option<String>,
@@ -273,11 +274,18 @@ fn save(
     // The config is written and rendered by now, so a store that won't let go of a secret
     // (none to ask, locked) is a warning, not a failed save: the window would keep the old base
     // for a file that's already new. The next save that reaches the store drops it.
-    let warning = if before.iter().any(|id| !kept.contains(id)) {
+    let dropped = if before.iter().any(|id| !kept.contains(id)) {
         store.prune(home, &kept).err().map(|err| err.to_string())
     } else {
         None
     };
+    // A same-name server of the agent's own with the other transport: Codex won't start with it.
+    // Told after the fact like the store's, since the config is valid and the agent's file is
+    // the user's to edit.
+    let warning = [dropped, mcp_clash::save_warning(payload, home)]
+        .into_iter()
+        .flatten()
+        .reduce(|first, second| format!("{first} {second}"));
     if fresh_shim && !referenced.is_empty() {
         // Not waited for: the answer to its prompt is the user's to give, whenever.
         drop(shims::ask_keychain_access(home));
@@ -652,16 +660,34 @@ pub(crate) fn uninstall_with(
 
 /// Opens `shell` the way a new terminal window would, in `folder`, and reports what running
 /// `tool` there would do. Never runs the tool itself.
-/// A check that finds the tool routed is also noted as done ([`checked_once`]), for first-run.
+/// A check that finds the tool routed, and starting, is also noted as done ([`checked_once`]),
+/// for first-run. It carries the same-name servers an agent's own files define with the other
+/// transport ([`mcp_clash`]) that the shim adds, which the shim can't see; the agent won't
+/// start with them, so such a check isn't done.
 pub fn check_folder(home: &Path, shell: Shell, folder: &Path, tool: &str) -> Result<FolderCheck> {
-    let check = shell::check_folder(shell, home, folder, tool)?;
+    let mut check = shell::check_folder(shell, home, folder, tool)?;
+    if let FolderCheck::Routed {
+        profile_id: Some(id),
+        value,
+        mcp,
+        mcp_clashes,
+        ..
+    } = &mut check
+    {
+        // The saved config is what the shim routed from. One that can't be read now has no
+        // clashes to report: the check already answered what it was asked.
+        if let Ok(Some(config)) = config::load(&paths::root(home)) {
+            *mcp_clashes =
+                mcp_clash::in_folder(&config, home, folder, tool, id, value.as_deref(), mcp);
+        }
+    }
     note_if_routed(home, &check);
     Ok(check)
 }
 
 /// A convenience, like the last folder: a failure to keep it is told, not raised.
 fn note_if_routed(home: &Path, check: &FolderCheck) {
-    if matches!(check, FolderCheck::Routed { .. }) {
+    if matches!(check, FolderCheck::Routed { mcp_clashes, .. } if mcp_clashes.is_empty()) {
         if let Err(err) = checked_once::record(home) {
             eprintln!("envrouter: couldn't note that a folder was checked: {err}");
         }
@@ -721,16 +747,7 @@ pub fn parse_mcp_json(text: &str) -> Result<mcp_import::Pasted> {
 /// Opens a file in the user's default text editor, e.g. the startup file that defines an alias
 /// shadowing the shim. Limited to existing files inside the home folder.
 pub fn open_in_editor(home: &Path, path: &str) -> Result<()> {
-    let file = std::fs::canonicalize(path).map_err(|source| Error::Io {
-        path: PathBuf::from(path),
-        source,
-    })?;
-    let home = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
-    if !file.is_file() || !file.starts_with(&home) {
-        return Err(Error::Invalid(format!(
-            "{path} isn't a file in your home folder."
-        )));
-    }
+    let file = openable_file(home, Path::new(path))?;
     let (program, args) = platform::open_text_file_command(Platform::current());
     let status = std::process::Command::new(program)
         .args(args)
@@ -742,6 +759,23 @@ pub fn open_in_editor(home: &Path, path: &str) -> Result<()> {
     } else {
         Err(Error::Command(format!("couldn't open {}", file.display())))
     }
+}
+
+/// The real path of `path` if it's an existing file inside the home folder, which is all
+/// [`open_in_editor`] opens.
+pub(crate) fn openable_file(home: &Path, path: &Path) -> Result<PathBuf> {
+    let file = std::fs::canonicalize(path).map_err(|source| Error::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let home = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
+    if !file.is_file() || !file.starts_with(&home) {
+        return Err(Error::Invalid(format!(
+            "{} isn't a file in your home folder.",
+            path.display()
+        )));
+    }
+    Ok(file)
 }
 
 /// One of EnvRouter's own places that the window or the menu bar can show in the file manager.
@@ -897,6 +931,7 @@ pub fn locate(home: &Path, place: &Place) -> Result<Located> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mcp_clash::McpClash;
     use envrouter_core::config::Profile;
 
     fn profile(id: &str, name: &str) -> Profile {
@@ -1046,6 +1081,42 @@ mod tests {
         assert_eq!(config, empty);
         assert_eq!(get_config(home).unwrap(), empty);
         assert!(warning.unwrap().contains("keyring is locked"));
+    }
+
+    /// Codex merges a server it is handed with a same-name one in its own `config.toml`, and
+    /// refuses to start when that makes a server of two transports. The save goes through, since
+    /// the file is the user's, and says which server, which file and whose folders.
+    #[test]
+    fn a_save_warns_of_a_codex_server_with_the_other_transport() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let mut config = with_secret_server(
+            &envrouter_core::agents::with_agents(get_config(home).unwrap()),
+            "github",
+            "7F3A",
+        );
+        config.profiles[0].tools.insert(
+            "codex".into(),
+            config::ToolConfig {
+                env_var: "CODEX_HOME".into(),
+                path: "~/.codex-work".into(),
+            },
+        );
+        let theirs = home.join(".codex-work/config.toml");
+        std::fs::create_dir_all(theirs.parent().unwrap()).unwrap();
+        std::fs::write(&theirs, "[mcp_servers.github]\nurl = \"https://x/mcp\"\n").unwrap();
+
+        let SaveOutcome::Saved { warning, .. } =
+            save_config(home, &config, &HashMap::new(), None).unwrap()
+        else {
+            panic!("the save should count");
+        };
+        let warning = warning.expect("a warning");
+        for part in ["codex", "Work", "github", "~/.codex-work/config.toml"] {
+            assert!(warning.contains(part), "{part} missing from: {warning}");
+        }
+        assert_eq!(get_config(home).unwrap(), config);
+        assert!(paths::mcp_launch(home, "p1", "codex").exists());
     }
 
     /// Start Over leaves the store as it is and the broken file as a backup. A save after it used
@@ -1679,24 +1750,31 @@ mod tests {
         );
     }
 
-    /// Only a check that finds the tool routed counts for first-run's last step.
+    /// Only a check that finds the tool routed, and able to start, counts for first-run's last step.
     #[test]
     fn only_a_routed_check_is_noted_as_done() {
         let home = tempfile::tempdir().unwrap();
-        note_if_routed(home.path(), &FolderCheck::NotFound);
-        assert!(!checked_once::is_recorded(home.path()));
-
-        let routed = FolderCheck::Routed {
+        let routed = |mcp_clashes| FolderCheck::Routed {
             profile: None,
             profile_id: None,
             env_var: None,
             value: None,
             mcp: Vec::new(),
             mcp_managed_by: None,
+            mcp_clashes,
             via_alias: None,
             real: "/bin/t".into(),
         };
-        note_if_routed(home.path(), &routed);
+        let clash = McpClash {
+            server: "x".into(),
+            file: "/h/.codex/config.toml".into(),
+            openable: true,
+        };
+        note_if_routed(home.path(), &FolderCheck::NotFound);
+        note_if_routed(home.path(), &routed(vec![clash]));
+        assert!(!checked_once::is_recorded(home.path()));
+
+        note_if_routed(home.path(), &routed(Vec::new()));
         assert!(checked_once::is_recorded(home.path()));
     }
 

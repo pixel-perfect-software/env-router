@@ -255,6 +255,14 @@ impl McpDialect {
         !(self == McpDialect::Codex && matches!(server, McpServer::Sse { .. }))
     }
 
+    /// Whether the agent merges a server it is handed with a same-name one from its own files,
+    /// key by key, instead of letting one replace the other. Codex does, and refuses to start
+    /// when the two end up with keys of different transports. Data only: reading the files is
+    /// the backend's (`envrouter_ops::mcp_clash`), so `core` and the shim stay free of a parser.
+    pub fn merges_same_name(self) -> bool {
+        self == McpDialect::Codex
+    }
+
     /// The server names the agent keeps for its own servers: Codex's `codex_apps` and
     /// `codex_tui`. A library server of that name would be merged into them.
     pub fn reserved_names(self) -> &'static [&'static str] {

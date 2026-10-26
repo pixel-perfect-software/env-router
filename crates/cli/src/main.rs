@@ -14,6 +14,7 @@ use envrouter_core::platform::Platform;
 use envrouter_core::{agents, paths, Error, Result};
 use envrouter_ops::commands::{self, CliSave, SecretUse};
 use envrouter_ops::editors::{Editor, EditorStatus};
+use envrouter_ops::mcp_clash::McpClash;
 use envrouter_ops::shell::{FolderCheck, Shell, ShellStatus};
 use envrouter_ops::uninstall::{
     refuse_while_app_runs, Caller, FolderStep, Removable, SecretsStep, UninstallReport,
@@ -234,7 +235,9 @@ fn run(cli: &Cli, home: &Path) -> Result<ExitCode> {
             let folder = folder_or_cwd(folder.as_deref())?;
             let shell = shell.map_or_else(|| login_shell(home), Shell::from);
             let check = commands::check_folder(home, shell, &folder, tool)?;
-            let routed = matches!(check, FolderCheck::Routed { .. });
+            // Routed, but an agent that merges same-name servers won't start with these.
+            let routed =
+                matches!(&check, FolderCheck::Routed { mcp_clashes, .. } if mcp_clashes.is_empty());
             print(cli, &check, || verdict(&check, tool, shell, home));
             Ok(if routed {
                 ExitCode::SUCCESS
@@ -848,10 +851,14 @@ fn verdict(check: &FolderCheck, tool: &str, shell: Shell, home: &Path) -> String
             value,
             mcp,
             mcp_managed_by,
+            mcp_clashes,
             via_alias,
             real,
             ..
         } => {
+            if !mcp_clashes.is_empty() {
+                return clash_line(tool, profile.as_deref(), mcp_clashes, home);
+            }
             let route = match (profile, env_var, value) {
                 (None, _, _) => {
                     "no profile owns this folder, so it uses its own config".to_string()
@@ -909,6 +916,28 @@ fn verdict(check: &FolderCheck, tool: &str, shell: Shell, home: &Path) -> String
         }
         FolderCheck::ShimFailed { message } => format!("The shim failed: {message}"),
     }
+}
+
+/// A routed folder the agent won't start in: its own files define a server the profile also hands
+/// it, one as a command and the other as a URL.
+fn clash_line(tool: &str, profile: Option<&str>, clashes: &[McpClash], home: &Path) -> String {
+    let mut servers: Vec<&str> = Vec::new();
+    let mut files: Vec<String> = Vec::new();
+    for clash in clashes {
+        let file = tilde(Path::new(&clash.file), home);
+        if !servers.contains(&clash.server.as_str()) {
+            servers.push(&clash.server);
+        }
+        if !files.contains(&file) {
+            files.push(file);
+        }
+    }
+    format!(
+        "Blocked: {tool} won't start here. {} and {} both define {}, one as a command and the other as a URL, and {tool} merges servers that share a name. Rename one of them.",
+        profile.unwrap_or("The profile"),
+        files.join(", "),
+        servers.join(", ")
+    )
 }
 
 fn mcp_suffix(servers: &[String]) -> String {

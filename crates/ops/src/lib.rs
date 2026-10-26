@@ -8,6 +8,7 @@ pub mod editors;
 pub mod installed;
 pub mod last_folder;
 pub mod legacy_identifier;
+pub mod mcp_clash;
 pub mod mcp_import;
 pub mod mcp_probe;
 pub mod npm;

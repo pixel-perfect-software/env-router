@@ -3,6 +3,7 @@
 
 import type { Tone } from '../components/ui'
 import { tildify } from './paths'
+import { listOf, plural } from './text'
 import { toolByCommand } from './tools'
 import type { FolderCheck, Preview, ShellStatus } from './types'
 
@@ -39,6 +40,9 @@ export type Verdict = {
  * Whether the verdict's action fixes a problem, so it may be the window's one accent button. A verdict that only
  * describes the folder (Owned by, No profile owns it) and Check Again, which fixes nothing itself, stay push buttons.
  */
+/** A routed check whose agent will start: the shim set it up and nothing in the agent's own files stops it. */
+export const routedAndStarts = (check: FolderCheck) => check.status === 'routed' && check.mcpClashes.length === 0
+
 export const offersFix = (v: Verdict) => v.tone === 'problem' && v.action !== undefined && v.action.kind !== 'recheck'
 
 export function verdictOf(
@@ -84,6 +88,20 @@ export function verdictOf(
           note: `${tool} uses its default config here.`,
           values,
           action: { kind: 'newProfile' },
+        }
+      }
+      // The agent merges a server it is handed with its own same-name one, and quits at startup when the two disagree on the transport.
+      if (check.mcpClashes.length > 0) {
+        const servers = [...new Set(check.mcpClashes.map((c) => c.server))]
+        const [file, ...more] = [...new Set(check.mcpClashes.map((c) => c.file))]
+        const openable = check.mcpClashes.find((c) => c.openable)
+        return {
+          tone: 'problem',
+          headline: `${tool} won't start here`,
+          note: `${check.profile} and ${tildify(file, home)}${more.length > 0 ? ` (and ${plural(more.length, 'more file', 'more files')})` : ''} both define ${listOf(servers)}, one as a command and the other as a URL, and ${tool} merges servers that share a name. Rename one of them.`,
+          values,
+          // Open refuses a file outside the home folder.
+          action: openable ? { kind: 'openFile', path: openable.file } : undefined,
         }
       }
       const managed = check.mcpManagedBy && `its MCP servers are off because ${tildify(check.mcpManagedBy, home)} manages them on this machine`
