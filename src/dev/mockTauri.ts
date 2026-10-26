@@ -495,10 +495,12 @@ const validateAgent = (name: string, agent: AgentDef) => {
   if (!isCommandName(name)) throw `"${name}" in the agent list isn't a valid command name.`
   const files = agent.mcpFiles
   if (files) {
-    // Plain file names, joined onto folders; never a path that climbs out of one.
+    // Joined onto folders; never a path that climbs out of one. The user file is a plain name, a
+    // project file may sit in a subfolder (`.github/mcp.json`).
     const plain = (f: string) => f !== '' && !f.includes('/') && f !== '.' && f !== '..'
-    if (!plain(files.userFile) || (typeof files.projectFile === 'string' && !plain(files.projectFile)) || !toolDir(files.defaultDir, '/'))
-      throw `The MCP file locations for ${name} aren't plain file names in an absolute or ~ folder.`
+    const inside = (f: string) => f !== '' && !f.startsWith('/') && f.split('/').every((part) => part !== '.' && part !== '..')
+    if (!plain(files.userFile) || !files.projectFiles.every(inside) || !toolDir(files.defaultDir, '/'))
+      throw `The MCP file locations for ${name} must be a file name in an absolute or ~ folder, and paths inside a project folder.`
   }
   if (!agent.mcp) return
   const isPrefix = (arg: string) => arg.startsWith('-') && arg.indexOf('=') > 1 && !/\s/.test(arg)
@@ -547,6 +549,12 @@ const validate = (cfg: ConfigState) => {
 }
 
 // `mcp_import`: entries in the shape Claude and Copilot share, from files or pasted text.
+
+/** `mcp_import::is_entry`: something with a `command` or a `url`. */
+const isEntry = (v: unknown) => {
+  const e = obj(v)
+  return Boolean(e && (has(e, 'command') || has(e, 'url')))
+}
 
 /** `mcp_import::parse_entry`. Numbers and flags become text; anything else EnvRouter can't represent drops the entry. */
 const parseEntry = (value: unknown): McpServer | null => {
@@ -639,10 +647,6 @@ const parsePasted = (text: string): Pasted => {
       throw `That isn't JSON EnvRouter can read: ${(err as Error).message}.`
     }
   }
-  const isEntry = (v: unknown) => {
-    const e = obj(v)
-    return Boolean(e && (has(e, 'command') || has(e, 'url')))
-  }
   if (isEntry(json)) {
     const server = parseEntry(json)
     if (!server) throw "EnvRouter can't use this server's transport, values or sign-in."
@@ -667,11 +671,13 @@ const parsePasted = (text: string): Pasted => {
   return pasted
 }
 
-/** `mcp_import::read_servers`: a file's `mcpServers`, plus each project's in Claude's `.claude.json`. */
+/** `mcp_import::read_servers`: a file's `mcpServers` (or a bare table of named servers), plus each project's in Claude's `.claude.json`. */
 const readServers = (path: string, dialect: McpDialect): [string, McpServer][] => {
   const file = obj(agentFiles[path])
   if (!file) return []
-  const tables = [file.mcpServers]
+  // Copilot alone reads a bare table, and only with no mcpServers key.
+  const isBare = dialect === 'copilot' && !('mcpServers' in file) && Object.keys(file).length > 0 && Object.values(file).every(isEntry)
+  const tables = [isBare ? file : file.mcpServers]
   const projects = obj(file.projects)
   if (dialect === 'claude' && projects) tables.push(...sorted(projects).map(([, project]) => obj(project)?.mcpServers))
   return tables.flatMap((table) => {
@@ -693,12 +699,10 @@ const importCandidates = (cfg: ConfigState): ImportCandidate[] => {
     if (!files || !agent.mcp) continue
     const dirs = [toolDir(files.defaultDir), ...cfg.profiles.map((p) => setTool(p, command)).map((t) => (t ? toolDir(t.path) : null))]
     const sources = dirs.flatMap((dir) => (dir ? [join(dir, files.userFile)] : []))
-    const { projectFile } = files
-    if (projectFile)
-      for (const raw of cfg.profiles.flatMap((p) => p.triggerPaths)) {
-        const base = triggerBaseOrNull(raw)
-        if (base) sources.push(join(base, projectFile))
-      }
+    for (const raw of cfg.profiles.flatMap((p) => p.triggerPaths)) {
+      const base = triggerBaseOrNull(raw)
+      if (base) sources.push(...files.projectFiles.map((file) => join(base, file)))
+    }
     sources.sort(comparePaths)
     for (const path of sources.filter((s, i) => i === 0 || comparePaths(s, sources[i - 1]) !== 0)) {
       for (const [name, server] of readServers(path, agent.mcp.dialect)) {

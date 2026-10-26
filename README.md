@@ -229,7 +229,9 @@ its row, for **Duplicate…**, **Check Server** and **Delete…**.
   package's current release.
 - **Import from Your Agents** (the import icon): lists the servers your agents already define, in
   Claude Code's `.claude.json` (your home folder and each profile's config folder) and any
-  `.mcp.json` in a trigger folder, and in Copilot's `mcp-config.json`. Tick the ones to bring in.
+  `.mcp.json` in a trigger folder, and in Copilot's `mcp-config.json` and the `.mcp.json` and
+  `.github/mcp.json` in a trigger folder, each written with an `mcpServers` wrapper or as a bare
+  table of named servers. Tick the ones to bring in.
   Values that look like credentials go to your system's secret store, and Docker or Podman
   servers get `--init` so the container stops with the agent. EnvRouter never changes those
   files, and a server already in the library is shown as such.

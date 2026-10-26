@@ -30,7 +30,7 @@
       ],
       "skipIfPresent": ["/Library/Application Support/ClaudeCode/managed-mcp.json", "/etc/claude-code/managed-mcp.json"]
     },
-    "mcpFiles": { "userFile": ".claude.json", "defaultDir": "~", "projectFile": ".mcp.json" },
+    "mcpFiles": { "userFile": ".claude.json", "defaultDir": "~", "projectFiles": [".mcp.json"] },
     "ide": {
       "setting": "claudeCode.claudeProcessWrapper",
       "extension": "anthropic.claude-code",
@@ -52,7 +52,7 @@
       "skipSubcommands": [],
       "skipIfPresent": []
     },
-    "mcpFiles": { "userFile": "mcp-config.json", "defaultDir": "~/.copilot", "projectFile": ".mcp.json" }
+    "mcpFiles": { "userFile": "mcp-config.json", "defaultDir": "~/.copilot", "projectFiles": [".mcp.json", ".github/mcp.json"] }
   },
   {
     "command": "codex",

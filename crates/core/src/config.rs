@@ -30,8 +30,9 @@ pub const CONFIG_FILE: &str = "config.json";
 /// defaults to empty, so a version 4 file reads as is; the window writes it on every save, and
 /// the CLI adds the registry's (`agents::with_agents`).
 ///
-/// 6 added the `codex` MCP dialect. Nothing else changed shape, so a version 5 file reads as is.
-/// The bump is for older readers, whose [`McpDialect`] can't parse `codex` and fail the whole
+/// 6 added the `codex` MCP dialect, and turned each agent's `mcpFiles.projectFile` (a name or
+/// null) into `projectFiles` (a list, whose entries may sit in a subfolder). The old key still
+/// reads, as a list of one or none, so a version 5 file reads as is. The bump is for older readers, whose [`McpDialect`] can't parse `codex` and fail the whole
 /// file (a 0.9.0 shim warns "unknown variant `codex`" and runs every agent unrouted, since the
 /// parse fails before the version is checked): a CLI save sees the installed shim's version and
 /// installs one that reads it (`commands::cli_installs`).
@@ -181,9 +182,28 @@ pub struct McpFiles {
     pub user_file: String,
     /// Where the agent looks without its variable, e.g. `~` for Claude's `~/.claude.json`.
     pub default_dir: String,
-    /// In a project folder, e.g. `.mcp.json`.
-    #[serde(default)]
-    pub project_file: Option<String>,
+    /// In a project folder, each relative to it: `.mcp.json`, `.github/mcp.json`. This was one
+    /// `projectFile`, a name or null, which still reads as a list of one or none.
+    #[serde(default, alias = "projectFile", deserialize_with = "one_or_many")]
+    pub project_files: Vec<String>,
+}
+
+/// A list of strings written as null, one string or an array, for fields that used to hold one.
+fn one_or_many<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Vec<String>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Shape {
+        None,
+        One(String),
+        Many(Vec<String>),
+    }
+    Ok(match Shape::deserialize(deserializer)? {
+        Shape::None => Vec::new(),
+        Shape::One(file) => vec![file],
+        Shape::Many(files) => files,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -803,15 +823,22 @@ fn validate_agent(name: &str, agent: &AgentDef) -> Result<()> {
         )));
     }
     if let Some(files) = &agent.mcp_files {
-        // Plain file names, joined onto folders; never a path that climbs out of one.
+        // Joined onto folders; never a path that climbs out of one. The user file is a plain
+        // name, a project file may sit in a subfolder (`.github/mcp.json`).
         let plain =
             |name: &str| !name.is_empty() && !name.contains('/') && name != "." && name != "..";
+        // Split on `/` rather than through `components()`, which drops a `.` in the middle.
+        let inside = |file: &str| {
+            !file.is_empty()
+                && !file.starts_with('/')
+                && file.split('/').all(|part| part != "." && part != "..")
+        };
         if !plain(&files.user_file)
-            || files.project_file.as_deref().is_some_and(|f| !plain(f))
+            || !files.project_files.iter().all(|file| inside(file))
             || tool_dir(&files.default_dir, Path::new("/")).is_none()
         {
             return Err(Error::Invalid(format!(
-                "The MCP file locations for {name} aren't plain file names in an absolute or ~ folder."
+                "The MCP file locations for {name} must be a file name in an absolute or ~ folder, and paths inside a project folder."
             )));
         }
     }
@@ -1133,6 +1160,48 @@ mod tests {
         let mcp = config.agents["claude"].mcp.as_ref().unwrap();
         assert!(mcp.skip_if_present.is_empty());
         assert_eq!(mcp.skip_subcommands, ["plugin"]);
+    }
+
+    #[test]
+    fn load_reads_a_single_project_file_as_a_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = |project_file: &str| {
+            format!(
+                r#"{{ "version": 5, "profiles": [], "agents": {{ "claude": {{ "mcpFiles": {{ "userFile": ".claude.json", "defaultDir": "~", "projectFile": {project_file} }} }} }} }}"#
+            )
+        };
+        for (written, expected) in [(r#"".mcp.json""#, vec![".mcp.json"]), ("null", vec![])] {
+            fs::write(dir.path().join(CONFIG_FILE), files(written)).unwrap();
+            let config = load(dir.path()).unwrap().unwrap();
+            assert_eq!(
+                config.agents["claude"]
+                    .mcp_files
+                    .as_ref()
+                    .unwrap()
+                    .project_files,
+                expected
+            );
+            save(dir.path(), &config).unwrap();
+            let saved = fs::read_to_string(dir.path().join(CONFIG_FILE)).unwrap();
+            assert!(saved.contains("projectFiles") && !saved.contains("\"projectFile\""));
+        }
+    }
+
+    #[test]
+    fn validate_takes_project_files_in_subfolders_only() {
+        let with = |file: &str| {
+            let mut config = with_server(stdio("npx"), &[]);
+            config.agents.get_mut("claude").unwrap().mcp_files = Some(McpFiles {
+                user_file: ".claude.json".into(),
+                default_dir: "~".into(),
+                project_files: vec![file.into()],
+            });
+            validate(&config, &home())
+        };
+        with(".github/mcp.json").unwrap();
+        for file in ["../x", "/etc/x", "", "a/../b", "a/./b"] {
+            assert!(with(file).is_err(), "{file}");
+        }
     }
 
     #[test]
