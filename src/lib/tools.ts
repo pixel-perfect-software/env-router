@@ -10,10 +10,12 @@
 //   comparing `claude <sub> --help` with `claude --mcp-config=<file> <sub> --help`): the
 //   background-session commands (`attach`, `daemon`, `logs`, `respawn`, `rm`, `stop`/`kill`,
 //   `self-hosted-runner`) fall back to the top-level parser and read as a prompt, and
-//   `remote-control` refuses because the flag wouldn't reach the sessions it starts. `plugin`
-//   (and its alias `plugins`) parses but `plugin test` refuses any option ahead of it (2.1.306).
-//   The rest (`agents`, `auth`, `auto-mode`, `doctor`, `gateway`, `import`, `install`, `mcp`,
-//   `purge`, `setup-token`, `ultrareview`, `update`) run with one. `skipIfPresent`: Claude Code
+//   `remote-control` refuses because the flag wouldn't reach the sessions it starts. Of its
+//   aliases (2.1.310), `rc` refuses the same way and the hidden `remote`, `sync` and `bridge`
+//   read as a prompt. `plugin` (and its alias `plugins`) parses but `plugin test` refuses any
+//   option ahead of it (2.1.306). The rest (`agents`, `auth`, `auto-mode`, `doctor`, `gateway`,
+//   `import`, `install`, `mcp`, `purge`, `setup-token`, `ultrareview`, `update`/`upgrade`, and
+//   the hidden `design-login`, `project` and `sandbox`) run with one. `skipIfPresent`: Claude Code
 //   exits at startup when given servers on a machine with an enterprise managed-mcp.json.
 //   User and local scopes live in .claude.json in the config folder; project scope in .mcp.json.
 //   The editor hook was verified on the VS Code extension 2.1.301: it runs `<wrapper> <its
