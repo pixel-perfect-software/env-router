@@ -25,7 +25,12 @@
 //   on 2.1.288, where the extension picks "default" for any tab it starts without a permission mode
 //   whenever `claudeCode.claudeProcessWrapper` is set, whatever the wrapper does.
 // - copilot: verified on 1.0.98: `@` takes a file and the flag adds to the user's own servers; a
-//   tool is turned off with `--deny-tool=server(tool)`, one per argument.
+//   tool is turned off with `--deny-tool=server(tool)`, one per argument. `mcpFiles`, from the
+//   docs ("Adding MCP servers for GitHub Copilot CLI") and the changelog (1.0.103, not checked
+//   against the binary): a trusted folder's `.mcp.json` and `.github/mcp.json` (added in 1.0.61),
+//   each with a top-level `mcpServers` or as a bare table of named servers (0.0.401). Not
+//   `servers`, and not `.vscode/mcp.json` (removed in 1.0.22). Import reads trigger folders only,
+//   with no walk up to the repository root and no trust check, as for Claude.
 // - codex: `CODEX_HOME` holds config.toml and its trust list, auth.json (or the keyring entry
 //   `Codex Auth`, keyed by a hash of the folder), sessions, history, logs and the SQLite state
 //   (0.164.0, run with a scratch home). Not MCP OAuth tokens, which the OS keyring keeps by server

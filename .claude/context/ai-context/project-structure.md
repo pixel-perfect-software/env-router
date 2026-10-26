@@ -26,7 +26,7 @@ env-router/
 │   │   ├── src/shims.rs       # installs the shim and helpers (and asks them their config and launcher versions); syncs one symlink per tool
 │   │   ├── src/uninstall.rs   # uninstall: shell blocks, editor wrappers, the secret item, ~/.envrouter, the app's webview folders (the app deletes its own as it exits, `finish_uninstall`), in that order (a problem before the secrets stops the run), the commands that remove the app and CLI, and the app's lock the CLI's uninstall checks
 │   │   ├── src/editors.rs     # points an agent extension's process-wrapper setting at the shim (desktop editors and remote servers)
-│   │   ├── src/mcp_import.rs  # reads the agents' own MCP files (by their mcpFiles descriptor) for import, and pasted JSON
+│   │   ├── src/mcp_import.rs  # reads the agents' own MCP files (by their mcpFiles descriptor, user and project files) for import, and pasted JSON
 │   │   ├── src/mcp_probe.rs   # MCP server check (rmcp): tools, needs-login, stderr tail; tool-list cache
 │   │   └── build.rs           # builds the shim and helper its tests install
 │   ├── cli/                   # `envrouter`: status, install, shell, editor, check, explain, apply, secret, uninstall, rpc

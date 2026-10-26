@@ -1,6 +1,6 @@
 //! Finds MCP servers the user's agents already define, so the library can import them. It reads
 //! each agent's own files where its descriptor says they are (its config folder, by default and
-//! as each profile sets it, and the project file in each trigger folder), and never writes them.
+//! as each profile sets it, and the project files in each trigger folder), and never writes them.
 //! It also reads servers from JSON pasted into the window, such as a README's snippet.
 
 use std::collections::BTreeMap;
@@ -41,15 +41,10 @@ pub fn candidates(config: &ConfigState, home: &Path) -> Vec<ImportCandidate> {
             .iter()
             .map(|dir| dir.join(&files.user_file))
             .collect();
-        if let Some(project_file) = &files.project_file {
-            sources.extend(
-                config
-                    .profiles
-                    .iter()
-                    .flat_map(|p| &p.trigger_paths)
-                    .filter_map(|raw| config::trigger_base(raw, home).ok())
-                    .map(|dir| dir.join(project_file)),
-            );
+        for raw in config.profiles.iter().flat_map(|p| &p.trigger_paths) {
+            if let Ok(dir) = config::trigger_base(raw, home) {
+                sources.extend(files.project_files.iter().map(|file| dir.join(file)));
+            }
         }
         sources.sort();
         sources.dedup();
@@ -110,7 +105,6 @@ pub fn parse_pasted(text: &str) -> std::result::Result<Pasted, String> {
         Err(err) => parse(&format!("{{{text}\n}}"))
             .map_err(|_| format!("That isn't JSON EnvRouter can read: {err}."))?,
     };
-    let is_entry = |value: &Value| value.get("command").is_some() || value.get("url").is_some();
     if is_entry(&json) {
         let server = parse_entry(&json)
             .ok_or("EnvRouter can't use this server's transport, values or sign-in.")?;
@@ -124,7 +118,7 @@ pub fn parse_pasted(text: &str) -> std::result::Result<Pasted, String> {
         .find_map(Value::as_object)
         .or_else(|| {
             json.as_object()
-                .filter(|map| !map.is_empty() && map.values().all(is_entry))
+                .filter(|map| is_bare_table(map))
         })
         .ok_or("There are no MCP servers in it. Paste the part with mcpServers, or one server with its command or url.")?;
     let mut pasted = Pasted {
@@ -152,16 +146,34 @@ pub fn parse_pasted(text: &str) -> std::result::Result<Pasted, String> {
     Ok(pasted)
 }
 
-/// The servers in one file: its top-level `mcpServers`, plus, in Claude's `.claude.json`, each
-/// project's. A file that's missing or unreadable has none.
+fn is_entry(value: &Value) -> bool {
+    value.get("command").is_some() || value.get("url").is_some()
+}
+
+/// Named servers with no `mcpServers` around them, as Copilot reads `.mcp.json`. Every value
+/// must be a server, so `.claude.json` or a `package.json` is never mistaken for one.
+fn is_bare_table(map: &serde_json::Map<String, Value>) -> bool {
+    !map.is_empty() && map.values().all(is_entry)
+}
+
+/// The servers in one file: its top-level `mcpServers` (or, for Copilot and with no such key, a
+/// bare table of named servers; Claude reads only the wrapped form), plus, in Claude's
+/// `.claude.json`, each project's. Read as JSONC, as Paste is: hand-written project files carry
+/// comments. A file that's missing or unreadable has none.
 fn read_servers(path: &Path, dialect: McpDialect) -> Vec<(String, McpServer)> {
     let Ok(text) = fs::read_to_string(path) else {
         return Vec::new();
     };
-    let Ok(json) = serde_json::from_str::<Value>(&text) else {
+    let Ok(json) =
+        jsonc_parser::parse_to_serde_value::<Value>(&text, &jsonc_parser::ParseOptions::default())
+    else {
         return Vec::new();
     };
-    let mut tables = vec![&json["mcpServers"]];
+    let bare = dialect == McpDialect::Copilot
+        && json
+            .as_object()
+            .is_some_and(|map| !map.contains_key("mcpServers") && is_bare_table(map));
+    let mut tables = vec![if bare { &json } else { &json["mcpServers"] }];
     if dialect == McpDialect::Claude {
         if let Some(projects) = json["projects"].as_object() {
             tables.extend(projects.values().map(|project| &project["mcpServers"]));
@@ -332,7 +344,7 @@ mod tests {
             mcp_files: Some(McpFiles {
                 user_file: ".claude.json".into(),
                 default_dir: "~".into(),
-                project_file: Some(".mcp.json".into()),
+                project_files: vec![".mcp.json".into()],
             }),
             ide: None,
         }
@@ -399,6 +411,67 @@ mod tests {
             }
         );
         assert!(matches!(found[3].server, McpServer::Sse { .. }));
+    }
+
+    #[test]
+    fn reads_every_project_file_with_or_without_the_wrapper() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        fs::create_dir_all(home.join("dev/app/.github")).unwrap();
+        fs::create_dir_all(home.join("dev/other")).unwrap();
+        fs::write(
+            home.join("dev/app/.mcp.json"),
+            // A server named like an entry's field is still inside the wrapper.
+            r#"{ "mcpServers": { "url": { "command": "npx" } } }"#,
+        )
+        .unwrap();
+        fs::write(
+            home.join("dev/app/.github/mcp.json"),
+            "{\n  // Hand-written, so commented.\n  \"bare\": { \"type\": \"http\", \"url\": \"https://b/mcp\" },\n}",
+        )
+        .unwrap();
+        // Not a table of servers: one value isn't one.
+        fs::write(
+            home.join("dev/other/.mcp.json"),
+            r#"{ "numStartups": 3, "lookalike": { "command": "npx" } }"#,
+        )
+        .unwrap();
+        let mut copilot = claude();
+        copilot.mcp.as_mut().unwrap().dialect = McpDialect::Copilot;
+        copilot.mcp_files.as_mut().unwrap().project_files =
+            vec![".mcp.json".into(), ".github/mcp.json".into()];
+        let config = ConfigState {
+            profiles: vec![Profile {
+                id: "w".into(),
+                name: "Work".into(),
+                trigger_paths: vec!["~/dev/app".into(), "~/dev/other".into()],
+                ..Default::default()
+            }],
+            agents: BTreeMap::from([("copilot".into(), copilot)]),
+            ..Default::default()
+        };
+        let names = |config: &ConfigState| -> Vec<String> {
+            candidates(config, home)
+                .into_iter()
+                .map(|c| c.name)
+                .collect()
+        };
+        assert_eq!(names(&config), ["bare", "url"]);
+
+        // Claude reads only the wrapped form.
+        let mut claude_reads = config.clone();
+        let agent = claude_reads.agents.remove("copilot").unwrap();
+        claude_reads.agents.insert(
+            "claude".into(),
+            AgentDef {
+                mcp: Some(McpInjection {
+                    dialect: McpDialect::Claude,
+                    ..agent.mcp.clone().unwrap()
+                }),
+                ..agent
+            },
+        );
+        assert_eq!(names(&claude_reads), ["url"]);
     }
 
     #[test]

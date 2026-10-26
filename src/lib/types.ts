@@ -60,8 +60,8 @@ export interface McpFiles {
   /** In its config folder: the one a profile sets, or `defaultDir`. */
   userFile: string
   defaultDir: string
-  /** In a project folder. */
-  projectFile: string | null
+  /** In a project folder, each relative to it and possibly in a subfolder (`.github/mcp.json`). */
+  projectFiles: string[]
 }
 
 /** `envrouter_core::config::AgentDef`. The window writes these from `tools.ts` on every save. */
