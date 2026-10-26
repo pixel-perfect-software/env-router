@@ -8,17 +8,18 @@ file and line it was read from; the ones marked **verified** were reproduced wit
 read in the vendor's own documentation.
 
 The eight milestones are on GitHub as
-[milestones](https://github.com/pixel-perfect-software/env-router/milestones). M0 to M3 have
-their issues there (17 to 54 for M0 to M2, and 111 to 125 for M3, in the order listed here, then
-later findings at the end of their milestone, such as #107); M4 to M7 keep theirs in this file
-until each is next. A new finding goes into its milestone here first, then into an issue. PRs
-are assigned to the milestone they advance.
+[milestones](https://github.com/pixel-perfect-software/env-router/milestones). M0 to M4 have their
+issues there (17 to 54 for M0 to M2, 111 to 125 for M3 and 154 to 169 for M4, in the order listed
+here, then later findings at the end of their milestone, such as #107); M5 to M7 keep theirs in
+this file until each is next. A new finding goes into its milestone here first, then into an issue.
+PRs are assigned to the milestone they advance.
 
-**Status (2026-10-25):** M0 to M3 are done. M0's 12 issues were merged in PRs #55 to #66 and
-M1's 13 in PRs #72 to #90; both shipped in 0.7.1 except M1's last four PRs (#87 to #90), which
-change only CI, the Homebrew templates and docs. M2's 15 issues were fixed in PRs #92 to #108,
-except #49, closed as accepted, and shipped in 0.7.2. M3's 16 issues were fixed in PRs #127 to
-#148, with #149 to #151 closing what its final checks found, and ship in 0.8.0. M4 is next.
+**Status (2026-10-26):** M0 to M3 are done, and M4 is under way. M0's 12 issues were merged in PRs
+#55 to #66 and M1's 13 in PRs #72 to #90; both shipped in 0.7.1 except M1's last four PRs (#87 to
+#90), which change only CI, the Homebrew templates and docs. M2's 15 issues were fixed in PRs #92
+to #108, except #49, closed as accepted, and shipped in 0.7.2. M3's 16 issues were fixed in PRs
+#127 to #148, with #149 to #151 closing what its final checks found, and ship in 0.8.0. M4's plan
+was rechecked and its issues filed on 2026-10-26.
 
 Order: M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7. The first three are small and make the next
 release trustworthy. M4 (agents) is what brings users and can start as soon as M0 lands, since
@@ -447,68 +448,84 @@ reports no WCAG 2.2 AA failures.
 
 ## M4: More agents, moving ecosystem
 
+**Status:** in progress since 2026-10-26. The plan below was rechecked that day against Claude
+Code 2.1.310, Copilot CLI 1.0.103, Codex CLI 0.164.0, OpenCode 1.19.4, Qwen Code 0.26.1, rmcp
+3.7.0, MCP 2026-07-28 and the registry's v0.1 API, and its issues filed: #154 and #156, two bugs
+the recheck found that block the tool, then #158 to #169. #154 was fixed in #155.
+
 **Goal:** add agents as data, starting with Codex, and keep the MCP side current with the spec
 and the registry. **Size:** medium.
 
-**Scope:** Codex CLI, then OpenCode (MCP-only), then Qwen Code; the descriptor model grows to
-inject through an env var, after a subcommand, and as TOML; rmcp 3.7; SSE marked deprecated and
-`ws` recognised; a decision on how secrets reach a server; the catalog refreshes from the
-official MCP Registry; the OAuth-clients shelf closes; a decision on the features every
-competitor has.
+**Scope:** the shim never loops through a launcher that searches PATH, and skips every Claude
+subcommand that refuses injection; the server check detects a server's MCP era on rmcp 3.7; a
+decision on where secrets are visible; Codex CLI as an agent, with an inline TOML `--config`
+dialect and a TOML import; Copilot's `.github/mcp.json` imported and its token overrides
+reported; SSE marked deprecated and Claude's `ws` accepted; the catalog looks servers up in the
+official MCP Registry; Qwen Code through `QWEN_HOME` and an injection through a variable;
+decisions on OpenCode, the features every competitor has and the OAuth-clients shelf, recorded
+in PRODUCT.md.
 
-**Done when:** Codex routes and injects on a current release with tests; the editor flags SSE;
-the catalog can refresh from the registry behind the curated layer; PRODUCT.md records the
-decisions.
+**Done when:** Codex routes and injects on 0.164.0 or later with tests; no subcommand of Claude
+2.1.310, Copilot 1.0.103 or Codex 0.164.0 breaks with injection ahead of it; the server check
+lists tools from a server that speaks only 2026-07-28; the editor flags SSE; the catalog can look
+servers up in the registry behind the curated layer; PRODUCT.md records the decisions.
 
-Why this comes right after the floor: Codex CLI is the most-used CLI agent by npm downloads
-(13.2M a week against Claude Code's 6.4M), six of the eight competing account switchers support
-it, and `CODEX_HOME` moves config, auth, logs and sessions in one variable. Gemini CLI stopped
-serving individual accounts on 2026-06-18 (replaced by the closed Antigravity CLI, which has no
-config-dir variable or injection path), so it drops out of the order; Roo Code is archived.
+Why this comes now: Codex CLI is the most installed CLI agent on npm (13.1M a week against
+Claude Code's 7.2M, 2026-10-16 to 10-22), six of the eight competing account switchers support
+it, and `CODEX_HOME` moves config, login, logs and sessions in one variable. OpenCode is third
+(2.2M, more than Copilot's 1.3M) but has no such variable. Gemini CLI stopped serving unpaid and
+Google One sign-ins on 2026-06-18, moving them to the closed Antigravity CLI, and keeps API-key
+and paid users, so it stays out of the order; Roo Code is archived.
+
+Checked in the recheck, with nothing to file: Copilot 1.0.103 runs every subcommand the same
+with `--additional-mcp-config=` and `--deny-tool=` ahead of it (`--deny-tool` now takes several
+values, so only the `=` form EnvRouter uses is safe), and it accepts `--deny-tool=<server>(<tool>)`
+for every name EnvRouter allows, checked before sign-in with dots, dashes and a 128-character
+tool name (`a(b` is refused with "Invalid --deny-tool value"). The npm launchers of Codex,
+Copilot and OpenCode run their binaries by path, so none can loop as VS Code's launcher did
+(#154). Arguments after a subcommand, which the first plan listed for Goose and Warp, moved to
+Parked.
 
 ### Issues
 
-1. **Codex CLI.** `CODEX_HOME` moves config, auth, logs and sessions; inject with
-   `-c mcp_servers.<name>.<key>=<TOML>` (`env_vars`, `bearer_token_env_var`,
-   `enabled_tools`/`disabled_tools`). Needs a TOML `-c` dialect and a check on a current release
-   that `-c` can define a brand-new server. Blocker to document: MCP OAuth keyring entries are
-   keyed by server, so OAuth servers are shared across homes.
-2. **OpenCode, MCP-only.** No variable moves login, but `OPENCODE_CONFIG_CONTENT` (inline JSON,
-   merged above project config, `{env:VAR}` secrets) is the cleanest injection of any agent.
-   Needs a descriptor kind that sets an env var instead of adding arguments.
-3. **Qwen Code.** `QWEN_HOME` holds credentials and settings; injection is
-   `QWEN_CODE_SYSTEM_DEFAULTS_PATH`, which replaces any admin file; verify how `mcpServers`
-   merge and how tools are excluded.
-4. **Descriptor model extensions.** Inject via env var (OpenCode, Qwen, Gemini-family); arguments
-   after a subcommand (Goose `--with-extension`, Warp `oz agent run --mcp`); TOML values (Codex);
-   `skipIfPresent` paths (from M0). Keep `crates/core` rendering dialects, not agents.
-5. **MCP spec 2026-07-28.** Move the probe to rmcp 3.7 (speaks 2026-07-28, compatible with
-   2025-11-25 and earlier, still no legacy SSE client); mark SSE deprecated in the editor and
-   catalog (12-month removal window); add Claude's `"type": "ws"` to the dialect and report it
-   `unsupported` in the probe; close the OAuth-clients shelf, since CIMD is the default
-   registration and both agents register themselves.
-6. **Narrow where secrets are visible.** A server's secret travels as `ENVROUTER_SECRET_<ID>` in
-   the agent's environment (`crates/shim/src/main.rs:123-127`), so every command and hook the
-   agent runs can read every secret of that profile, and one prompt-injected `env` reveals them
-   all. Alternatives to weigh: a per-launch rendered file with the value inline, `0600`, removed
-   after the agent exits (Claude reads the file, so the secret is never in the environment);
-   `headersHelper` for HTTP servers; or keep env and document it. Decide, then implement or
-   document under Privacy and security.
-7. **Catalog from the official MCP Registry.** Its v0.1 API is frozen (still "preview", no
-   uptime guarantee; aggregators scrape hourly). `server.json` maps onto the model: `isSecret` →
-   the store, `runtimeHint: npx` → `--prefix`, `version` → an exact pin, `remotes[]` → HTTP with
-   `{var}` templates. Fix: a bundled snapshot plus an on-demand refresh in Rust, filtered to
-   `active` and `isLatest`, under the curated catalog.
-8. **Copilot specifics.** Org allowlists and `deniedMcpServers`-style policy can block injected
-   servers; `copilot mcp enable/disable` exists; workspace `.mcp.json` and `.github/mcp.json`
-   are trust-gated; `GH_TOKEN`/`GITHUB_TOKEN` silently override the folder's account, so the
-   check could warn. Update the import's `mcpFiles` and the docs.
-9. **Decide on the features every competitor has.** Across eight switchers: usage and quota
-   display (8 of 8), more agents (6), failover at a rate limit (5), provider routing via
-   `ANTHROPIC_BASE_URL` (4), adopting an existing login into a new config dir plus
-   import/export (5). Proposed: adopt-a-login (copy credentials into a new config folder) and
-   export/import of profiles fit the product; usage display is a maybe; failover and provider
-   routing are out of scope. Record the decision in PRODUCT.md.
+1. **#154: the shim and VS Code's `copilot-shim` ran each other in a loop** when no Copilot CLI
+   came first on PATH. VS Code 1.143.1 appends its launcher to the terminal's PATH, and the
+   launcher runs the first `copilot` that isn't its own kind. Fixed in #155: the shim leaves its
+   process and parent IDs in `ENVROUTER_SHIM_RAN` and, brought back in the same process, runs
+   the wrapper again with no shim folder on PATH.
+2. **#156: `claude rc`, `remote`, `sync` and `bridge` don't run in a folder with servers.** They
+   are aliases of `remote-control` the 2.1.309 sweep missed: `rc` refuses an option ahead of it,
+   and the other three read as a prompt.
+3. **#158: the server check opens every server with the 2025-11-25 `initialize`,** which MCP
+   2026-07-28 lets a server drop. rmcp has spoken 2026-07-28 since 3.0; 3.7.0 only fixes `auth`,
+   which isn't built (GHSA-5p52-q7pq-9fq2). Fix: rmcp 3.7.0 and `ClientLifecycleMode::Auto`.
+4. **#159: every command an agent runs can read the profile's MCP secrets.** Decide among a
+   launcher for stdio servers, Claude's `headersHelper`, a per-launch file, or documenting the
+   environment with Claude's scrub settings. Codex's stdio servers depend on it.
+5. **#160: Codex CLI** as an agent with `CODEX_HOME`. A missing folder is fatal, MCP OAuth
+   tokens and `~/.agents/skills` stay shared, and the VS Code extension has no wrapper setting.
+6. **#161: Codex's MCP dialect:** one `--config=mcp_servers.<name>={…}` inline table per server
+   with `disabled_tools` inside it, HTTP secrets by variable name, a decision on same-name merges
+   (a transport mismatch fails every run), and `skipSubcommands` for the commands bound to
+   Codex's background server.
+7. **#162: the import reads Codex's TOML and Copilot's `.github/mcp.json`,** with `mcpFiles`
+   taking several project files and a format (`CONFIG_VERSION`).
+8. **#163: SSE marked deprecated, and Claude's `ws` servers.** SSE has been eligible for removal
+   since about 2026-09-03 (three months after SEP-2596 went Final, not a 12-month window); `ws`
+   is Claude's alone and outside the spec.
+9. **#164: a folder check reports `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` or `GITHUB_TOKEN`,** each of
+   which replaces the routed Copilot login without a word.
+10. **#165: the docs say what each home leaves shared** (Copilot's Keychain items, Codex's MCP
+    OAuth tokens) and that Copilot's policies apply to injected servers.
+11. **#166: the catalog looks servers up in the official MCP Registry** (v0.1, still preview;
+    50,434 entries, so no full snapshot), mapping `registryType` rather than the mostly absent
+    `runtimeHint`.
+12. **#167: OpenCode** has no variable that moves its logins (`OPENCODE_HOME` is an open request,
+    anomalyco/opencode#58214): amend PRODUCT.md's rule for an MCP-only agent, or wait.
+13. **#168: Qwen Code** with `QWEN_HOME`, injected through `QWEN_CODE_SYSTEM_DEFAULTS_PATH`, with
+    `skipIfPresent` for an admin's defaults file.
+14. **#169: PRODUCT.md records M4's decisions:** the agents, the features every competitor has,
+    and the OAuth-clients shelf closed as won't-do.
 
 ---
 
@@ -653,3 +670,5 @@ Looked at and left out on purpose, with the reason, so they aren't re-litigated:
   already gives a default. Everywhere else can hint at that.
 - **Per-profile env vars, OAuth clients.** Shelved earlier; CIMD makes the OAuth shelf moot.
 - **Failover at a rate limit and provider routing.** Common in competitors, not this product.
+- **Arguments after a subcommand** (Goose `--with-extension`, Warp `oz agent run --mcp`). No agent
+  EnvRouter plans needs them; the descriptor grows them with the first one that does.
