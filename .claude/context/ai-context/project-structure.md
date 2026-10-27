@@ -1,6 +1,7 @@
 # Project Structure
 
 ## Tree
+
 ```
 env-router/
 ├── Cargo.toml                 # workspace root; shared deps, workspace lints, the release profile
@@ -99,53 +100,56 @@ fish's `config.fish` (under `XDG_CONFIG_HOME`), and an editor's turned-on hook s
 `claudeCode.claudeProcessWrapper` in its `settings.json`.
 
 ## Commands (`crates/ops/src/commands.rs`)
+
 Each is a Tauri command in `src-tauri/src/lib.rs` and, except `open_in_editor`, an `envrouter rpc`
 command of the same name and arguments.
 
-| Command | Does |
-|---|---|
-| `get_config` | Reads the config, creating an empty one if it's missing |
-| `save_config(payload, secrets)` | Validates, stores new MCP secrets in the platform's store (pruning unused ones), saves, installs the shim and helper, renders the MCP files, syncs the symlinks |
-| `get_setup_status` | The platform and its store's name, whether the shim is installed, plus per-shell availability, default shell and block status, and which agents a new terminal doesn't find (`missingAgents`, null while unknown) |
-| `set_shell_integration(shell, enabled)` | Adds or removes the startup-file block |
-| `get_editor_status(hooks)` | Each VS Code-family editor's (and remote server's) state for each agent's extension hook (from `agents.json`) |
-| `set_editor_integration(editor, command, hook, enabled)` | Sets or clears the extension's process-wrapper setting in the editor's settings, keeping comments; never replaces someone else's wrapper |
-| `check_folder(shell, folder, tool)` | Real-shell check, after running the prompt hooks once: routed (with the MCP servers it adds), shadowed by an alias/function, shadowed on PATH (which includes a shell that's off, and says whether a prompt hook did it), not found, tool not installed, or shim failed. A routed answer carries `mcpClashes`: servers the profile hands the agent that its own files define with the other transport (Codex won't start) |
-| `preview_folder(payload, folder, tool)` | Instant profile preview from an unsaved config |
-| `check_mcp_server(name, server, secrets)` | Starts or connects to one MCP server with a new terminal's PATH and lists its tools: ok, needs sign-in (401), failed with its stderr tail, timed out, or unsupported (SSE); caches a good list |
-| `import_candidates(payload)` | MCP servers the agents already define in their own files, merged when identical; read only |
-| `parse_mcp_json(text)` | Reads MCP servers from pasted JSON (JSONC, `mcpServers`, VS Code's `servers`, a bare table or one server) or, when it isn't JSON, Codex's TOML (`mcp_servers`, a bare table or one server), the way import reads a file; read only |
-| `get_mcp_tools` | Each library server's cached tool list, while its definition is unchanged |
-| `uninstall(dry_run)` | Turns every shell block and editor wrapper off, deletes the stored MCP secrets, `~/.envrouter` and the webview folders (the window's, as it exits), and reports (`UninstallReport`) what it did and the commands that remove the app and CLI; a problem in the first two steps stops before the secrets. `dry_run` is required over rpc and changes nothing. The window quits after a finished run |
-| `open_in_editor(path)` | Opens an existing file inside the home folder in the default text editor (`open -t`, `xdg-open`) |
+| Command                                                  | Does                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_config`                                             | Reads the config, creating an empty one if it's missing                                                                                                                                                                                                                                                                                                                                                                   |
+| `save_config(payload, secrets)`                          | Validates, stores new MCP secrets in the platform's store (pruning unused ones), saves, installs the shim and helper, renders the MCP files, syncs the symlinks                                                                                                                                                                                                                                                           |
+| `get_setup_status`                                       | The platform and its store's name, whether the shim is installed, plus per-shell availability, default shell and block status, and which agents a new terminal doesn't find (`missingAgents`, null while unknown)                                                                                                                                                                                                         |
+| `set_shell_integration(shell, enabled)`                  | Adds or removes the startup-file block                                                                                                                                                                                                                                                                                                                                                                                    |
+| `get_editor_status(hooks)`                               | Each VS Code-family editor's (and remote server's) state for each agent's extension hook (from `agents.json`)                                                                                                                                                                                                                                                                                                             |
+| `set_editor_integration(editor, command, hook, enabled)` | Sets or clears the extension's process-wrapper setting in the editor's settings, keeping comments; never replaces someone else's wrapper                                                                                                                                                                                                                                                                                  |
+| `check_folder(shell, folder, tool)`                      | Real-shell check, after running the prompt hooks once: routed (with the MCP servers it adds), shadowed by an alias/function, shadowed on PATH (which includes a shell that's off, and says whether a prompt hook did it), not found, tool not installed, or shim failed. A routed answer carries `mcpClashes`: servers the profile hands the agent that its own files define with the other transport (Codex won't start) |
+| `preview_folder(payload, folder, tool)`                  | Instant profile preview from an unsaved config                                                                                                                                                                                                                                                                                                                                                                            |
+| `check_mcp_server(name, server, secrets)`                | Starts or connects to one MCP server with a new terminal's PATH and lists its tools: ok, needs sign-in (401), failed with its stderr tail, timed out, or unsupported (SSE); caches a good list                                                                                                                                                                                                                            |
+| `import_candidates(payload)`                             | MCP servers the agents already define in their own files, merged when identical; read only                                                                                                                                                                                                                                                                                                                                |
+| `parse_mcp_json(text)`                                   | Reads MCP servers from pasted JSON (JSONC, `mcpServers`, VS Code's `servers`, a bare table or one server) or, when it isn't JSON, Codex's TOML (`mcp_servers`, a bare table or one server), the way import reads a file; read only                                                                                                                                                                                        |
+| `get_mcp_tools`                                          | Each library server's cached tool list, while its definition is unchanged                                                                                                                                                                                                                                                                                                                                                 |
+| `uninstall(dry_run)`                                     | Turns every shell block and editor wrapper off, deletes the stored MCP secrets, `~/.envrouter` and the webview folders (the window's, as it exits), and reports (`UninstallReport`) what it did and the commands that remove the app and CLI; a problem in the first two steps stops before the secrets. `dry_run` is required over rpc and changes nothing. The window quits after a finished run                        |
+| `open_in_editor(path)`                                   | Opens an existing file inside the home folder in the default text editor (`open -t`, `xdg-open`)                                                                                                                                                                                                                                                                                                                          |
 
 ## Tech stack
-| Concern | Choice |
-|---|---|
-| App shell | Tauri 2 with plugins: dialog, opener, window-state |
-| Backend | Rust 2021 edition, Cargo workspace, serde / serde_json / thiserror; clap (CLI); jsonc-parser (editor settings, pasted JSON); toml (`ops` only: Codex's config.toml for import and paste); secret-service (Linux), windows-sys (Windows) |
-| Frontend | React 19, TypeScript 7, Vite 8 |
-| Styling | Tailwind CSS 4 via `@tailwindcss/vite` |
-| Lint / format | Biome 2.5 (TS/JSON/CSS); `cargo fmt` and clippy (Rust) |
-| Tests | `cargo test` (Rust, including the built shim and real zsh, bash and fish); Vitest: `src/**/*.test.ts` in node, and `src/**/*.test.tsx` (the window rendered against `mockTauri` with Testing Library) in happy-dom, chosen by a `// @vitest-environment happy-dom` comment on the file |
-| Package manager | pnpm 12.14.0 and Node 24.22.1 (pinned in `.tool-versions`; pnpm also in `packageManager`) |
-| Platform | macOS 11+ on Apple Silicon with Safari 16.4+ (the window's WebKit; `vite.config.ts` targets it); Linux x86_64 and aarch64 (glibc of Ubuntu 22.04 or later), WSL 2 included |
+
+| Concern         | Choice                                                                                                                                                                                                                                                                                 |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App shell       | Tauri 2 with plugins: dialog, opener, window-state                                                                                                                                                                                                                                     |
+| Backend         | Rust 2021 edition, Cargo workspace, serde / serde_json / thiserror; clap (CLI); jsonc-parser (editor settings, pasted JSON); toml (`ops` only: Codex's config.toml for import and paste); secret-service (Linux), windows-sys (Windows)                                                |
+| Frontend        | React 19, TypeScript 7, Vite 8                                                                                                                                                                                                                                                         |
+| Styling         | Tailwind CSS 4 via `@tailwindcss/vite`                                                                                                                                                                                                                                                 |
+| Lint / format   | Biome 2.5 (TS/JSON/CSS); `cargo fmt` and clippy (Rust)                                                                                                                                                                                                                                 |
+| Tests           | `cargo test` (Rust, including the built shim and real zsh, bash and fish); Vitest: `src/**/*.test.ts` in node, and `src/**/*.test.tsx` (the window rendered against `mockTauri` with Testing Library) in happy-dom, chosen by a `// @vitest-environment happy-dom` comment on the file |
+| Package manager | pnpm 12.14.0 and Node 24.22.1 (pinned in `.tool-versions`; pnpm also in `packageManager`)                                                                                                                                                                                              |
+| Platform        | macOS 11+ on Apple Silicon with Safari 16.4+ (the window's WebKit; `vite.config.ts` targets it); Linux x86_64 and aarch64 (glibc of Ubuntu 22.04 or later), WSL 2 included                                                                                                             |
 
 ## Commands
-| Task | Command |
-|---|---|
-| Run the desktop app | `pnpm tauri dev` |
-| Build the app bundle | `pnpm tauri build` (macOS: `target/release/bundle/macos/EnvRouter.app`; Linux: `bundle/deb`, `bundle/appimage`) |
-| Run the CLI | `cargo run -p envrouter-cli -- <command>` (with `HOME` set to a scratch folder) |
-| All Rust tests | `cargo test --workspace` |
-| Secrets round trip | `cargo test -p envrouter-keychain -- --ignored` (uses the machine's real store) |
-| Frontend tests | `pnpm test` |
-| Rust lint | `cargo clippy --workspace --all-targets` (workspace lints in the root `Cargo.toml`) |
+
+| Task                     | Command                                                                                                                                   |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Run the desktop app      | `pnpm tauri dev`                                                                                                                          |
+| Build the app bundle     | `pnpm tauri build` (macOS: `target/release/bundle/macos/EnvRouter.app`; Linux: `bundle/deb`, `bundle/appimage`)                           |
+| Run the CLI              | `cargo run -p envrouter-cli -- <command>` (with `HOME` set to a scratch folder)                                                           |
+| All Rust tests           | `cargo test --workspace`                                                                                                                  |
+| Secrets round trip       | `cargo test -p envrouter-keychain -- --ignored` (uses the machine's real store)                                                           |
+| Frontend tests           | `pnpm test`                                                                                                                               |
+| Rust lint                | `cargo clippy --workspace --all-targets` (workspace lints in the root `Cargo.toml`)                                                       |
 | Linux and Windows checks | `podman compose -f dev/containers/compose.yaml run --rm <linux-test\|linux-app\|linux-bundle\|windows-helper-build\|windows-helper-wine>` |
-| Licences and advisories | `cargo deny check` (`deny.toml`) |
-| Unused dependencies | `cargo machete` |
-| Shim overhead | `hyperfine -N` a release `envrouter-shim` against an exec-only wrapper; `otool -L` should list only `libSystem` |
-| Rust format | `cargo fmt --all` |
-| Type check | `pnpm check-types` |
-| Lint and format | `pnpm format-and-lint` / `pnpm format-and-lint:fix` |
-| Add a Tauri plugin | `pnpm tauri add <name>`, then tighten the permission it adds to `capabilities/default.json` |
+| Licences and advisories  | `cargo deny check` (`deny.toml`)                                                                                                          |
+| Unused dependencies      | `cargo machete`                                                                                                                           |
+| Shim overhead            | `hyperfine -N` a release `envrouter-shim` against an exec-only wrapper; `otool -L` should list only `libSystem`                           |
+| Rust format              | `cargo fmt --all`                                                                                                                         |
+| Type check               | `pnpm check-types`                                                                                                                        |
+| Lint and format          | `pnpm format-and-lint` / `pnpm format-and-lint:fix`                                                                                       |
+| Add a Tauri plugin       | `pnpm tauri add <name>`, then tighten the permission it adds to `capabilities/default.json`                                               |
