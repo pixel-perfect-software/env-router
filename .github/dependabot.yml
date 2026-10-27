@@ -10,7 +10,7 @@ updates:
       interval: monthly
     groups:
       actions:
-        patterns: ['*']
+        patterns: [ "*" ]
 
   # The workspace's one Cargo.lock. Minor and patch updates come grouped; a major one comes on
   # its own, since it can need code changes.
@@ -21,7 +21,7 @@ updates:
     ignore:
       # tauri, tauri-build and the plugins move in step with @tauri-apps/* in package.json, and
       # `tauri build` refuses a major.minor that differs from theirs, so they're updated with those.
-      - dependency-name: 'tauri*'
+      - dependency-name: "tauri*"
     groups:
       crates:
-        update-types: [minor, patch]
+        update-types: [ minor, patch ]

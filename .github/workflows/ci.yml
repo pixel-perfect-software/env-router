@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   pull_request:
 
 # Actions are pinned to the commit of a release (the version is in the comment beside it), so a
@@ -203,7 +203,7 @@ jobs:
   # change. It runs whatever they did (`always()`): left to the default, a failure above would
   # skip it, and a skipped job counts as passing.
   linux:
-    needs: [changes, checks, rust, app-linux, shim-timing]
+    needs: [ changes, checks, rust, app-linux, shim-timing ]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

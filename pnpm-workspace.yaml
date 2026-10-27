@@ -1,0 +1,27 @@
+catalogs:
+  dev:
+    "@biomejs/biome": "2.6.3"
+    "@pixel-perfect-software/always-up-to-date": "3.1.0"
+    "@tailwindcss/vite": "4.3.3"
+    "@tauri-apps/cli": "2.12.3"
+    "@testing-library/dom": "10.4.2"
+    "@testing-library/react": "16.3.3"
+    "@testing-library/user-event": "14.6.8"
+    "@types/react": "19.3.0"
+    "@types/react-dom": "19.3.0"
+    "@vitejs/plugin-react": "6.1.2"
+    happy-dom: "21.0.4"
+    tailwindcss: "4.3.3"
+    typescript: "7.0.2"
+    vite: "8.3.5"
+    vitest: "5.0.5"
+  ui:
+    "@tauri-apps/api": "2.12.4"
+    "@tauri-apps/plugin-dialog": "~2.8.3"
+    lucide-react: "1.59.0"
+    react: "19.3.1"
+    react-dom: "19.3.1"
+    simple-icons: "16.36.0"
+
+minimumReleaseAgeExclude:
+  - "@pixel-perfect-software/always-up-to-date@3.0.0 || 3.1.0"

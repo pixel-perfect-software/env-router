@@ -7,7 +7,7 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    tags: [ "v*" ]
 
 # Actions are pinned to the commit of a release, as in ci.yml. Nothing here restores a cache:
 # a release builds only from its tagged source, so a poisoned cache can't reach what users
@@ -155,7 +155,7 @@ jobs:
           if-no-files-found: error
 
   linux:
-    needs: [check, windows-helper]
+    needs: [ check, windows-helper ]
     strategy:
       matrix:
         include:
@@ -287,7 +287,7 @@ jobs:
   # The same on Linux, in the CI image as the app's builds are, with the Windows build of the
   # secrets helper beside the others for WSL.
   cli-linux:
-    needs: [check, windows-helper]
+    needs: [ check, windows-helper ]
     strategy:
       matrix:
         include:
@@ -350,7 +350,7 @@ jobs:
           path: out/*
 
   publish:
-    needs: [check, macos, linux, cli-macos, cli-linux]
+    needs: [ check, macos, linux, cli-macos, cli-linux ]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -368,7 +368,7 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: out
-          pattern: '{macos,linux-*,cli-*}'
+          pattern: "{macos,linux-*,cli-*}"
           merge-multiple: true
       - run: cd out && sha256sum -- * > SHA256SUMS
       # A signed build provenance attestation for every asset in SHA256SUMS: it ties the file to

@@ -4,14 +4,14 @@
 changelog:
   categories:
     - title: Fixes
-      labels: [bug]
+      labels: [ bug ]
     - title: New
-      labels: [enhancement]
+      labels: [ enhancement ]
     - title: Release and CI
-      labels: [ci]
+      labels: [ ci ]
     - title: Docs
-      labels: [documentation]
+      labels: [ documentation ]
     - title: Dependencies
-      labels: [dependencies]
+      labels: [ dependencies ]
     - title: Other changes
-      labels: ['*']
+      labels: [ "*" ]

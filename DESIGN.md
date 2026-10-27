@@ -1,372 +1,373 @@
 ---
+
 version: alpha
 name: EnvRouter Design System
 description: A quiet, precise Mac utility in two places, Profiles and Servers, where each profile is a card holding the folders it owns.
 colors:
-  window-ground: "#eceef3"
-  card-surface: "#ffffff"
-  card-muted: "#f5f6f9"
-  raised-surface: "#ffffff"
-  field-surface: "#ffffff"
-  button-surface: "#ffffff"
-  hairline-border: "rgb(16 24 48 / 0.1)"
-  rule: "#e3e6ec"
-  field-edge: "#7f848e"
-  select-edge: "#6c717b"
-  track: "rgb(16 24 48 / 0.07)"
-  well: "#f1f3f7"
-  ink-primary: "#1b1d22"
-  ink-secondary: "#5b5f69"
-  ink-tertiary: "#959aa5"
-  system-accent: "#0a64d8"
-  accent-ink: "#0a64d8"
-  on-accent: "#ffffff"
-  accent-tint: "color-mix(in srgb, #0a64d8 9%, #ffffff)"
-  status-ok: "#24a148"
-  status-warn: "#c47f00"
-  status-problem: "#c9332a"
-  window-ground-dark: "#14161b"
-  card-surface-dark: "#20232a"
-  card-muted-dark: "#1a1d23"
-  raised-surface-dark: "#272b33"
-  field-surface-dark: "#171a1f"
-  button-surface-dark: "#3a3f4a"
-  hairline-border-dark: "rgb(255 255 255 / 0.09)"
-  rule-dark: "#30343c"
-  field-edge-dark: "#808693"
-  select-edge-dark: "#9aa0ad"
-  track-dark: "rgb(0 0 0 / 0.32)"
-  well-dark: "#31353e"
-  ink-primary-dark: "#eef0f4"
-  ink-secondary-dark: "#a9aeb9"
-  ink-tertiary-dark: "#6c717c"
-  system-accent-dark: "#2a6fd9"
-  accent-ink-dark: "#5aa2ff"
-  accent-tint-dark: "color-mix(in srgb, #3d8af7 18%, #20232a)"
-  status-ok-dark: "#3ec46d"
-  status-warn-dark: "#e5a83a"
-  status-problem-dark: "#ff6b61"
-  profile-cobalt: "#4f7cf0"
-  profile-orchid: "#c45ab8"
-  profile-lagoon: "#038eac"
-  profile-violet: "#8669ff"
-  profile-slate: "#7082b4"
-  profile-sky: "#3187cd"
-  profile-amethyst: "#a860e1"
-  profile-graphite: "#7e838d"
-  mark-plate-top: "#202b42"
-  mark-plate-bottom: "#0d1320"
-  mark-plate-glow: "#9fb6ff"
-  mark-folder-back: "#2b7be0"
-  mark-folder-front-top: "#72b8fb"
-  mark-folder-front-bottom: "#3d8ff0"
-  mark-lit: "#4aa3e8"
-  mark-lit-coin-top: "#6cbcf6"
-  mark-lit-coin-bottom: "#3d93e0"
-  mark-idle: "#3a4560"
-  mark-idle-small: "#56627f"
-  mark-pivot: "#e9eef8"
+window-ground: "#eceef3"
+card-surface: "#ffffff"
+card-muted: "#f5f6f9"
+raised-surface: "#ffffff"
+field-surface: "#ffffff"
+button-surface: "#ffffff"
+hairline-border: "rgb(16 24 48 / 0.1)"
+rule: "#e3e6ec"
+field-edge: "#7f848e"
+select-edge: "#6c717b"
+track: "rgb(16 24 48 / 0.07)"
+well: "#f1f3f7"
+ink-primary: "#1b1d22"
+ink-secondary: "#5b5f69"
+ink-tertiary: "#959aa5"
+system-accent: "#0a64d8"
+accent-ink: "#0a64d8"
+on-accent: "#ffffff"
+accent-tint: "color-mix(in srgb, #0a64d8 9%, #ffffff)"
+status-ok: "#24a148"
+status-warn: "#c47f00"
+status-problem: "#c9332a"
+window-ground-dark: "#14161b"
+card-surface-dark: "#20232a"
+card-muted-dark: "#1a1d23"
+raised-surface-dark: "#272b33"
+field-surface-dark: "#171a1f"
+button-surface-dark: "#3a3f4a"
+hairline-border-dark: "rgb(255 255 255 / 0.09)"
+rule-dark: "#30343c"
+field-edge-dark: "#808693"
+select-edge-dark: "#9aa0ad"
+track-dark: "rgb(0 0 0 / 0.32)"
+well-dark: "#31353e"
+ink-primary-dark: "#eef0f4"
+ink-secondary-dark: "#a9aeb9"
+ink-tertiary-dark: "#6c717c"
+system-accent-dark: "#2a6fd9"
+accent-ink-dark: "#5aa2ff"
+accent-tint-dark: "color-mix(in srgb, #3d8af7 18%, #20232a)"
+status-ok-dark: "#3ec46d"
+status-warn-dark: "#e5a83a"
+status-problem-dark: "#ff6b61"
+profile-cobalt: "#4f7cf0"
+profile-orchid: "#c45ab8"
+profile-lagoon: "#038eac"
+profile-violet: "#8669ff"
+profile-slate: "#7082b4"
+profile-sky: "#3187cd"
+profile-amethyst: "#a860e1"
+profile-graphite: "#7e838d"
+mark-plate-top: "#202b42"
+mark-plate-bottom: "#0d1320"
+mark-plate-glow: "#9fb6ff"
+mark-folder-back: "#2b7be0"
+mark-folder-front-top: "#72b8fb"
+mark-folder-front-bottom: "#3d8ff0"
+mark-lit: "#4aa3e8"
+mark-lit-coin-top: "#6cbcf6"
+mark-lit-coin-bottom: "#3d93e0"
+mark-idle: "#3a4560"
+mark-idle-small: "#56627f"
+mark-pivot: "#e9eef8"
 typography:
-  display:
-    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
-    fontSize: 22px
-    fontWeight: 600
-    lineHeight: 28px
-    letterSpacing: "-0.01em"
-  heading:
-    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
-    fontSize: 17px
-    fontWeight: 600
-    lineHeight: 22px
-  title:
-    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
-    fontSize: 14px
-    fontWeight: 600
-    lineHeight: 19px
-  body:
-    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
-    fontSize: 13px
-    fontWeight: 400
-    lineHeight: 18px
-  body-strong:
-    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
-    fontSize: 13px
-    fontWeight: 500
-    lineHeight: 18px
-  app-name:
-    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
-    fontSize: 13px
-    fontWeight: 700
-    lineHeight: 18px
-  small:
-    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
-    fontSize: 12px
-    fontWeight: 400
-    lineHeight: 16px
-  label:
-    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
-    fontSize: 12px
-    fontWeight: 500
-    lineHeight: 16px
-  caption:
-    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
-    fontSize: 11px
-    fontWeight: 400
-    lineHeight: 14px
-  mono:
-    fontFamily: "ui-monospace, SF Mono, SFMono-Regular, Menlo, monospace"
-    fontSize: 12px
-    fontWeight: 400
-    lineHeight: 16px
-    fontFeature: '"calt" 0, "tnum" 1'
+display:
+fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
+fontSize: 22px
+fontWeight: 600
+lineHeight: 28px
+letterSpacing: "-0.01em"
+heading:
+fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
+fontSize: 17px
+fontWeight: 600
+lineHeight: 22px
+title:
+fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
+fontSize: 14px
+fontWeight: 600
+lineHeight: 19px
+body:
+fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
+fontSize: 13px
+fontWeight: 400
+lineHeight: 18px
+body-strong:
+fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
+fontSize: 13px
+fontWeight: 500
+lineHeight: 18px
+app-name:
+fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
+fontSize: 13px
+fontWeight: 700
+lineHeight: 18px
+small:
+fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
+fontSize: 12px
+fontWeight: 400
+lineHeight: 16px
+label:
+fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
+fontSize: 12px
+fontWeight: 500
+lineHeight: 16px
+caption:
+fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
+fontSize: 11px
+fontWeight: 400
+lineHeight: 14px
+mono:
+fontFamily: "ui-monospace, SF Mono, SFMono-Regular, Menlo, monospace"
+fontSize: 12px
+fontWeight: 400
+lineHeight: 16px
+fontFeature: '"calt" 0, "tnum" 1'
 rounded:
-  checkbox: 4px
-  segment: 5px
-  control: 6px
-  row: 7px
-  tile: 8px
-  card: 12px
-  pill: 9999px
+checkbox: 4px
+segment: 5px
+control: 6px
+row: 7px
+tile: 8px
+card: 12px
+pill: 9999px
 spacing:
-  xs: 4px
-  sm: 8px
-  md: 12px
-  lg: 16px
-  xl: 20px
-  2xl: 24px
+xs: 4px
+sm: 8px
+md: 12px
+lg: 16px
+xl: 20px
+2xl: 24px
 components:
-  button-push:
-    backgroundColor: "{colors.button-surface}"
-    textColor: "{colors.ink-primary}"
-    typography: "{typography.body}"
-    rounded: "{rounded.control}"
-    padding: 0 12px
-    height: 26px
-  button-primary:
-    backgroundColor: "{colors.system-accent}"
-    textColor: "{colors.on-accent}"
-    typography: "{typography.body-strong}"
-    rounded: "{rounded.control}"
-    padding: 0 12px
-    height: 26px
-  button-primary-large:
-    backgroundColor: "{colors.system-accent}"
-    textColor: "{colors.on-accent}"
-    typography: "{typography.body-strong}"
-    rounded: "{rounded.pill}"
-    padding: 0 16px
-    height: 28px
-  button-toolbar:
-    backgroundColor: "{colors.button-surface}"
-    textColor: "{colors.ink-primary}"
-    typography: "{typography.body}"
-    rounded: "{rounded.pill}"
-    padding: 0 14px
-    height: 34px
-  button-toolbar-icon:
-    backgroundColor: "{colors.button-surface}"
-    textColor: "{colors.ink-primary}"
-    rounded: "{rounded.pill}"
-    size: 34px
-  button-plain:
-    textColor: "{colors.system-accent}"
-    typography: "{typography.body}"
-    rounded: "{rounded.control}"
-    padding: 0 8px
-    height: 26px
-  button-plain-hover:
-    backgroundColor: "{colors.accent-tint}"
-  icon-button:
-    textColor: "{colors.ink-secondary}"
-    rounded: "{rounded.control}"
-    size: 26px
-  text-field:
-    backgroundColor: "{colors.field-surface}"
-    textColor: "{colors.ink-primary}"
-    typography: "{typography.body}"
-    rounded: "{rounded.control}"
-    padding: 0 8px
-    height: 28px
-  text-field-mono:
-    backgroundColor: "{colors.field-surface}"
-    textColor: "{colors.ink-primary}"
-    typography: "{typography.mono}"
-    rounded: "{rounded.control}"
-    padding: 0 8px
-    height: 28px
-  sealed-well:
-    backgroundColor: "{colors.well}"
-    textColor: "{colors.ink-secondary}"
-    typography: "{typography.small}"
-    rounded: "{rounded.control}"
-    height: 28px
-  checkbox:
-    backgroundColor: "{colors.field-surface}"
-    rounded: "{rounded.checkbox}"
-    size: 14px
-  checkbox-on:
-    backgroundColor: "{colors.system-accent}"
-    textColor: "{colors.on-accent}"
-    rounded: "{rounded.checkbox}"
-    size: 14px
-  switch-on:
-    backgroundColor: "{colors.system-accent}"
-    rounded: "{rounded.pill}"
-    width: 28px
-    height: 16px
-  segmented-track:
-    backgroundColor: "{colors.track}"
-    rounded: "{rounded.row}"
-    padding: 2px
-  segmented-selected:
-    backgroundColor: "{colors.button-surface}"
-    textColor: "{colors.ink-primary}"
-    typography: "{typography.small}"
-    fontWeight: 600
-    rounded: "{rounded.segment}"
-    height: 22px
-    padding: 0 10px
-  segmented-toolbar-track:
-    backgroundColor: "{colors.track}"
-    rounded: "{rounded.pill}"
-    padding: 2px
-  segmented-toolbar-selected:
-    backgroundColor: "{colors.button-surface}"
-    textColor: "{colors.ink-primary}"
-    typography: "{typography.body}"
-    fontWeight: 600
-    rounded: "{rounded.pill}"
-    height: 30px
-    padding: 0 14px
-  profile-card:
-    backgroundColor: "{colors.card-surface}"
-    textColor: "{colors.ink-primary}"
-    rounded: "{rounded.card}"
-  profile-card-targeted:
-    backgroundColor: "{colors.accent-tint}"
-  everywhere-else-card:
-    backgroundColor: "{colors.card-muted}"
-    textColor: "{colors.ink-secondary}"
-    rounded: "{rounded.card}"
-  new-profile-card:
-    textColor: "{colors.ink-secondary}"
-    rounded: "{rounded.card}"
-  status-tile:
-    rounded: "{rounded.tile}"
-    size: 32px
-  status-badge:
-    backgroundColor: "{colors.status-ok}"
-    textColor: "{colors.on-accent}"
-    rounded: "{rounded.pill}"
-    size: 16px
-  health-line:
-    textColor: "{colors.ink-primary}"
-    typography: "{typography.small}"
-    height: 20px
-  health-banner:
-    backgroundColor: "{colors.card-surface}"
-    rounded: "{rounded.card}"
-    padding: 12px
-  welcome:
-    textColor: "{colors.ink-primary}"
-    typography: "{typography.display}"
-    width: 440px
-  welcome-art:
-    size: 136px
-  library-art:
-    size: 112px
-  server-ways-list:
-    backgroundColor: "{colors.well}"
-    rounded: 10px
-    width: 420px
-  server-way-tile:
-    backgroundColor: "{colors.button-surface}"
-    textColor: "{colors.ink-secondary}"
-    rounded: "{rounded.row}"
-    size: 28px
-  docket-result:
-    backgroundColor: "{colors.raised-surface}"
-    rounded: "{rounded.card}"
-    padding: 12px 16px
-  docket-idle:
-    textColor: "{colors.ink-secondary}"
-    rounded: "{rounded.card}"
-    padding: 12px 16px
-  slip-row:
-    backgroundColor: "{colors.accent-tint}"
-    typography: "{typography.mono}"
-    rounded: "{rounded.control}"
-    padding: 4px 6px
-  inspector:
-    backgroundColor: "{colors.raised-surface}"
-    width: min(440px, calc(100% - 40px))
-    padding: 20px
-  inspector-footer:
-    backgroundColor: "{colors.card-muted}"
-    padding: 12px 20px
-  shells-popover:
-    backgroundColor: "{colors.raised-surface}"
-    rounded: "{rounded.card}"
-    padding: 6px
-    width: min(440px, calc(100vw - 32px))
-  chip-login-shell:
-    backgroundColor: "{colors.accent-tint}"
-    textColor: "{colors.system-accent}"
-    typography: "{typography.caption}"
-    rounded: "{rounded.pill}"
-    padding: 1px 6px
-  server-list:
-    backgroundColor: "{colors.card-surface}"
-    rounded: "{rounded.card}"
-    width: 232px
-  server-row:
-    textColor: "{colors.ink-primary}"
-    typography: "{typography.mono}"
-    rounded: "{rounded.row}"
-    padding: 6px 8px
-  server-row-selected:
-    backgroundColor: "{colors.accent-tint}"
-    textColor: "{colors.system-accent}"
-    typography: "{typography.mono}"
-    fontWeight: 600
-    rounded: "{rounded.row}"
-  server-detail:
-    backgroundColor: "{colors.card-surface}"
-    rounded: "{rounded.card}"
-    padding: 16px 20px 20px
-  server-detail-footer:
-    backgroundColor: "{colors.card-muted}"
-    padding: 12px 20px
-  server-mark:
-    size: 28px
-    rounded: "{rounded.row}"
-  server-mark-monogram:
-    backgroundColor: "{colors.track}"
-    textColor: "{colors.ink-secondary}"
-    size: 28px
-    rounded: "{rounded.row}"
-  used-by-chip:
-    textColor: "{colors.ink-secondary}"
-    typography: "{typography.small}"
-    rounded: "{rounded.pill}"
-    padding: 0 12px 0 10px
-    height: 28px
-  used-by-chip-on:
-    textColor: "{colors.ink-primary}"
-    rounded: "{rounded.pill}"
-  tools-list:
-    backgroundColor: "{colors.well}"
-    rounded: "{rounded.tile}"
-    padding: 6px 12px
-  app-icon:
-    backgroundColor: "{colors.mark-plate-top}"
-    size: 824px
-  app-icon-small:
-    backgroundColor: "{colors.mark-plate-top}"
-    size: 824px
-  menu-bar-glyph:
-    height: 18pt
-    size: 36px
+button-push:
+backgroundColor: "{colors.button-surface}"
+textColor: "{colors.ink-primary}"
+typography: "{typography.body}"
+rounded: "{rounded.control}"
+padding: 0 12px
+height: 26px
+button-primary:
+backgroundColor: "{colors.system-accent}"
+textColor: "{colors.on-accent}"
+typography: "{typography.body-strong}"
+rounded: "{rounded.control}"
+padding: 0 12px
+height: 26px
+button-primary-large:
+backgroundColor: "{colors.system-accent}"
+textColor: "{colors.on-accent}"
+typography: "{typography.body-strong}"
+rounded: "{rounded.pill}"
+padding: 0 16px
+height: 28px
+button-toolbar:
+backgroundColor: "{colors.button-surface}"
+textColor: "{colors.ink-primary}"
+typography: "{typography.body}"
+rounded: "{rounded.pill}"
+padding: 0 14px
+height: 34px
+button-toolbar-icon:
+backgroundColor: "{colors.button-surface}"
+textColor: "{colors.ink-primary}"
+rounded: "{rounded.pill}"
+size: 34px
+button-plain:
+textColor: "{colors.system-accent}"
+typography: "{typography.body}"
+rounded: "{rounded.control}"
+padding: 0 8px
+height: 26px
+button-plain-hover:
+backgroundColor: "{colors.accent-tint}"
+icon-button:
+textColor: "{colors.ink-secondary}"
+rounded: "{rounded.control}"
+size: 26px
+text-field:
+backgroundColor: "{colors.field-surface}"
+textColor: "{colors.ink-primary}"
+typography: "{typography.body}"
+rounded: "{rounded.control}"
+padding: 0 8px
+height: 28px
+text-field-mono:
+backgroundColor: "{colors.field-surface}"
+textColor: "{colors.ink-primary}"
+typography: "{typography.mono}"
+rounded: "{rounded.control}"
+padding: 0 8px
+height: 28px
+sealed-well:
+backgroundColor: "{colors.well}"
+textColor: "{colors.ink-secondary}"
+typography: "{typography.small}"
+rounded: "{rounded.control}"
+height: 28px
+checkbox:
+backgroundColor: "{colors.field-surface}"
+rounded: "{rounded.checkbox}"
+size: 14px
+checkbox-on:
+backgroundColor: "{colors.system-accent}"
+textColor: "{colors.on-accent}"
+rounded: "{rounded.checkbox}"
+size: 14px
+switch-on:
+backgroundColor: "{colors.system-accent}"
+rounded: "{rounded.pill}"
+width: 28px
+height: 16px
+segmented-track:
+backgroundColor: "{colors.track}"
+rounded: "{rounded.row}"
+padding: 2px
+segmented-selected:
+backgroundColor: "{colors.button-surface}"
+textColor: "{colors.ink-primary}"
+typography: "{typography.small}"
+fontWeight: 600
+rounded: "{rounded.segment}"
+height: 22px
+padding: 0 10px
+segmented-toolbar-track:
+backgroundColor: "{colors.track}"
+rounded: "{rounded.pill}"
+padding: 2px
+segmented-toolbar-selected:
+backgroundColor: "{colors.button-surface}"
+textColor: "{colors.ink-primary}"
+typography: "{typography.body}"
+fontWeight: 600
+rounded: "{rounded.pill}"
+height: 30px
+padding: 0 14px
+profile-card:
+backgroundColor: "{colors.card-surface}"
+textColor: "{colors.ink-primary}"
+rounded: "{rounded.card}"
+profile-card-targeted:
+backgroundColor: "{colors.accent-tint}"
+everywhere-else-card:
+backgroundColor: "{colors.card-muted}"
+textColor: "{colors.ink-secondary}"
+rounded: "{rounded.card}"
+new-profile-card:
+textColor: "{colors.ink-secondary}"
+rounded: "{rounded.card}"
+status-tile:
+rounded: "{rounded.tile}"
+size: 32px
+status-badge:
+backgroundColor: "{colors.status-ok}"
+textColor: "{colors.on-accent}"
+rounded: "{rounded.pill}"
+size: 16px
+health-line:
+textColor: "{colors.ink-primary}"
+typography: "{typography.small}"
+height: 20px
+health-banner:
+backgroundColor: "{colors.card-surface}"
+rounded: "{rounded.card}"
+padding: 12px
+welcome:
+textColor: "{colors.ink-primary}"
+typography: "{typography.display}"
+width: 440px
+welcome-art:
+size: 136px
+library-art:
+size: 112px
+server-ways-list:
+backgroundColor: "{colors.well}"
+rounded: 10px
+width: 420px
+server-way-tile:
+backgroundColor: "{colors.button-surface}"
+textColor: "{colors.ink-secondary}"
+rounded: "{rounded.row}"
+size: 28px
+docket-result:
+backgroundColor: "{colors.raised-surface}"
+rounded: "{rounded.card}"
+padding: 12px 16px
+docket-idle:
+textColor: "{colors.ink-secondary}"
+rounded: "{rounded.card}"
+padding: 12px 16px
+slip-row:
+backgroundColor: "{colors.accent-tint}"
+typography: "{typography.mono}"
+rounded: "{rounded.control}"
+padding: 4px 6px
+inspector:
+backgroundColor: "{colors.raised-surface}"
+width: min(440px, calc(100% - 40px))
+padding: 20px
+inspector-footer:
+backgroundColor: "{colors.card-muted}"
+padding: 12px 20px
+shells-popover:
+backgroundColor: "{colors.raised-surface}"
+rounded: "{rounded.card}"
+padding: 6px
+width: min(440px, calc(100vw - 32px))
+chip-login-shell:
+backgroundColor: "{colors.accent-tint}"
+textColor: "{colors.system-accent}"
+typography: "{typography.caption}"
+rounded: "{rounded.pill}"
+padding: 1px 6px
+server-list:
+backgroundColor: "{colors.card-surface}"
+rounded: "{rounded.card}"
+width: 232px
+server-row:
+textColor: "{colors.ink-primary}"
+typography: "{typography.mono}"
+rounded: "{rounded.row}"
+padding: 6px 8px
+server-row-selected:
+backgroundColor: "{colors.accent-tint}"
+textColor: "{colors.system-accent}"
+typography: "{typography.mono}"
+fontWeight: 600
+rounded: "{rounded.row}"
+server-detail:
+backgroundColor: "{colors.card-surface}"
+rounded: "{rounded.card}"
+padding: 16px 20px 20px
+server-detail-footer:
+backgroundColor: "{colors.card-muted}"
+padding: 12px 20px
+server-mark:
+size: 28px
+rounded: "{rounded.row}"
+server-mark-monogram:
+backgroundColor: "{colors.track}"
+textColor: "{colors.ink-secondary}"
+size: 28px
+rounded: "{rounded.row}"
+used-by-chip:
+textColor: "{colors.ink-secondary}"
+typography: "{typography.small}"
+rounded: "{rounded.pill}"
+padding: 0 12px 0 10px
+height: 28px
+used-by-chip-on:
+textColor: "{colors.ink-primary}"
+rounded: "{rounded.pill}"
+tools-list:
+backgroundColor: "{colors.well}"
+rounded: "{rounded.tile}"
+padding: 6px 12px
+app-icon:
+backgroundColor: "{colors.mark-plate-top}"
+size: 824px
+app-icon-small:
+backgroundColor: "{colors.mark-plate-top}"
+size: 824px
+menu-bar-glyph:
+height: 18pt
+size: 36px
 ---
 
 # Design System: EnvRouter
@@ -407,35 +408,40 @@ A cool, navy-tinted grey ground with white (dark: navy graphite) cards, one syst
 **How vibrancy is applied.** The Tauri window is transparent with macOS's `underWindowBackground` effect (following the window's active state). Only inside the app (`main.tsx` sets `data-vibrant` on `<html>` when Tauri is present) the body ground becomes `window-ground` at 76% over the vibrancy, and the titlebar band (`data-titlebar`) `window-ground` at 90%, so text on the ground keeps its contrast over any wallpaper. Cards, raised surfaces and fields stay opaque. In the browser preview there is no `data-vibrant` and the ground is solid.
 
 ### Primary
+
 - **System Accent** (`system-accent`, from AccentColor at runtime): the fill. The window's single primary button, a checked checkbox, the switch's on track, the current setup step and text selection (30% mix). On-accent text holds 4.5:1 on it.
 - **Accent Ink** (`accent-ink`, from AccentColor at runtime): the accent as a line or text. The focus ring (solid, 2px, 2px offset), selection and drop-target outlines, the caret, plain buttons, the selected server's name, hovered server links, the login-shell chip, a pressed icon button, and the filed slip. It holds 4.5:1 on the card, the accent tint and the well in both themes.
 - **Accent Tint** (`accent-tint`, 9% accent over card; 18% in dark): the wash behind a drop-targeted card, the selected server row, the filed slip, the hovering docket, plain-button hover, an active Keychain lock, and the login-shell chip.
 
 ### Status
+
 - **Routed Green** (`status-ok`): routing on, a passing check, a server that answered, completed setup steps, an installed shell's dot, the working-routing badge.
 - **Caution Amber** (`status-warn`): routing off, a folder owned by a profile that doesn't set this agent, a server that needs a sign-in.
 - **Problem Red** (`status-problem`): blocked routing, a missing shim, a server that didn't answer, errors, inline save errors.
 
 ### Profile colours
+
 Eight hues (`profile-cobalt` through `profile-graphite`): blues, purples, cyans and greys only. Each profile's colour appears as its dot (card header, carve-outs that point to it, inspector header, server rows, Used by chips, "off in" marks), as a light wash across its card header (7% of the colour over the card; 12% in dark), and as the fill and 1.5px ring of a Used by chip that's on (16% over the card). A dot or a ring says which profile, so every hue holds 3:1 (WCAG 1.4.11) on every surface it sits on, in light and in dark (`ui.test.ts` measures each one). One hex serves both themes, which leaves a narrow band: the colour has to be dark enough for the white card and its chip fill, and light enough for the dark card, well and chip fill, so all eight sit at OKLCH lightness 0.60 to 0.63 and differ by hue and chroma. The washes and fills keep their alphas (7%, 12%, 16%), so the cards look as they did. Lagoon, violet, slate, sky, amethyst and graphite were adjusted for it; cobalt and orchid already held. Sky is its own value, `#3187cd`, which was `#4aa3e8`, 2.73:1 on white and now only the mark's `mark-lit`.
 
-| Colour | Hex | Card | Muted card | Well | Header wash | Selected row | Chip fill | Dark card | Raised | Dark well | Dark wash | Dark row | Dark chip |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| cobalt | `#4f7cf0` | 3.84 | 3.55 | 3.45 | 3.54 | 3.37 | 3.19 | 4.10 | 3.70 | 3.20 | 3.54 | 3.42 | 3.36 |
-| orchid | `#c45ab8` | 3.82 | 3.53 | 3.44 | 3.52 | 3.35 | 3.16 | 4.12 | 3.72 | 3.22 | 3.59 | 3.44 | 3.41 |
-| lagoon | `#038eac` | 3.84 | 3.55 | 3.46 | 3.53 | 3.37 | 3.16 | 4.10 | 3.70 | 3.20 | 3.57 | 3.42 | 3.39 |
-| violet | `#8669ff` | 3.83 | 3.55 | 3.45 | 3.54 | 3.37 | 3.18 | 4.10 | 3.70 | 3.20 | 3.55 | 3.43 | 3.37 |
-| slate | `#7082b4` | 3.79 | 3.51 | 3.41 | 3.51 | 3.33 | 3.18 | 4.15 | 3.74 | 3.24 | 3.56 | 3.47 | 3.37 |
-| sky | `#3187cd` | 3.83 | 3.55 | 3.45 | 3.54 | 3.37 | 3.18 | 4.10 | 3.70 | 3.20 | 3.55 | 3.43 | 3.37 |
-| amethyst | `#a860e1` | 3.87 | 3.58 | 3.48 | 3.57 | 3.40 | 3.21 | 4.06 | 3.67 | 3.17 | 3.53 | 3.39 | 3.35 |
-| graphite | `#7e838d` | 3.81 | 3.52 | 3.43 | 3.53 | 3.34 | 3.20 | 4.13 | 3.73 | 3.23 | 3.55 | 3.45 | 3.36 |
+| Colour   | Hex       | Card | Muted card | Well | Header wash | Selected row | Chip fill | Dark card | Raised | Dark well | Dark wash | Dark row | Dark chip |
+| -------- | --------- | ---- | ---------- | ---- | ----------- | ------------ | --------- | --------- | ------ | --------- | --------- | -------- | --------- |
+| cobalt   | `#4f7cf0` | 3.84 | 3.55       | 3.45 | 3.54        | 3.37         | 3.19      | 4.10      | 3.70   | 3.20      | 3.54      | 3.42     | 3.36      |
+| orchid   | `#c45ab8` | 3.82 | 3.53       | 3.44 | 3.52        | 3.35         | 3.16      | 4.12      | 3.72   | 3.22      | 3.59      | 3.44     | 3.41      |
+| lagoon   | `#038eac` | 3.84 | 3.55       | 3.46 | 3.53        | 3.37         | 3.16      | 4.10      | 3.70   | 3.20      | 3.57      | 3.42     | 3.39      |
+| violet   | `#8669ff` | 3.83 | 3.55       | 3.45 | 3.54        | 3.37         | 3.18      | 4.10      | 3.70   | 3.20      | 3.55      | 3.43     | 3.37      |
+| slate    | `#7082b4` | 3.79 | 3.51       | 3.41 | 3.51        | 3.33         | 3.18      | 4.15      | 3.74   | 3.24      | 3.56      | 3.47     | 3.37      |
+| sky      | `#3187cd` | 3.83 | 3.55       | 3.45 | 3.54        | 3.37         | 3.18      | 4.10      | 3.70   | 3.20      | 3.55      | 3.43     | 3.37      |
+| amethyst | `#a860e1` | 3.87 | 3.58       | 3.48 | 3.57        | 3.40         | 3.21      | 4.06      | 3.67   | 3.17      | 3.53      | 3.39     | 3.35      |
+| graphite | `#7e838d` | 3.81 | 3.52       | 3.43 | 3.53        | 3.34         | 3.20      | 4.13      | 3.73   | 3.23      | 3.55      | 3.45     | 3.36      |
 
 The raised surface in light is the card's white. Selected row is the fallback accent's tint (9% light, 18% dark) over the card; the system accent moves it a little, and the clamped accents keep it within a few hundredths. The chip fill is the colour's own 16% over the card, which its 1.5px ring and dot sit against; the ring also meets the card outside it at the Card and Dark card ratios. Closest pairs by OKLab distance are lagoon/sky, slate/graphite, slate/sky and cobalt/sky, as close as the palette was before.
 
 ### Server brand colours
+
 A server whose name, URL host or package names a known brand (Simple Icons, `src/lib/serverLogo.ts`) wears that brand's logo in its own colour on a tile of 13% of the colour over the card. A near-black or near-white brand (luminance under 0.2 or over 0.85) takes the ink colour instead, so it reads in both themes. A server without a brand gets a monogram: its first letter, semibold, in secondary ink on the `track` colour.
 
 ### Mark
+
 The app icon's own fixed palette, defined only in the SVGs in `src-tauri/icons/`. The window shows the mark only as those images and never takes a colour from it; the mark never follows the theme, the system accent or a profile.
 - **Signal-Box Navy** (`mark-plate-top` to `mark-plate-bottom`, top to bottom): the 824 squircle plate. A radial glow of `mark-plate-glow` at 5% opacity falls from the top centre, and the same colour at 18% draws a 3px rim on the plate's edge.
 - **Finder Blue** (`mark-folder-back`; front `mark-folder-front-top` to `mark-folder-front-bottom`): the folder. The back carries the tab; the front panel has a 5px white 50% highlight along its top edge and a 14px black 10% band where it overlaps the back.
@@ -445,6 +451,7 @@ The app icon's own fixed palette, defined only in the SVGs in `src-tauri/icons/`
 - **Account figures** (regular cut only): an avatar head and shoulders clipped inside each coin, #1a2236 on the idle coin and `mark-plate-bottom` on the lit one.
 
 ### Neutral
+
 - **Window Ground** (`window-ground`): the window background and titlebar band; translucent over vibrancy in the app.
 - **Card Surface** (`card-surface`): profile cards, the health banner, setup card, the server list and server detail, the inspector's folder and MCP lists, the catalog and import lists, and the icon tiles of the Servers empty state.
 - **Muted Card** (`card-muted`): Everywhere else, the inspector and server editor footers.
@@ -461,6 +468,7 @@ The app icon's own fixed palette, defined only in the SVGs in `src-tauri/icons/`
 - **Tertiary Ink** (`ink-tertiary`): non-text strokes only. Used for the empty Everywhere else dot and the idle docket's dashed border at 45%.
 
 ### Named Rules
+
 **The One Accent Rule.** At most one accent-filled button is visible per window state. On Profiles, the health banner's action outranks the check result's action, which outranks Check Folder… in the titlebar; whichever loses renders as a push button. With the profile inspector open, Save takes the accent and Check Folder… stands down. On Servers, Check Folder… is always a push button, a health banner shown there renders its action as a push button too, and the detail's footer action (Save, or Import N Servers) holds the accent; Save is disabled while the editor is clean. Two exceptions: a blocked banner's Check Again stays a push button, because the fix lives in the check result (Open ~/.zshrc and the like); with the result dismissed, Check Folder… takes the accent. An error banner's Try Again and the docket's Check Again (after a check that couldn't run, or beside the install command) are push buttons too, since Check Folder… stays the way to start over. In the docket only an action that fixes a problem takes the accent (Turn On, Open a file, Reinstall Shim, Edit or New Profile… for an agent no profile sets); Edit on Owned by, New Profile… on No profile owns this folder and Check Again only describe or retry, so they stay push buttons and Check Folder… keeps the accent. An unreadable config.json takes the accent whichever of its actions it offers, so a disabled Check Folder… never holds it: Open config.json, with Reveal in Finder (Show in Files off macOS) and Back Up and Start Over… beside it as push buttons until opening fails, when Reveal, which needs no editor, takes the accent (a failed Reveal or a refused Start Over moves nothing); or Try Again when there's no home folder to open it from. Uninstall EnvRouter… (Shells popover footer) is a push button wherever it shows, never the accent, and a native warning confirms it.
 
 **The Status-Free Palette Rule.** Profile colours never use red, amber or green, which belong to status, so a profile tag can't read as a verdict. Colours are keyed by profile id, so they survive renames and reordering, and a profile moves off its preferred colour only when another profile on screen already holds it.
@@ -481,6 +489,7 @@ The app icon's own fixed palette, defined only in the SVGs in `src-tauri/icons/`
 **Character:** Native Mac metrics at the scale of System Settings. Hierarchy comes from weight (400, 500, 600) and ink step, not size; the working ramp spans 11 to 14px, and two larger sizes exist for hero moments only.
 
 ### Hierarchy
+
 - **Display** (600, 22px, 28px, -0.01em tracking): the first-run welcome's heading, "The folder decides". Nowhere else.
 - **Heading** (600, 17px, 22px): the Servers detail heading when nothing is selected ("Add your first server", "Add a server").
 - **Title** (600, 14px, 19px): profile card names, the inspector heading, Everywhere else, the server list heading ("Servers" with its count in 400 secondary ink), the Catalog and Import headings, and the server editor's heading, which is a server name and so is set in mono at title size.
@@ -491,6 +500,7 @@ The app icon's own fixed palette, defined only in the SVGs in `src-tauri/icons/`
 - **Mono** (400, 12px, 16px): paths, environment variables, server and tool names, commands and URLs. Paths split into a secondary-ink parent and a primary-ink leaf so the folder name reads first.
 
 ### Named Rules
+
 **The Mono-for-Values Rule.** Mono is only for paths and values (folder paths, `NAME=value` pairs, binary locations, startup files, variable names, server and tool names, commands, URLs). Labels, headings and prose stay in the system sans; a catalog entry's display label ("GitHub") is sans, the name it saves as is mono. Mono text is selectable, and so is error text (which turns neutral ink while selected, since red on the selection wash is under 3:1) (a banner's detail, an editor's inline error, a check's message), since that is what gets pasted into a report; the rest of the window is not.
 
 **The Quiet Default Rule.** A default, empty or fallback state ("Every agent uses its default config", "No servers yet", "No folders yet", "Folders no profile owns", "Not checked yet", "All tools", "In Keychain", placeholders) is set in italic secondary ink, so it reads as absence rather than content.
@@ -535,6 +545,7 @@ Everything under the titlebar starts 8px below its edge, in both views and every
 Layered. Depth is structural and tells the surfaces apart: the window ground is flat (and, in the app, translucent over macOS's under-window vibrancy), cards sit on it with a hairline, a 1px contact shadow and a soft spread beneath, and raised surfaces (popover, inspector, check result) float with a deep, diffuse shadow. In light, shadows are tinted toward the same navy as the neutrals (`rgb(16 24 48 / …)`); in dark they are black. Every shadow carries a 0.5px hairline ring so edges stay crisp on both themes. Inside a card, sunken read-only content sits in a well rather than on another shadow. The app icon has its own three-step depth, drawn as SVG drop shadows in black: the plate lifts (0 10, blur 12, 28%), the folder and pivot drop above the track (0 10, blur 14, 45%), and the track and coins sit in contact with the plate (0 6, blur 7, 45%). The menu bar glyph has no depth; it is a flat template. Inset 1px rings, not shadows, mark the flatter containers (Everywhere else, New Profile, text fields, unselected Used by chips).
 
 ### Shadow Vocabulary
+
 - **Card** (`0 0 0 0.5px hairline, 0 1px 2px rgb(16 24 48 / 0.05), 0 3px 10px -4px rgb(16 24 48 / 0.08)`; dark `…, 0 1px 2px rgb(0 0 0 / 0.35), 0 3px 10px -4px rgb(0 0 0 / 0.3)`): profile cards, the health banner, setup card, the server list and detail cards, the inspector's lists, the New Profile plus disc.
 - **Raised** (`0 10px 30px -6px rgb(16 24 48 / 0.2), 0 2px 6px rgb(16 24 48 / 0.06), 0 0 0 0.5px hairline`; dark `0 12px 32px -6px rgb(0 0 0 / 0.6), …`): the Shells and Editors popovers, the profile inspector, the docket's check result.
 - **Push** (`shadow-push`: `0 0 0 0.5px rgb(0 0 0 / 0.14), 0 1px 2px rgb(0 0 0 / 0.08)`; dark `0 0 0 0.5px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.3), inset 0 0.5px 0 rgb(255 255 255 / 0.12)`): push buttons at every size, and the icon tiles of the Servers empty state.
@@ -542,6 +553,7 @@ Layered. Depth is structural and tells the surfaces apart: the window ground is 
 - **Contact:** the switch knob, the selected segment (the toolbar's sliding thumb too) and a checked checkbox carry a small 0.5px-offset contact shadow.
 
 ### Named Rules
+
 **The Three Layers Rule.** Every surface belongs to one of three layers: window ground, card, or raised. New surfaces pick a layer; they don't invent a fourth shadow. Vibrancy belongs to the ground alone: cards and raised surfaces are always opaque.
 
 **The Outline Selection Rule.** Selection and drop-target states on cards use an outline (2px accent, 2px offset), never a box-shadow, because a card's own shadow utility would override a shadow ring. A drop target adds the accent tint behind the outline. Rows inside a card select with the accent tint instead.
@@ -557,6 +569,7 @@ Carve-outs and slips indent 13px under their parent folder with a hairline left 
 ## Components
 
 ### Buttons
+
 Native push buttons, small and tactile.
 - **Sizes:** regular, the form control: gently rounded (6px), 26px tall, 12px horizontal padding, 6px icon gap. Large: a 28px capsule with 16px padding, for a hero's one action (the Welcome's New Profile). Toolbar: a 34px capsule with 14px padding, for the titlebar's controls. Plain buttons are always regular.
 - **Push:** button surface with the push shadow; hover darkens slightly (brightness 0.97), active to 0.9. A push button held open (the Shells control or Editors… while its popover is open) stays at 0.9.
@@ -566,10 +579,12 @@ Native push buttons, small and tactile.
 - **Disabled:** 45% opacity, no pointer events. A button that must keep focus while busy (Check Server while running, Save while saving) takes `busy`: `aria-disabled` at the same 45%, ignoring presses.
 
 ### Chips
+
 - **Login shell:** an accent-tinted pill with accent caption text, beside the default shell's name in the shells popover.
 - **Used by:** one pill per profile in the server editor, 28px tall, small text, the profile dot leading. Off: secondary ink inside a 1px rule ring, the dot at full strength (a faded dot would fall under 3:1), a 5% ink wash on hover. On: primary ink on 16% of the profile's colour over the card with a 1.5px ring of the colour. The change runs 150ms on the settle curve. This is the one place a profile colour fills a control.
 
 ### Cards / Containers
+
 - **Profile card:** card surface, 12px, card shadow, 176px minimum. Header: a wash of the profile's colour (7% light, 12% dark), profile dot, name (title), pencil icon button; when the profile is in the inspector the pencil becomes an accent "Editing" label, holding the pencil's 26px so the card doesn't shift, and the card takes the selection outline. Body: folder rows (folder icon, mono path, parent secondary and leaf primary, then an ellipsis icon button, "Actions for ~/dev/work", `aria-haspopup="menu"`, hidden at rest and shown on row hover or keyboard focus, and held in view, pressed (`aria-expanded`, the accent tint), while its menu is open, since the pointer is on the menu by then; it sits flush with the row's right edge, in the pencil's column, 8px from the card; its 26px box takes negative vertical margin so a row stays 24px; it opens a native menu holding Check This Folder and Reveal in Finder, under the button on macOS and at the pointer elsewhere (a position there counts from the system title bar, which the window can't measure), and focus stays on it; a carve-out row has none, its owner's card does), each followed by its carve-outs. Right-clicking a card or folder opens the full menu: Edit Profile…, Duplicate Profile…, Reveal MCP Folder in Finder (Show MCP Folder in Files off macOS; only when the saved profile has servers), a separator, Check This Folder and Reveal in Finder (on a folder), a separator, Delete Profile…. Footer under a hairline: see Card footers under Iconography.
 - **Carve-out:** small secondary text indented 13px with a hairline left rule: branch icon, relative path in mono, then the owning profile's dot (8px) and name aligned right.
 - **New Profile:** a flat placeholder (inset 1.5px rule ring, no fill) with a 36px card-surface plus disc, label and ⌘N hint. Hover fills it with card surface and turns it accent; while creating, it shows the accent tint with a 2px accent ring.
@@ -580,6 +595,7 @@ Native push buttons, small and tactile.
 - **Welcome:** step 1, before any profile, replaces both the setup card and the grid: a centred column at most 440px wide that rises in (300ms), with the welcome illustration at 136px (96px in a window under 520px tall), "The folder decides" in display, one sentence in secondary ink stating the rule (the agent commands in mono, an uninstalled one followed by "(not installed)" in small italic secondary ink), the same `SetupSteps` centred, and a large primary New Profile with its shortcut hanging beside it in plain caption text, out of the layout, so the button sits on the column's axis. While the inspector is open over it, New Profile stands down to a push button, so Save stays the one accent.
 
 ### Inputs / Fields
+
 - **Text field:** field surface, 6px, 28px tall, 8px padding, an inset 1px `field-edge` stroke; overflowing text ends in an ellipsis; placeholders in italic secondary ink. A mono variant holds paths and values at 12px.
 - **Focus:** the stroke becomes a 1.5px inset accent ring (no outer focus outline in normal colours; under forced colours, which drop the shadow, the field keeps a transparent outline, which the system draws in its own colour).
 - **Error:** shown inline as small problem-red text in the footer, never as a modal, and selectable. When it is about a field of its own (a profile's or a server's name, a server's command or URL, the name or value input of one row in Arguments, Environment or Headers), that field takes `aria-invalid` and the footer's message joins its `aria-describedby` (`invalidProps` in `ui.tsx`; `serverOf` names the field), and a failed Save moves focus to it, so the problem is read with the field and not only as an alert. One that isn't in a field (the backend refuses a save with only a sentence) stays in the footer alone, and focus stays on Save. Empty, it's the footer's spacer; once it says something it takes its own full-width row above the buttons (`Footer` in `ui.tsx`), so a sentence never squeezes between them. A save keeps Save focused (`Button`'s `busy`: `aria-disabled`, not `disabled`), and a saved server's editor reopens with focus on its row in the list.
@@ -589,6 +605,7 @@ Native push buttons, small and tactile.
 - **Keychain value:** every value field in the server editor carries a lock icon button at its right edge, in secondary ink; on (accent tint and accent), the value is masked and goes to the Keychain on Save. A new value under a name like `API_KEY` or `Authorization` starts with it on. A value already in the Keychain renders as a sealed well (6px, 28px): a lock, italic "In Keychain", and a plain Replace button; it is never shown or read back. With no secret store (`SetupStatus.secretStoreProblem`, off macOS: no Secret Service running, no Windows helper in WSL) the lock is disabled and every value shows as plain text, including one the editor marked for the store (by name, import, catalog, duplicate or Replace): `serverOf` saves it as plain text, deciding once for every path, a credential-looking one gets the plain-credential caution naming config.json, and the legend gives the store's reason. A store that is merely slow to answer isn't "no store": the lock stays on.
 
 ### Navigation
+
 - **View switch:** the titlebar's toolbar-size segmented control, a capsule, Profiles (folder icon) and MCP Servers (plug icon), right of the app name. ⌘1 and ⌘2.
 - **Titlebar:** the app icon (the small cut at 22px, 8px before the name) and the app name in body at 700; the view switch; then three toolbar capsules. **Shells**: each shell's state lives in the control that changes it, one capsule of dots and names (a green dot when on, an empty secondary-ink ring when off, a red cross when blocked; on names in primary ink, off ones in secondary) and a disclosure chevron that opens the Shells popover. Its accessible name begins with the visible names and goes on with a hidden ", Shells: zsh on, bash off", so speech input matches what's on screen. **Editors…**: an icon-only 34px capsule, its name the label and tooltip. **Check Folder…** (⌘O): its icon and label. Check Folder… takes the accent only on Profiles and only when nothing outranks it; its label always reserves the accent's 500-weight width, so the toolbar doesn't shift as it stands down.
 - **Server links:** a server name in a profile card's footer opens that server's editor in Servers.
@@ -598,6 +615,7 @@ Native push buttons, small and tactile.
 - **Shortcuts that act on the window's state:** ⌘N (Ctrl+N) is New Profile on Profiles and Add by Hand on Servers, and never switches views (on a blank server that's already open it leaves the draft as it is and focuses the name, as Add by Hand does); ⌘S (Ctrl+S) presses the open editor's Save, the profile inspector's or the server editor's, exactly as a click would (disabled while the form is clean, ignored while it saves) and does nothing with no editor open, on Profiles with the server editor hidden behind it, or in Catalog, Paste and Import. ⌘O and the menu bar's Check Folder… that can't start (the inspector is open, or config.json can't be read) say why in a native note, as Check Last Folder does; the titlebar's button needs no note, since it is out of reach while the inspector is open.
 
 ### Iconography
+
 One vocabulary, so a glance says what a row is:
 - **Agents** wear their own marks (Simple Icons, CC0): Claude's starburst and the Copilot face, monochrome in ink colour, at 14px in card footers and the inspector and 12px in the docket's Agent segments. An agent without a mark gets Lucide's bot.
 - **MCP** is the plug: the MCP Servers segment, a card footer's server line, and the Servers empty state's tile once the library has servers.
@@ -607,9 +625,11 @@ One vocabulary, so a glance says what a row is:
 - **Card footers** are a two-column list: the mark, then the value in mono. Each agent line shows its config folder; the plug line lists the profile's servers, each name a link with a resting underline (28% ink, 3px offset) that turns accent on hover. More than three servers show the first two and "+N", which expands the list in place and moves focus to the first name it revealed. The label lives in the tooltip and for screen readers. An agent a new terminal doesn't find gets "Not installed" after its folder (caption, quiet italic, never truncated before the folder is). A profile that routes no agent says so in quiet italic; above a plug line it starts in the value column.
 
 ### ServerMark
+
 A server's face: its brand logo (Simple Icons path, 56% of the tile) in the brand colour on a tile of 13% of that colour over the card, or the ink colour for a near-black or near-white brand; a server with no brand gets its initial (46% of the tile, semibold, secondary ink) on the `track` colour. The protocol's own reference servers wear the MCP logo; a Docker command wears Docker's. Sizes: 36px in the server editor header, 28px in the server list, catalog and import, 20px in a profile's MCP checklist. An imported server already in the library fades its tile to 50%, never its text.
 
 ### Server List
+
 The left card of the Servers view. Header: "Servers" (title) with its count in regular secondary ink ("2/6" while a filter narrows it, read as "2 of 6" by a screen reader), then Add Server, Add from Catalog, Import from Your Agents and Paste JSON as icon buttons. The last three open their view in the detail card and, pressed again, close it; leaving a view any way puts focus back on its button.
 
 **Filter.** Under the header's hairline, fixed while the rows scroll, a text field in the Catalog's search style (search icon inset, `role="searchbox"`, italic placeholder "Filter servers"), 6px from the list's edges so it lines up with the rows' washes. It shows only once the library holds more than five servers, since a handful reads at a glance and a field over three rows is clutter (typed words keep it up if deleting brings the library back under). It matches case-insensitively, every word of the query against the name and what the server runs (its command with its arguments, so an `npx` package or a container image, or its URL). Escape in the field clears it. A polite sr-only status counts the servers shown, said once typing has paused (400ms), not at each keystroke; the Catalog's count does the same. A query with no match leaves a well with "No servers match" in quiet italic and a plain Clear Filter button under it, stacked because the card is 232px wide at the minimum window; Clear Filter puts focus back in the field. The filter hides rows, never the editor: a server the filter hides stays open beside the list. It lasts as long as the window (the view stays mounted while Profiles shows) and is never saved. Importing servers clears it, and so does saving a server the filter would hide (a new one, or one renamed or edited out of it), so what just arrived or changed is in the list and takes focus. The field is the Catalog's search field (`SearchField` in `ui.tsx`, one component, one word-by-word match in `text.ts`), so Escape behaves the same in both.
@@ -617,6 +637,7 @@ The left card of the Servers view. Header: "Servers" (title) with its count in r
 **Rows** (7px): a 28px ServerMark, the name in mono small, and a caption line with the transport icon, its label and, once checked, "· N tools"; at the right, in a slot at least 26px wide, the dots (8px) of up to four profiles that load it, or, when more than four do, three dots and a "+N" in secondary caption counting everyone the row has no room for (the slot is there with no dots too, so the "…" never covers a name). The dots are decorative, and colour alone says neither who nor how many past three: who loads the server is the row's tooltip and accessible description ("Used by Personal, Scratch", on the whole row, since the "…" covers the dots on hover). Hover is a 5% ink wash; the selected row takes the accent tint, a 3px bar of accent ink at its leading edge (the one cue that holds 3:1 where the tint can't), and its name turns accent and semibold. The row's tooltip starts with the full name, since the name truncates, then "· Used by …"; assistive tech gets who uses it as the description (`aria-describedby` on screen-reader-only text), so the name isn't read twice. Right-clicking a row opens a native menu at the pointer (the ContextMenu key or Shift+F10 opens it under the focused row on macOS, as the "…" does): Duplicate… (a new server copied from the saved one, as the editor's Duplicate), Check Server (opens that server's editor and runs its check there, so the answer files in the Tools section, scrolled into view; the open server is checked as its form stands, edits included; one click is one check, never replayed when the editor opens again, and ignored while a check is already running), a separator, and Delete… (the editor's Delete… is the same path: one native confirmation naming the profiles that stop loading it, and a failure shows in the window's banner with Try Again, the one place both can reach). Duplicate and Check Server on another server ask before dropping the open editor's unsaved edits; Delete on another server leaves them alone, and Delete on the open server closes its editor with it, as the editor's own Delete… does. The menu has a keyboard door as a folder row does: an ellipsis icon button, "Actions for github" (`aria-haspopup="menu"`), at the row's right edge in the place of the dots, quiet until the row is hovered or the button focused and held in view, pressed (`aria-expanded`), while its menu is open; it opens under the button on macOS and at the pointer elsewhere. A right-click presses nothing: the row keeps its hover wash, and the "…" is pressed only when it opened the menu. Empty: "No servers yet" in quiet italic.
 
 ### Server Editor
+
 The detail card for one server, fading in over 160ms. Header under a hairline: a 36px ServerMark, the name in mono title and its command or URL in mono caption ("Not set up yet" until it has one). Body, in order:
 - **Used by:** the profile chips, then a caption naming what they do. First, because it's the part people change most.
 - **Name:** a mono field with a caption on the allowed characters.
@@ -629,9 +650,11 @@ The detail card for one server, fading in over 160ms. Header under a hairline: a
 Footer on muted card: Delete… and Duplicate (a saved server only; it opens a new server with the same definition, secrets kept by name but empty), inline error, Revert (Cancel for a new server) and Save as the accent button. Revert and Save are disabled while nothing has changed. Leaving with unsaved edits asks first.
 
 ### Tools Section
+
 How the server answered. A 28px status tile and a body-strong headline and, under it, the message, each a live region (`role="status"`, present before its text changes), so a check's answer is announced as the headline and the reason, and the tool list is never read out again: the tool count (ok), Needs a sign-in (warn), Didn't answer (problem), Not checked (neutral, for SSE), Can't check yet (problem, the form is incomplete), or Starting the server… (pending). The last good check's count shows with "from the last check" in small secondary ink until a new one runs. Then a Check Server (Check Again) push button. A message follows in small secondary ink; a failed server's last stderr lines sit in a well, mono caption, at most 120px tall. A disclosure ("Show all N tools" / "Hide tools", chevron rotating 90° over 150ms) opens the list; it starts open for eight tools or fewer and keeps the user's choice. The list is a well (8px) of rows at least 32px tall with hairlines between: the tool name in mono small, its description in caption, and at the right "off in" with the dots of the profiles that turn it off. Editing the form clears a fresh result.
 
 ### Catalog and Import
+
 Shown in the server detail card, each with a header (title and a close button that takes focus on open, except in the Catalog, whose search does; Escape closes).
 - **Catalog:** the header counts the entries shown. Under it, fixed while the list scrolls: a search field (search icon inset, italic placeholder) that takes focus on open, where Escape clears a search before it closes the view; then two small segmented filters, All · Hosted · Runs locally and All · No sign-in · Sign-in · Secret. The list sits on the sealed `well` (8px, hairline-ruled rows), never a card inside the detail card, sorted by label: a 28px ServerMark, the label at 500, then in caption where it runs (globe Hosted, the vendor runs it at a URL; laptop Runs locally, the agent starts it on this machine, even when it calls the vendor's cloud; a loopback URL counts as local) and what it needs (lock "Needs a secret", sign-in arrow "Sign in with /mcp" or "Signs in" for a vendor's own sign-in, open lock "No sign-in"), "In the library" when the same server is already there, a description in small secondary ink, and a chevron. No match: a well with italic "No servers match" and a plain Clear Filters button. Picking one opens the editor prefilled, its secret fields empty and masked, with the expected format as the placeholder.
 - **Import:** a list on the `well`, like Catalog, of the servers the agents already define, one checkbox row each: the name in mono (with "`name` is taken" when it was renamed, `github-2`), its command or URL, "from" the file, and which values go to the Keychain. Ones already in the library fade their box and tile and read "In the library"; a value the library keeps in the secret store matches whatever the agent's file holds there, so a server imported once isn't offered again under a new name. Pasted servers have no "from" line. Footer on muted card: inline error, Cancel and "Import N Servers" as the accent button. Source files are never changed.
@@ -641,9 +664,11 @@ Shown in the server detail card, each with a header (title and a close button th
 **The Both Sides Rule.** Which profiles load a server is editable from both ends: a profile's MCP checklist and tool filter in the inspector, and a server's Used by chips in the editor. Both write the same profile data; keep both doors, and keep the result visible on the cards (the footer's server links) and on the server rows (the profile dots).
 
 ### Status Tile
+
 The shared status mark for the banner (32px) and the check result and Tools section (28px): an 8px-rounded tile washed with 14% of the status colour, holding a 1.8px stroke glyph whose shape states the result. Check is ok, bang is warn, cross is problem, dash is neutral (no profile owns the folder; a server not checked), and a dashed circle pulsing at 1.1s is pending. A new verdict stamps in (scale 1.35 to 1, 180ms). Under reduced motion the stamp is a fade, and the pending pulse holds still at 60% opacity. The badge variant is a solid disc of the status colour holding a white glyph in light and a `window-ground` glyph in dark, where the green is too pale for white (2.4px stroke, 62% of the disc), for a one-line status where a pale tile would wash out; the health line uses it at 16px. A done setup step's disc takes the same glyph colours. Under forced colours it takes a `CanvasText` border and glyph.
 
 ### Docket
+
 The floating check result along the bottom of Profiles, one complete state at a time, never a log.
 - **Idle:** a dashed drop zone (1.5px dashed, tertiary ink at 45%) with the drop icon and a one-line instruction in secondary ink.
 - **Hovering a drag:** accent tint, accent text and a 1.5px accent ring: "Release to check" plus the path.
@@ -651,9 +676,11 @@ The floating check result along the bottom of Profiles, one complete state at a 
 - **Copy:** from `src/lib/verdict.ts`. One terse headline ("Routed to Work", "Another claude comes first on PATH"), an optional plain sentence that says what to change, the values behind it (`sets`, `via`, `mcp`, `runs`, `instead of`, `defined in`), and at most one action labelled as a verb ("Turn On zsh", "Open ~/.zshrc", "Reinstall Shim", "Edit Work…", "New Profile…", "Check Again"). A profile's name in a label is truncated at 16rem and shown whole as the button's tooltip. "Edit Work…" and "New Profile…" open the inspector (the new one starts with the checked folder as its trigger); an agent that isn't installed gets Check Again and, as an `install` value in mono that can be selected and copied, the vendor's one-line installer from `agents.json`. A routed verdict has no action: when it works, it stays out of the way.
 
 ### Slip
+
 The signature interaction of Profiles. A checked folder becomes a slip filed in the owning card (or Everywhere else): accent-tinted row with a 40% accent inset ring, a state mark (filled accent dot when routed, red cross on a problem) and the mono path. It animates from the drop point into its slot over 300ms on the settle curve, the card it will land in lights up with the drop-target outline before release, and then the status tile stamps.
 
 ### Profile Inspector
+
 The only profile editor: a raised panel sliding in from the right (220ms), over a scrim that keeps the view visible. It's a modal dialog to assistive tech (`role="dialog"`, `aria-modal`), traps focus, and on close returns it to the pencil that opened it. Header: profile dot (12px), name, close. Body: Name field (32px, title size), Trigger folders as a card list with remove buttons that strike rows through (Undo) until saved, Add Folder…, then one mono path field per agent with its variable name and Choose…, then MCP servers. An agent a new terminal's PATH doesn't hold is still offered, and says so: "Not installed" (caption, quiet italic) ends its label row, and a caption under its field gives the vendor's install line in mono to copy. When the PATH couldn't be read nothing is marked.
 
 **MCP checklist:** the library as a card list, one row per server: a hidden native checkbox labelled by the whole row, the drawn 14px box, a 20px ServerMark, the name in mono (primary ink when on, secondary when off) and its command or URL in mono caption, truncated. A caption under it names the agents that load them. With no servers, a quiet line points to Servers (⌘2). Under that caption a saved profile that has servers gets a push Reveal MCP Folder in Finder (Show MCP Folder in Files off macOS), 8px below it, which opens the folder the profile's MCP files are rendered into and is busy (looks disabled, keeps focus, ignores presses) until the answer; if it fails, the reason shows in small problem text right under the button (the path as a mono value) and scrolls into view: the footer's error would grow the footer over the button, which still has focus, and the banner is behind the scrim.
@@ -661,9 +688,11 @@ The only profile editor: a raised panel sliding in from the right (220ms), over 
 **Tool filter:** under each checked server, aligned past its checkbox. When the server has been checked, a disclosure ("7 of 9 tools on", or "All 9 tools") opens a nested checklist indented on a hairline like a carve-out: 28px rows with the drawn box, the tool name in mono caption (struck through and secondary when off) and its description; All On and All Off sit as plain buttons beside the disclosure. Without a checked tool list it reads a quiet "All tools", or how many are off. Footer on muted card: Delete… and Duplicate (a saved profile only; it opens a new profile named "‹name› copy" with the same agents, servers and turned-off tools but no folders, since a folder belongs to one profile), inline error, Cancel, and Save as the accent button. A profile card's context menu offers Duplicate Profile… too. Escape cancels.
 
 ### Shells Popover
+
 A raised panel hanging from the Shells control, right edges aligned, that opens with a 4px drop (140ms): one row per shell with its name, login-shell chip, startup files in mono, and a switch; an unavailable shell has no switch: its name steps down to secondary ink and "Not installed" (quiet italic) stands in for the startup files. Opening it, by pointer or keyboard, moves focus to its first control, as a native popover takes it; tabbing out past either end closes it, so focus never sits on a control the panel covers. Escape returns focus to the button that opened the popover. A hairline footer states what the app edits, or the error; the Shells popover's ends in two rows of push buttons, each 8px under the one above, since the three never fit one at the popover's width: Reveal config.json in Finder (Show config.json in Files off macOS) and Open ~/.envrouter on the left, then the help links, Documentation and Report an Issue, as plain accent-ink buttons (links, not actions) at the left and Uninstall EnvRouter… at the right. ⌘, (Ctrl+, off macOS) and the macOS app menu's Settings… open the popover from any view and move focus into it, as the button does; they never toggle it (the menu and the key can both arrive), they close the Editors popover, and they stand down wherever the Shells control does: while the profile inspector is open, as ⌘O and ⌘1 do, while an uninstall runs, and when there's no shell to show (no control, so no anchor for the popover). A reveal or a link that fails replaces the note with its reason, as a switch's failure does, with the path set as a mono value. The Editors popover behaves the same way. Its note adds, per agent shown and from the registry (`ide.note` in `agents.json`), what the switch does that the user wouldn't expect: for Claude Code, a tab that doesn't pick a permission mode starts in “default” rather than the configured one (anthropics/claude-code#99263).
 
 ### The Mark
+
 The app icon and menu bar glyph, drawn by hand as SVG in `src-tauri/icons/` and rendered into every raster at its exact pixel size with a transparent background.
 - **Regular cut** (`app-icon.svg`): 128 px and up: `128x128.png`, `256x256.png`, `icon.png` (512), and the 128 to 1024 px members of `icon.icns`.
 - **Small cut** (`app-icon-small.svg`): 64 px and under: `32x32.png` and the 16, 32 and 64 px members of `icon.icns`, assembled through an `iconutil` iconset.
@@ -674,6 +703,7 @@ The app icon and menu bar glyph, drawn by hand as SVG in `src-tauri/icons/` and 
 **The Two Cuts Rule.** The mark is drawn twice on one grid. Sizes of 64 px and under use the small cut (thicker track, solid coins, no figures); 128 px and up use the regular cut. Never downscale the regular cut into a small slot.
 
 ### Illustrations
+
 Two drawings in `src/assets/` open the mark up where the window has nothing else to show, imported as images at fixed sizes. Both are drawn on the mark's 1024 grid with its folder, track, pivot and coins copied from `app-icon.svg`, and without its plate, so they sit on a card or the ground in either theme.
 - **Welcome** (`welcome.svg`, 136px): the folder, its track forking to two accounts with the right one lit, and a terminal window whose prompt is the lit route's blue: a command run there gets that account.
 - **Empty library** (`servers-library.svg`, 112px): the folder, its track forking three ways (all lit) to three servers drawn as app-icon tiles holding Lucide's plug, terminal and globe in white.
@@ -687,6 +717,7 @@ Two drawings in `src/assets/` open the mark up where the window has nothing else
 ## Do's and Don'ts
 
 ### Do:
+
 - **Do** keep exactly one accent button per window state: on Profiles, the banner action, then the check result's action, then Check Folder…; on Servers, the detail footer's Save or Import; every other action is a push or plain button.
 - **Do** pair every status with a shape as well as a colour: check (ok), bang (warn), cross (problem), dash (neutral), dashed ring (pending).
 - **Do** give each profile an id-keyed colour from the eight profile hues, shifting it only when two profiles on screen clash, and wash its card header with it (7% light, 12% dark).
@@ -713,6 +744,7 @@ Two drawings in `src/assets/` open the mark up where the window has nothing else
 - **Do** check the mark at 16 and 32 px and the glyph in a light and a dark menu bar after any change.
 
 ### Don't:
+
 - **Don't** use red, amber or green for a profile colour; those belong to status.
 - **Don't** let a server's brand colour leave its tile as a dot, wash, text colour or outline.
 - **Don't** signal status with colour alone.
@@ -736,5 +768,6 @@ Two drawings in `src/assets/` open the mark up where the window has nothing else
 - **Don't** size `tray.svg`'s viewBox with padding around the glyph; tray-icon scales the whole image to 18 pt, so padding shrinks the folder.
 
 ### Known drift (not intent)
+
 - The New Profile card's creating state, the hovering docket, and the whole-window drag ring use inset or outer box-shadow rings rather than outlines. They don't sit under a card shadow, so they render, but they predate The Outline Selection Rule.
 - The inspector's Name field overrides the field height and size with `!important` (32px, title size); it's a one-off, not a second field size.

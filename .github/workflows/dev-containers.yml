@@ -6,10 +6,10 @@ name: Dev containers
 # contributor's machine. The Wine image is x86_64 only, hence the amd64 runner.
 on:
   pull_request:
-    paths: ['dev/containers/**', '.github/workflows/dev-containers.yml']
+    paths: [ "dev/containers/**", ".github/workflows/dev-containers.yml" ]
   push:
-    branches: [main]
-    paths: ['dev/containers/**', '.github/workflows/dev-containers.yml']
+    branches: [ main ]
+    paths: [ "dev/containers/**", ".github/workflows/dev-containers.yml" ]
 
 # Actions are pinned to the commit of a release, as in ci.yml.
 permissions:

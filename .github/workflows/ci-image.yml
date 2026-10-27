@@ -9,8 +9,8 @@ name: CI image
 # image's files as changed, which rebuilt and pushed the image for each Dependabot branch.
 on:
   push:
-    branches: [main]
-    paths: ['.github/ci/**', '.github/workflows/ci-image.yml']
+    branches: [ main ]
+    paths: [ ".github/ci/**", ".github/workflows/ci-image.yml" ]
   workflow_dispatch:
 
 permissions:

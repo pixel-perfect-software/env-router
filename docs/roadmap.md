@@ -28,17 +28,17 @@ it's mostly data and one new dialect. M8 (config folders) was added on 2026-10-2
 after M4: it needs M4's agents and nothing from M5 to M7. M7 can start now that M3, which carries
 the Windows prep, is done.
 
-| Milestone | Goal | Size |
-|---|---|---|
-| M0: Correctness floor (done) | Fix every verified bug that loses data, crosses profiles or blocks the tool | small |
-| M1: Release integrity (done) | A release can only ship what CI tested, and every shipped target is checked for advisories | small |
-| M2: Lean and fast (done) | Ship only what each platform needs, and keep the shim's overhead flat as configs grow | small |
-| M3: Every state has a way out (done) | No dead ends in the window, no silent losses, and the files the app touches are one click away | medium |
-| M4: More agents, moving ecosystem | Add agents as data, starting with Codex, and keep the MCP side current with the spec and the registry | medium |
-| M5: Headless parity | Everything the window does, the CLI and rpc do too, with tests | medium |
-| M6: Update and reach | Users get new versions without a manual reinstall, on every Mac and Linux channel we ship | medium |
-| M7: Native Windows | The app, CLI and shim run on Windows without WSL | large |
-| M8: Config folders in view | See what each profile's config folders hold, share parts across profiles, seed a new folder and compare two | large |
+| Milestone                            | Goal                                                                                                        | Size   |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------- | ------ |
+| M0: Correctness floor (done)         | Fix every verified bug that loses data, crosses profiles or blocks the tool                                 | small  |
+| M1: Release integrity (done)         | A release can only ship what CI tested, and every shipped target is checked for advisories                  | small  |
+| M2: Lean and fast (done)             | Ship only what each platform needs, and keep the shim's overhead flat as configs grow                       | small  |
+| M3: Every state has a way out (done) | No dead ends in the window, no silent losses, and the files the app touches are one click away              | medium |
+| M4: More agents, moving ecosystem    | Add agents as data, starting with Codex, and keep the MCP side current with the spec and the registry       | medium |
+| M5: Headless parity                  | Everything the window does, the CLI and rpc do too, with tests                                              | medium |
+| M6: Update and reach                 | Users get new versions without a manual reinstall, on every Mac and Linux channel we ship                   | medium |
+| M7: Native Windows                   | The app, CLI and shim run on Windows without WSL                                                            | large  |
+| M8: Config folders in view           | See what each profile's config folders hold, share parts across profiles, seed a new folder and compare two | large  |
 
 ---
 
@@ -262,13 +262,13 @@ is where "optimized" matters most.
 
 Measured on v0.6.0 (M-series Mac, 2026-10-23):
 
-| Artifact | Size |
-|---|---|
-| `EnvRouter-0.6.0-arm64.zip` | 5.07 MB (app binary 11.07 MB, shim 555 KB, helper 389 KB) |
-| `.deb` amd64 | 6.70 MB (app 13.2 MB, Linux helper 2.17 MB, shim 617 KB, `envrouter-keychain.exe` 338 KB) |
-| AppImage amd64 | 84.6 MB (271 MB unpacked; `libwebkit2gtk` alone 90 MB) |
-| Frontend `dist/` | 532 KB; JS 460 KB (147 KB gzip) |
-| Shim overhead | +0.37 ms median over a bare exec with one profile; +1.4 ms with 61 triggers |
+| Artifact                    | Size                                                                                      |
+| --------------------------- | ----------------------------------------------------------------------------------------- |
+| `EnvRouter-0.6.0-arm64.zip` | 5.07 MB (app binary 11.07 MB, shim 555 KB, helper 389 KB)                                 |
+| `.deb` amd64                | 6.70 MB (app 13.2 MB, Linux helper 2.17 MB, shim 617 KB, `envrouter-keychain.exe` 338 KB) |
+| AppImage amd64              | 84.6 MB (271 MB unpacked; `libwebkit2gtk` alone 90 MB)                                    |
+| Frontend `dist/`            | 532 KB; JS 460 KB (147 KB gzip)                                                           |
+| Shim overhead               | +0.37 ms median over a bare exec with one profile; +1.4 ms with 61 triggers               |
 
 ### Issues
 
@@ -570,13 +570,13 @@ PATH; export and import of profiles and the server library.
 a WSL user can set up profiles and servers without hand-editing JSON; a setup exported on one
 machine imports on another, the window's and the CLI's alike.
 
-| Capability | Window | rpc | CLI today |
-|---|---|---|---|
-| Profiles, servers, assignments, tool filters | yes | raw `save_config` | hand-edit + `apply` |
-| Check a server, tool lists, import, paste, pin | yes | yes | none |
-| Which secrets are actually stored | no | no | `secret list` |
-| Install the CLI into `~/.envrouter/bin` | no | no | `install` |
-| Preview from an unsaved config | yes | yes | saved config only |
+| Capability                                     | Window | rpc               | CLI today           |
+| ---------------------------------------------- | ------ | ----------------- | ------------------- |
+| Profiles, servers, assignments, tool filters   | yes    | raw `save_config` | hand-edit + `apply` |
+| Check a server, tool lists, import, paste, pin | yes    | yes               | none                |
+| Which secrets are actually stored              | no     | no                | `secret list`       |
+| Install the CLI into `~/.envrouter/bin`        | no     | no                | `install`           |
+| Preview from an unsaved config                 | yes    | yes               | saved config only   |
 
 ### Issues
 

@@ -8,7 +8,7 @@ name: Advisories
 # due; GitHub notifies whoever last edited the schedule.
 on:
   schedule:
-    - cron: '17 6 * * 1'
+    - cron: "17 6 * * 1"
   workflow_dispatch:
 
 # Actions are pinned to the commit of a release, as in ci.yml.
@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scanned: [main, latest release]
+        scanned: [ main, latest release ]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
