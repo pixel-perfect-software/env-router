@@ -17,7 +17,7 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, ExitCode};
 
-use envrouter_core::mcp::{self, StdioSpec, SECRET_VAR_PREFIX};
+use envrouter_core::mcp::{self, StdioSpec, Unresolved, SECRET_VAR_PREFIX};
 use envrouter_core::platform::Platform;
 use envrouter_core::{paths, secrets, Error};
 
@@ -66,7 +66,7 @@ fn launch(spec_path: &Path) -> Result<Infallible, Failure> {
     Err(Failure {
         message: format!(
             "couldn't start the MCP server {} ({}): {err}.",
-            spec.server, spec.command
+            spec.server, command.program
         ),
         // The statuses a shell gives a command it couldn't find, and one it couldn't run.
         status: if err.kind() == ErrorKind::NotFound {
@@ -98,13 +98,18 @@ fn spec_command(spec: &StdioSpec) -> Result<mcp::StdioCommand, Failure> {
             ))
         })?
     };
-    spec.resolve(&secrets).map_err(|id| {
-        Failure::new(format!(
-            "the MCP server {} needs a secret that isn't in the {} ({id}), so it didn't start. Enter it again in EnvRouter, or run `envrouter secret set {id}`.",
-            spec.server,
-            Platform::current().secret_store_name()
-        ))
-    })
+    spec.resolve(&secrets, |name| env::var(name).ok())
+        .map_err(|unresolved| match unresolved {
+            Unresolved::Secret(id) => Failure::new(format!(
+                "the MCP server {} needs a secret that isn't in the {} ({id}), so it didn't start. Enter it again in EnvRouter, or run `envrouter secret set {id}`.",
+                spec.server,
+                Platform::current().secret_store_name()
+            )),
+            Unresolved::Variable(name) => Failure::new(format!(
+                "the MCP server {} names ${{{name}}}, which isn't set where the agent started, so it didn't start. Set {name} there, or give it a default: ${{{name}:-…}}.",
+                spec.server
+            )),
+        })
 }
 
 /// Why the spec couldn't be had. A missing one is a server the profile no longer has, which a

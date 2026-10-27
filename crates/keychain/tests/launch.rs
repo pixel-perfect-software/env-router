@@ -219,3 +219,68 @@ fn answers_the_launcher_version_it_reads() {
         .unwrap();
     assert_eq!(stdout(&output), format!("{LAUNCHER_VERSION}\n"));
 }
+
+/// A plain value beside a locked one used to reach the server as the text `${GITHUB_HOST}`: before
+/// the launcher, the agent filled it in, so the launcher does it now, from the environment the
+/// agent started it with.
+#[test]
+fn plain_values_get_the_variables_they_name() {
+    let f = Fixture::new();
+    f.install_helper(HAS_THE_TOKEN);
+    let spec = json!({
+        "server": "github",
+        "home": f.home.display().to_string(),
+        "command": "/bin/sh",
+        "args": ["-c", r#"echo "$TOKEN $HOST $LEVEL $ARG $1""#, "sh", "--host=${GITHUB_HOST}"],
+        "env": {
+            "TOKEN": { "secret": "7F3A" },
+            "HOST": "${GITHUB_HOST}",
+            "LEVEL": "${LOG_LEVEL:-info}",
+            // Shell syntax that isn't a reference stays as typed.
+            "ARG": "$GITHUB_HOST${GITHUB_HOST-x}",
+        },
+    });
+    let path = f.spec_path();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, spec.to_string()).unwrap();
+    let output = f
+        .launcher(&path)
+        .env("GITHUB_HOST", "gh.example")
+        .output()
+        .unwrap();
+    assert_eq!(
+        stdout(&output),
+        "ghp_x gh.example info $GITHUB_HOST${GITHUB_HOST-x} --host=gh.example\n",
+        "{}",
+        stderr(&output)
+    );
+    // Copilot, told to pass `"LOG_LEVEL": "${LOG_LEVEL}"` on, may hand it over as typed when it
+    // isn't set: that's unset, so the default applies.
+    let output = f
+        .launcher(&path)
+        .env("GITHUB_HOST", "gh.example")
+        .env("LOG_LEVEL", "${LOG_LEVEL}")
+        .output()
+        .unwrap();
+    assert!(stdout(&output).contains(" info "), "{}", stderr(&output));
+
+    // Unset with no default: that server fails, as with a missing secret. A remote server's
+    // secret, set on the agent, is never one a plain value can name.
+    for name in ["GITHUB_HOST", "ENVROUTER_SECRET_9B2C"] {
+        let spec = json!({
+            "server": "github",
+            "home": f.home.display().to_string(),
+            "command": "/bin/echo",
+            "args": [format!("${{{name}}}")],
+            "env": { "TOKEN": { "secret": "7F3A" } },
+        });
+        fs::write(&path, spec.to_string()).unwrap();
+        let output = f
+            .launcher(&path)
+            .env("ENVROUTER_SECRET_9B2C", "remote")
+            .output()
+            .unwrap();
+        assert_one_line_on_stderr_only(&output);
+        assert!(stderr(&output).contains(name), "{}", stderr(&output));
+    }
+}

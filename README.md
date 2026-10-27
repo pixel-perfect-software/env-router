@@ -287,6 +287,10 @@ else. It reads them every time the server starts, so a value you **Replace** app
 time the server starts, with no need to restart the agent. If the store can't be read or a value
 isn't in it, that server doesn't start: the agent shows it as failed, and EnvRouter's reason is
 one line in the server's error output, wherever the agent shows that. The other servers load.
+The helper also fills in a `${NAME}` or `${NAME:-default}` in that server's other values, as the
+agent would, from the environment the agent starts it with (EnvRouter tells Copilot CLI and Codex
+CLI, which pass a server only some of theirs, which variables to hand on). One that isn't set
+and has no default stops that server the same way.
 
 **A remote server** (a URL) has no process of its own to start, since the agent sends its
 headers. The shim reads the values and gives them to the agent in its environment, which the

@@ -44,8 +44,10 @@ pub const LAUNCH_SUBCOMMAND: &str = "exec";
 
 /// The spec format `exec` reads, which the helper prints for `--launcher-version`
 /// ([`paths::KEYCHAIN_LAUNCHER_VERSION_ARG`]). A renderer writes specs only for a helper that
-/// reads this version or a newer one.
-pub const LAUNCHER_VERSION: u32 = 1;
+/// reads this version or a newer one. 2: `exec` fills in the variables a plain value names, which
+/// a renderer of 2 counts on (a 1 helper passed `${NAME}` to the server as text), so a CLI save
+/// replaces a 1 helper.
+pub const LAUNCHER_VERSION: u32 = 2;
 
 /// How long Codex waits for a server that starts through the launcher: the store's own read limit
 /// ([`secrets::READ_TIMEOUT`]) plus Codex's default for a server's start (30 s in 0.164.0), so a
@@ -163,6 +165,15 @@ pub struct StdioSpec {
     pub env: BTreeMap<String, McpValue>,
 }
 
+/// Why a [`StdioSpec`] couldn't become a command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Unresolved {
+    /// A secret the store doesn't hold, by id.
+    Secret(String),
+    /// A variable a plain value names that isn't set and has no default.
+    Variable(String),
+}
+
 /// A [`StdioSpec`] with its secrets filled in: what the launcher runs.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StdioCommand {
@@ -181,17 +192,49 @@ impl StdioSpec {
             .collect()
     }
 
-    /// Every secret filled in from `secrets`, or the id of the first one missing.
+    /// The variables its plain values name (`${NAME}`, `${NAME:-default}`), which the launcher
+    /// needs in the environment the agent starts it with. A remote server's secret is never one.
+    pub fn variables(&self) -> BTreeSet<&str> {
+        let plain = self
+            .args
+            .iter()
+            .chain(self.env.values())
+            .filter_map(|value| match value {
+                McpValue::Plain(text) => Some(text.as_str()),
+                McpValue::Secret { .. } => None,
+            });
+        std::iter::once(self.command.as_str())
+            .chain(plain)
+            .flat_map(references)
+            .map(|(_, name, _)| name)
+            .filter(|name| !name.starts_with(SECRET_VAR_PREFIX))
+            .collect()
+    }
+
+    /// Every secret filled in from `secrets`, and every variable a plain value names from `var`,
+    /// as the agent filled them in before the launcher started servers in its place (Claude Code
+    /// expands `${NAME}` and `${NAME:-default}` in a server's command, args and env). A remote
+    /// server's secret, which the shim sets on the agent, is never a variable a value can name.
     pub fn resolve(
         &self,
         secrets: &HashMap<String, String>,
-    ) -> std::result::Result<StdioCommand, String> {
-        let fill = |value: &McpValue| -> std::result::Result<String, String> {
+        var: impl Fn(&str) -> Option<String>,
+    ) -> std::result::Result<StdioCommand, Unresolved> {
+        let var = |name: &str| {
+            if name.starts_with(SECRET_VAR_PREFIX) {
+                None
+            } else {
+                var(name)
+            }
+        };
+        let expand = |text: &str| expand_vars(text, var).map_err(Unresolved::Variable);
+        let fill = |value: &McpValue| -> std::result::Result<String, Unresolved> {
             match value {
-                McpValue::Plain(text) => Ok(text.clone()),
-                McpValue::Secret { secret } => {
-                    secrets.get(secret).cloned().ok_or_else(|| secret.clone())
-                }
+                McpValue::Plain(text) => expand(text),
+                McpValue::Secret { secret } => secrets
+                    .get(secret)
+                    .cloned()
+                    .ok_or_else(|| Unresolved::Secret(secret.clone())),
             }
         };
         let args = self
@@ -204,11 +247,58 @@ impl StdioSpec {
             env.push((name.clone(), fill(value)?));
         }
         Ok(StdioCommand {
-            program: self.command.clone(),
+            program: expand(&self.command)?,
             args,
             env,
         })
     }
+}
+
+/// Each `${NAME}` or `${NAME:-default}` in `text`: where it is, the name, and the default.
+/// Anything else with a `$` (`$NAME`, `${NAME-x}`, `${not a name}`) isn't one.
+fn references(text: &str) -> impl Iterator<Item = (std::ops::Range<usize>, &str, Option<&str>)> {
+    let mut from = 0;
+    std::iter::from_fn(move || {
+        while let Some(start) = text[from..].find("${").map(|at| from + at) {
+            let body = start + 2;
+            let end = body + text[body..].find('}')?;
+            let (name, default) = match text[body..end].split_once(":-") {
+                Some((name, default)) => (name, Some(default)),
+                None => (&text[body..end], None),
+            };
+            if config::is_env_var_name(name) {
+                from = end + 1;
+                return Some((start..from, name, default));
+            }
+            from = body;
+        }
+        None
+    })
+}
+
+/// `text` with its references filled in from `var`. An unset or empty variable takes its default
+/// (a shell's `:-`); an unset one with none is the error, by name, as Claude Code refuses a server
+/// config naming one. A value that is the reference itself counts as unset: an agent told to pass
+/// `"NAME": "${NAME}"` on (Copilot) may hand it over as typed when `NAME` isn't set.
+fn expand_vars(
+    text: &str,
+    var: impl Fn(&str) -> Option<String>,
+) -> std::result::Result<String, String> {
+    let mut out = String::with_capacity(text.len());
+    let mut copied = 0;
+    for (at, name, default) in references(text) {
+        out.push_str(&text[copied..at.start]);
+        let value = var(name).filter(|value| *value != format!("${{{name}}}"));
+        match (value, default) {
+            (Some(value), Some(default)) if value.is_empty() => out.push_str(default),
+            (Some(value), _) => out.push_str(&value),
+            (None, Some(default)) => out.push_str(default),
+            (None, None) => return Err(name.to_owned()),
+        }
+        copied = at.end;
+    }
+    out.push_str(&text[copied..]);
+    Ok(out)
 }
 
 /// Reads a spec the launcher was given. One a save stopped rendering is removed after
@@ -503,6 +593,9 @@ struct StdioRun {
     command: String,
     args: Vec<String>,
     env: BTreeMap<String, String>,
+    /// For the helper's `exec`: the variables the spec's plain values name, which an agent that
+    /// hands a server only some of its environment (Copilot, Codex) must be told to pass on.
+    passed: Vec<String>,
 }
 
 /// What an agent runs for a stdio server, and the [`StdioSpec`] the helper reads when that is
@@ -536,6 +629,7 @@ fn stdio_run(
                 spec_file.display().to_string(),
             ],
             env: BTreeMap::new(),
+            passed: spec.variables().into_iter().map(str::to_owned).collect(),
         };
         (run, Some(spec))
     } else {
@@ -543,6 +637,7 @@ fn stdio_run(
             command: command.to_owned(),
             args: args.iter().map(text).collect(),
             env: env.iter().map(|(k, v)| (k.clone(), text(v))).collect(),
+            passed: Vec::new(),
         };
         (run, None)
     }
@@ -558,7 +653,16 @@ fn server_file(
 ) -> (Value, Option<StdioSpec>) {
     let (mut entry, spec) = match server {
         McpServer::Stdio { command, args, env } => {
-            let (run, spec) = stdio_run(name, command, args, env, home, spec_file);
+            let (mut run, spec) = stdio_run(name, command, args, env, home, spec_file);
+            // Copilot hands a server only `PATH`, and fills in `${VAR}` in its env; Claude hands
+            // over its whole environment.
+            if dialect == McpDialect::Copilot {
+                run.env.extend(
+                    run.passed
+                        .iter()
+                        .map(|var| (var.clone(), format!("${{{var}}}"))),
+                );
+            }
             (stdio_entry(dialect, &run), spec)
         }
         McpServer::Http { url, headers } => (remote_entry("http", url, headers), None),
@@ -625,8 +729,13 @@ fn codex_table(
                     toml_table(literal.into_iter().map(|(k, v)| (k.as_str(), toml_str(v)))),
                 ));
             }
-            if !passed.is_empty() {
-                let names: Vec<String> = passed.into_iter().map(|(k, _)| k.clone()).collect();
+            // For the helper's `exec`, whose own env is empty, the variables its spec names.
+            let names: Vec<String> = if spec.is_some() {
+                run.passed.clone()
+            } else {
+                passed.into_iter().map(|(k, _)| k.clone()).collect()
+            };
+            if !names.is_empty() {
                 fields.push(("env_vars", toml_list(&names)));
             }
             if spec.is_some() {
@@ -680,10 +789,11 @@ fn codex_table(
 /// The variable `value` is, when it is exactly `${NAME}`: what Claude and Copilot expand, and
 /// Codex can only be told to read. A default (`${NAME:-x}`) or text around it isn't one.
 fn whole_var(value: &str) -> Option<&str> {
-    value
-        .strip_prefix("${")
-        .and_then(|rest| rest.strip_suffix('}'))
-        .filter(|name| config::is_env_var_name(name))
+    let mut found = references(value);
+    match (found.next(), found.next()) {
+        (Some((at, name, None)), None) if at == (0..value.len()) => Some(name),
+        _ => None,
+    }
 }
 
 /// A TOML 1.0 basic string. Codex's parser is 1.0, so a control character is a `\uXXXX` escape,
@@ -1031,6 +1141,43 @@ mod tests {
         );
     }
 
+    /// The helper's `exec` fills in the variables its spec names from the environment the agent
+    /// starts it with. Claude hands a server its whole environment; Copilot and Codex hand over
+    /// only some, so each is told which ones to pass on, in its own dialect.
+    #[test]
+    fn a_launcher_entry_passes_on_the_variables_its_spec_names() {
+        let mut config = config();
+        config.agents = BTreeMap::from([
+            ("claude".into(), claude()),
+            ("copilot".into(), copilot()),
+            ("codex".into(), codex()),
+        ]);
+        let McpServer::Stdio { args, env, .. } = config.mcp_servers.get_mut("github").unwrap()
+        else {
+            unreachable!("github is a command");
+        };
+        args.push(McpValue::Plain("--log=${LOG_LEVEL:-info}".into()));
+        env.insert("HOST".into(), McpValue::Plain("${GITHUB_HOST}".into()));
+        let files = rendered(&config);
+        let entry = |agent: &str| -> Value {
+            let file: Value =
+                serde_json::from_str(&files[&format!("work/{agent}/servers/github.json")]).unwrap();
+            file["mcpServers"]["github"]["env"].clone()
+        };
+        assert_eq!(entry("claude"), json!({}));
+        assert_eq!(
+            entry("copilot"),
+            json!({ "GITHUB_HOST": "${GITHUB_HOST}", "LOG_LEVEL": "${LOG_LEVEL}" })
+        );
+        let launch: Launch = serde_json::from_str(&files["work/codex/launch.json"]).unwrap();
+        let github = launch.servers.iter().find(|s| s.name == "github").unwrap();
+        assert!(
+            github.args[0].contains(r#"env_vars = ["GITHUB_HOST", "LOG_LEVEL"]"#),
+            "{}",
+            github.args[0]
+        );
+    }
+
     /// `config()` for Codex alone, with `fs` (a stdio server with an env value, `write_file` off)
     /// and a plain `X-Team` header beside `linear`'s secret one.
     fn codex_config() -> ConfigState {
@@ -1276,7 +1423,7 @@ mod tests {
             ("A1".to_string(), "arg".to_string()),
         ]);
         assert_eq!(
-            spec.resolve(&stored),
+            spec.resolve(&stored, |_| None),
             Ok(StdioCommand {
                 program: "npx".into(),
                 args: vec!["-y".into(), "arg".into()],
@@ -1288,8 +1435,14 @@ mod tests {
         );
 
         let without_the_token = HashMap::from([("A1".to_string(), "arg".to_string())]);
-        assert_eq!(spec.resolve(&without_the_token), Err("7F3A".to_string()));
-        assert_eq!(spec.resolve(&HashMap::new()), Err("A1".to_string()));
+        assert_eq!(
+            spec.resolve(&without_the_token, |_| None),
+            Err(Unresolved::Secret("7F3A".into()))
+        );
+        assert_eq!(
+            spec.resolve(&HashMap::new(), |_| None),
+            Err(Unresolved::Secret("A1".into()))
+        );
     }
 
     #[test]
