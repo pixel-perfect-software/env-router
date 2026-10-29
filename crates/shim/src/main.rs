@@ -24,14 +24,12 @@ use envrouter_core::config::ConfigState;
 use envrouter_core::mcp::{self, Launch};
 use envrouter_core::platform::Platform;
 use envrouter_core::programs::{self, is_executable, is_shim};
-use envrouter_core::{config, paths, resolve, secrets, EXIT_TOOL_NOT_FOUND};
+use envrouter_core::{config, paths, resolve, secrets, EXIT_TOOL_NOT_FOUND, MCP_VAR};
 
 /// When set to `1`, print how this invocation would be routed, as one line of JSON, and exit
 /// without running the tool. The app uses it to check a folder. Any other value is ignored, so
 /// a stray `ENVROUTER_EXPLAIN=0` can't quietly stop every tool from running.
 const EXPLAIN_VAR: &str = "ENVROUTER_EXPLAIN";
-/// `0` turns MCP injection off for a run: the tool gets only the servers it configures itself.
-const MCP_VAR: &str = "ENVROUTER_MCP";
 /// Set on what the shim runs: its process ID and its parent's. exec keeps both, so a shim that
 /// finds its own here was exec'd by the program it ran, a wrapper further along PATH that looks
 /// there for the tool and found the shim again, as VS Code's `copilot-shim` does. A tool run from

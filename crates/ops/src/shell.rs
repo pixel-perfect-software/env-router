@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use envrouter_core::config::{self, ConfigState};
 use envrouter_core::platform::{self, Platform};
 use envrouter_core::programs::is_executable;
-use envrouter_core::{mcp, paths, resolve, Error, Result, EXIT_TOOL_NOT_FOUND};
+use envrouter_core::{mcp, paths, resolve, Error, Result, EXIT_TOOL_NOT_FOUND, SHIM_VARS};
 use serde::{Deserialize, Serialize};
 
 use crate::mcp_clash::McpClash;
@@ -157,26 +157,29 @@ impl Shell {
     }
 
     /// One command, in this shell's syntax, that prints the PATH the startup files left, runs
-    /// the prompt hooks once, then prints how `tool` resolves and the PATH.
-    /// `tool` has passed `is_command_name`, so it's safe to interpolate.
+    /// the prompt hooks once, then prints what the shell exports of [`SHIM_VARS`], how `tool`
+    /// resolves and the PATH. `tool` has passed `is_command_name`, so it's safe to interpolate.
+    /// The variables are asked of `printenv`, a child like the tool, so one set without being
+    /// exported doesn't count.
     fn probe(self, tool: &str) -> String {
         let hooks = self.prompt_hooks();
+        let vars = SHIM_VARS.join(" ");
         match self {
             // `whence -v` names the file a function came from: "claude is a shell function
             // from /Users/me/.zshrc". A zsh probe runs as a script file, not with `-c` (see
             // `start`): only a script's commands run at the shell's top level, and direnv's hook
             // does nothing elsewhere.
             Shell::Zsh => format!(
-                "print -r -- \"{STARTUP_PATH}$PATH\"; {hooks}; print -r -- \"{KIND}$(whence -w -- {tool})\"; print -r -- \"{ORIGIN}$(whence -v -- {tool})\"; print -r -- \"{ALIAS}${{aliases[{tool}]}}\"; print -r -- \"{PATH_MARK}$PATH\""
+                "print -r -- \"{STARTUP_PATH}$PATH\"; {hooks}; for __envrouter_var in {vars}; do __envrouter_value=$(command printenv $__envrouter_var) && print -r -- \"{ENV_MARK}$__envrouter_var=$__envrouter_value\"; done; print -r -- \"{KIND}$(whence -w -- {tool})\"; print -r -- \"{ORIGIN}$(whence -v -- {tool})\"; print -r -- \"{ALIAS}${{aliases[{tool}]}}\"; print -r -- \"{PATH_MARK}$PATH\""
             ),
             // With extdebug, `declare -F` prints "claude 12 /Users/me/.bashrc".
             Shell::Bash => format!(
-                "printf '%s\\n' \"{STARTUP_PATH}$PATH\"; {hooks}; printf '%s\\n' \"{KIND}$(type -t -- {tool})\" \"{ORIGIN}$(shopt -s extdebug; declare -F -- {tool} 2>/dev/null)\" \"{ALIAS}$(alias -- {tool} 2>/dev/null)\" \"{PATH_MARK}$PATH\""
+                "printf '%s\\n' \"{STARTUP_PATH}$PATH\"; {hooks}; for __envrouter_var in {vars}; do __envrouter_value=$(command printenv \"$__envrouter_var\") && printf '%s\\n' \"{ENV_MARK}$__envrouter_var=$__envrouter_value\"; done; printf '%s\\n' \"{KIND}$(type -t -- {tool})\" \"{ORIGIN}$(shopt -s extdebug; declare -F -- {tool} 2>/dev/null)\" \"{ALIAS}$(alias -- {tool} 2>/dev/null)\" \"{PATH_MARK}$PATH\""
             ),
             // An empty command substitution would drop the whole argument in fish, so each
-            // value goes through a variable.
+            // value goes through a variable. `set` passes on the status of its substitution.
             Shell::Fish => format!(
-                "set -l startup (string join : $PATH); {hooks}; set -l kind (type -t {tool} 2>/dev/null); set -l origin (functions --details {tool} 2>/dev/null); printf '%s\\n' \"{STARTUP_PATH}$startup\" \"{KIND}$kind\" \"{ORIGIN}$origin\" \"{PATH_MARK}\"(string join : $PATH)"
+                "set -l startup (string join : $PATH); {hooks}; for __envrouter_var in {vars}; set -l __envrouter_value (command printenv $__envrouter_var); and printf '%s\\n' \"{ENV_MARK}$__envrouter_var=$__envrouter_value\"; end; set -l kind (type -t {tool} 2>/dev/null); set -l origin (functions --details {tool} 2>/dev/null); printf '%s\\n' \"{STARTUP_PATH}$startup\" \"{KIND}$kind\" \"{ORIGIN}$origin\" \"{PATH_MARK}\"(string join : $PATH)"
             ),
         }
     }
@@ -511,6 +514,8 @@ const STARTUP_PATH: &str = "__ENVROUTER_STARTUP_PATH__=";
 /// The kind of the program word an alias starts with, in the login report's run.
 const WORD: &str = "__ENVROUTER_WORD__=";
 const ZDOTDIR_MARK: &str = "__ENVROUTER_ZDOTDIR__=";
+/// One of [`SHIM_VARS`] as the shell exports it after its prompt hooks, as `NAME=value`.
+const ENV_MARK: &str = "__ENVROUTER_ENV__=";
 
 /// What running `tool` in `folder` would do in a fresh terminal window.
 #[derive(Debug, PartialEq, Serialize)]
@@ -987,6 +992,20 @@ pub fn check_folder(shell: Shell, home: &Path, folder: &Path, tool: &str) -> Res
         .env("HOME", home)
         .env("PATH", path)
         .env("ENVROUTER_EXPLAIN", "1");
+    // As the shell exports them, never as this process has them. Untrimmed: the shim compares
+    // the value exactly.
+    for name in SHIM_VARS {
+        let mark = format!("{ENV_MARK}{name}=");
+        match output
+            .stdout
+            .lines()
+            .rev()
+            .find_map(|line| line.split_once(&mark))
+        {
+            Some((_, value)) => explain.env(name, value),
+            None => explain.env_remove(name),
+        };
+    }
     let output = run(explain, Duration::from_secs(5))?;
     if output.code == Some(i32::from(EXIT_TOOL_NOT_FOUND)) {
         return Ok(FolderCheck::NotInstalled);
@@ -1163,7 +1182,8 @@ fn read_all(file: &mut File) -> String {
 mod tests {
     use super::*;
     use crate::shims;
-    use envrouter_core::config::{Profile, ToolConfig};
+    use envrouter_core::agents;
+    use envrouter_core::config::{McpServer, McpUse, Profile, ToolConfig};
 
     fn report(path: &str, functions: &[String]) -> Result<LoginReport> {
         Ok(LoginReport {
@@ -1971,6 +1991,63 @@ mod tests {
                 origin: Some(functions.join("claude.fish").display().to_string()),
             }
         );
+    }
+
+    /// The shim's explain step sees what the checked shell exports, as the tool would:
+    /// `ENVROUTER_MCP=0` exported from a startup file turns injection off there, and set
+    /// without exporting it doesn't, since the tool never sees it.
+    #[test]
+    fn check_folder_passes_on_what_the_shell_exports() {
+        for (shell, path, set, export) in [
+            (
+                Shell::Zsh,
+                "export PATH=\"$HOME/bin:$PATH\"\n",
+                "ENVROUTER_MCP=0\n",
+                "export ENVROUTER_MCP=0\n",
+            ),
+            (
+                Shell::Bash,
+                "export PATH=\"$HOME/bin:$PATH\"\n",
+                "ENVROUTER_MCP=0\n",
+                "export ENVROUTER_MCP=0\n",
+            ),
+            (
+                Shell::Fish,
+                "set -gx PATH $HOME/bin $PATH\n",
+                "set -g ENVROUTER_MCP 0\n",
+                "set -gx ENVROUTER_MCP 0\n",
+            ),
+        ] {
+            if missing(shell) {
+                continue;
+            }
+            let (_root, home) = zsh_home("");
+            let mut config = agents::with_agents(config());
+            config.mcp_servers.insert(
+                "docs".into(),
+                McpServer::Http {
+                    url: "https://example.com/mcp".into(),
+                    headers: BTreeMap::new(),
+                },
+            );
+            config.profiles[0]
+                .mcp_servers
+                .insert("docs".into(), McpUse::default());
+            config::save(&paths::root(&home), &config).unwrap();
+            mcp::sync(&config, &home).unwrap();
+            let file = shell.startup_files(&home).remove(0);
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            let servers = |lines: &str| {
+                fs::write(&file, format!("{path}{lines}")).unwrap();
+                set_integration(shell, &home, true).unwrap();
+                match check_folder(shell, &home, &home.join("work/app"), "claude").unwrap() {
+                    FolderCheck::Routed { mcp, .. } => mcp,
+                    other => panic!("{}: {other:?}", shell.name()),
+                }
+            };
+            assert_eq!(servers(set), ["docs"], "{}", shell.name());
+            assert_eq!(servers(export), Vec::<String>::new(), "{}", shell.name());
+        }
     }
 
     /// A shim with no real tool behind it. The name is one no machine has installed.
