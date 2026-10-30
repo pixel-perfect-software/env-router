@@ -572,6 +572,7 @@ mod tests {
                 deny_arg: None,
                 skip_any_args: Vec::new(),
                 skip_subcommands: Vec::new(),
+                options_before_subcommand: None,
                 skip_if_present: Vec::new(),
             }),
             mcp_files: Some(McpFiles {

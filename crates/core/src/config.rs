@@ -36,7 +36,14 @@ pub const CONFIG_FILE: &str = "config.json";
 /// file (a 0.9.0 shim warns "unknown variant `codex`" and runs every agent unrouted, since the
 /// parse fails before the version is checked): a CLI save sees the installed shim's version and
 /// installs one that reads it (`commands::cli_installs`).
-pub const CONFIG_VERSION: u32 = 6;
+///
+/// 7 added the options an agent reads ahead of its subcommand (`agents.*.mcp.optionsBeforeSubcommand`),
+/// so the shim finds a skipped subcommand past them (`codex -C ~/proj queue`). It defaults to
+/// none, the first-argument rule every agent had, so a version 6 file reads as is; the window
+/// writes it on every save, and the CLI adds the registry's (`agents::with_agents`). The bump keeps
+/// an older CLI, which would drop the key it doesn't know, from saving the file without it; a CLI
+/// save installs a shim that reads 7 (`commands::cli_installs`).
+pub const CONFIG_VERSION: u32 = 7;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -224,15 +231,36 @@ pub struct McpInjection {
     /// Any of these among the user's own arguments turns injection off for that run.
     #[serde(default)]
     pub skip_any_args: Vec<String>,
-    /// A run whose first argument is one of these subcommands gets no injection: some refuse
-    /// any option ahead of them (`claude plugin test`). Added in version 4.
+    /// A run whose subcommand is one of these gets no injection: some refuse any option ahead
+    /// of them (`claude plugin test`). Where the subcommand sits is `options_before_subcommand`'s
+    /// to say. Added in version 4.
     #[serde(default)]
     pub skip_subcommands: Vec<String>,
+    /// `None` means the agent reads a subcommand only as its first argument (Claude reads
+    /// `claude --debug daemon` as a prompt); `Some` means it reads one past the options ahead
+    /// of it (`codex -C ~/proj queue`), and these name the options that take a value. Added in
+    /// version 7.
+    #[serde(default)]
+    pub options_before_subcommand: Option<LeadingOptions>,
     /// While any of these files exists, the agent gets no injection: it refuses MCP servers
     /// given at launch (Claude Code exits at startup when an enterprise `managed-mcp.json` is
     /// present). Absolute paths. Added in version 5.
     #[serde(default)]
     pub skip_if_present: Vec<String>,
+}
+
+/// The options an agent reads ahead of its subcommand that take a value, so the shim can step
+/// past them. An attached value (`--cd=dir`, `-Cdir`) is a word of its own and is never listed;
+/// a dashed word listed nowhere takes no value.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LeadingOptions {
+    /// Each takes the next word as its value.
+    #[serde(default)]
+    pub take_one: Vec<String>,
+    /// Each takes every next word up to one starting with `-`.
+    #[serde(default)]
+    pub take_many: Vec<String>,
 }
 
 /// How an agent is handed MCP servers, named after the agent that defined it. Several agents can
@@ -969,6 +997,7 @@ mod tests {
                 deny_arg: Some("--disallowedTools=".into()),
                 skip_any_args: vec!["--strict-mcp-config".into()],
                 skip_subcommands: vec!["plugin".into()],
+                options_before_subcommand: None,
                 skip_if_present: Vec::new(),
             }),
             ..Default::default()
@@ -1037,6 +1066,7 @@ mod tests {
                 "denyArg": "--disallowedTools=",
                 "skipAnyArgs": ["--strict-mcp-config"],
                 "skipSubcommands": ["plugin"],
+                "optionsBeforeSubcommand": null,
                 "skipIfPresent": [],
             })
         );

@@ -140,7 +140,7 @@ describe('saving', () => {
     await call('save_config', { payload, secrets: {} })
     payload.profiles.pop()
     const saved = await call<ConfigState>('get_config')
-    expect(saved.version).toBe(6)
+    expect(saved.version).toBe(7)
     expect(saved.profiles).toHaveLength(count)
   })
 
@@ -163,7 +163,15 @@ describe('saving', () => {
     )
     const codex = {
       ...config.agents.codex,
-      mcp: { dialect: 'codex', configArg: '--config=', denyArg: null, skipAnyArgs: [], skipSubcommands: [], skipIfPresent: [] },
+      mcp: {
+        dialect: 'codex',
+        configArg: '--config=',
+        denyArg: null,
+        skipAnyArgs: [],
+        skipSubcommands: [],
+        optionsBeforeSubcommand: null,
+        skipIfPresent: [],
+      },
     }
     const [first] = Object.keys(config.profiles[0].mcpServers)
     const reserved = {

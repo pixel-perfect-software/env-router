@@ -101,7 +101,7 @@ let failing: string | null = ['home', 'status', 'shell', 'editor', 'reveal', 'un
   : null
 
 /** `config::CONFIG_VERSION`: every save writes it. */
-const CONFIG_VERSION = 6
+const CONFIG_VERSION = 7
 
 /** What each platform's store says when it can't be used (`crates/keychain/src/store/`). */
 const storeError = {

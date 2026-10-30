@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use crate::config::{AgentDef, ConfigState, IdeHook};
+use crate::config::{AgentDef, ConfigState, IdeHook, LeadingOptions};
 
 const REGISTRY: &str = include_str!("../../../src/lib/agents.json");
 
@@ -36,7 +36,9 @@ pub fn known() -> Vec<KnownAgent> {
 /// on every save, and a CLI a release apart from the app mustn't undo that with its older (or
 /// newer) copy. Except that it gains the registry's skip rules it lacks (`skipAnyArgs`,
 /// `skipSubcommands`, `skipIfPresent`): each only turns injection off for a run it would break,
-/// and without this a machine with no window would never see one a release adds. And in a config
+/// and without this a machine with no window would never see one a release adds. The same goes
+/// for the options it reads ahead of a subcommand (`optionsBeforeSubcommand`): a null one
+/// becomes the registry's, and its lists gain the entries they lack. And in a config
 /// saved before version 6, one named with no MCP descriptor gains the registry's: 0.9 saved Codex
 /// without one, and a machine with no window would otherwise never hand Codex its servers. The
 /// same goes for the files import reads (`mcpFiles`), which Codex's gained in version 6. A
@@ -56,6 +58,13 @@ pub fn with_agents(mut config: ConfigState) -> ConfigState {
                         add_missing(&mut mcp.skip_any_args, known.skip_any_args);
                         add_missing(&mut mcp.skip_subcommands, known.skip_subcommands);
                         add_missing(&mut mcp.skip_if_present, known.skip_if_present);
+                        if let Some(theirs) = known.options_before_subcommand {
+                            let ours = mcp
+                                .options_before_subcommand
+                                .get_or_insert_with(LeadingOptions::default);
+                            add_missing(&mut ours.take_one, theirs.take_one);
+                            add_missing(&mut ours.take_many, theirs.take_many);
+                        }
                     }
                     (None, Some(known)) if before_version_6 => ours.mcp = Some(known),
                     _ => {}
@@ -173,6 +182,11 @@ mod tests {
     fn claude_skips_injection_for_the_subcommands_that_refuse_it() {
         let registry = known();
         let claude = registry.iter().find(|a| a.command == "claude").unwrap();
+        // With an option ahead, these read as a prompt or refuse the option anyway: no stepping.
+        assert_eq!(
+            claude.def.mcp.as_ref().unwrap().options_before_subcommand,
+            None
+        );
         assert_eq!(
             claude.def.mcp.as_ref().unwrap().skip_subcommands,
             [
@@ -193,6 +207,108 @@ mod tests {
                 "sync",
             ]
         );
+    }
+
+    /// Codex's skipped subcommands and the options of its that take a value, from the 0.164.0
+    /// source: `MultitoolCli` (`cli/src/main.rs`) reads a subcommand past its own options, which
+    /// are `CliConfigOverrides` (`utils/cli/src/config_override.rs`), `FeatureToggles`,
+    /// `InteractiveRemoteOptions` and `TuiCli` with its `SharedCliOptions`
+    /// (`utils/cli/src/shared_options.rs`). Only `-i`/`--image` takes several words (`num_args =
+    /// 1..`). Change this only after checking a current release.
+    #[test]
+    fn codex_finds_its_skipped_subcommands_past_the_options_that_take_a_value() {
+        let registry = known();
+        let codex = registry.iter().find(|a| a.command == "codex").unwrap();
+        let mcp = codex.def.mcp.as_ref().unwrap();
+        assert_eq!(
+            mcp.skip_subcommands,
+            ["archive", "delete", "queue", "remote-control", "unarchive"]
+        );
+        // The keys are camelCase in the registry; a misnamed one would read as empty.
+        assert_eq!(
+            mcp.options_before_subcommand,
+            Some(LeadingOptions {
+                take_one: [
+                    "-c",
+                    "--config",
+                    "--enable",
+                    "--disable",
+                    "--remote",
+                    "--remote-auth-token-env",
+                    "-m",
+                    "--model",
+                    "--local-provider",
+                    "-p",
+                    "--profile",
+                    "-s",
+                    "--sandbox",
+                    "-C",
+                    "--cd",
+                    "--add-dir",
+                    "-a",
+                    "--ask-for-approval",
+                ]
+                .map(String::from)
+                .to_vec(),
+                take_many: ["-i", "--image"].map(String::from).to_vec(),
+            })
+        );
+    }
+
+    /// A config saved before version 7 has none, and one a release apart has its own: the CLI
+    /// adds what the registry names and keeps the rest, so a machine with no window gets #187's fix.
+    #[test]
+    fn a_named_agent_gains_the_registrys_options_before_a_subcommand() {
+        let registry = known();
+        let codex = registry.iter().find(|a| a.command == "codex").unwrap();
+        let theirs = codex
+            .def
+            .mcp
+            .as_ref()
+            .unwrap()
+            .options_before_subcommand
+            .clone()
+            .unwrap();
+
+        // A version 6 file, as 0.10 saved it: Codex named, with no such key.
+        let v6 = crate::config::parse(
+            Path::new("config.json"),
+            br#"{ "version": 6, "agents": { "codex": { "mcp": { "dialect": "codex", "configArg": "--config=", "skipSubcommands": ["queue"] } } } }"#,
+        )
+        .unwrap();
+        let mcp = v6.agents["codex"].mcp.as_ref().unwrap();
+        assert_eq!(mcp.options_before_subcommand, None);
+        let filled = with_agents(v6);
+        assert_eq!(
+            filled.agents["codex"]
+                .mcp
+                .as_ref()
+                .unwrap()
+                .options_before_subcommand,
+            Some(theirs.clone())
+        );
+
+        // Its own entries stay first, the registry's follow, and nothing is listed twice.
+        let mut mine = codex.def.clone();
+        mine.mcp.as_mut().unwrap().options_before_subcommand = Some(LeadingOptions {
+            take_one: vec!["--mine".into()],
+            take_many: Vec::new(),
+        });
+        let merged = with_agents(ConfigState {
+            agents: [("codex".to_string(), mine)].into(),
+            ..ConfigState::default()
+        });
+        let options = merged.agents["codex"]
+            .mcp
+            .as_ref()
+            .unwrap()
+            .options_before_subcommand
+            .as_ref()
+            .unwrap();
+        assert_eq!(options.take_one[0], "--mine");
+        assert_eq!(options.take_one[1..], theirs.take_one[..]);
+        assert_eq!(options.take_many, theirs.take_many);
+        assert_eq!(with_agents(merged.clone()), merged);
     }
 
     /// 0.9 saved Codex with no `mcp` and no `mcpFiles`, and `with_agents` kept it, so a machine
