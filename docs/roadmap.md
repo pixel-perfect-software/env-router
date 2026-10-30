@@ -560,8 +560,13 @@ Parked.
     reads ahead of a subcommand that take a value (Codex's, from 0.164.0; `-i`/`--image` takes
     several), and the shim steps past them to the first other word, `--` or a prompt meaning none.
     Claude and Copilot keep the first-argument rule. An older CLI refuses a version 7 file rather
-    than save it without the key; after an update, Codex's manifest gets the options at the next
-    save in the app or `envrouter apply`.
+    than save it without the key.
+16. **#199: the re-render after an update ignores the agent registry.** `commands::render_saved`,
+    which the app runs at launch after an update and `envrouter install` runs when it replaced a
+    binary, rendered `config.json` as it was, so a rule a release adds (#187's options, a skip
+    rule) reached the shim only at the next save. Fixed in #200: it renders with
+    `agents::with_agents` applied in memory, as `install` does for the shims, and never writes
+    the file.
 
 ---
 

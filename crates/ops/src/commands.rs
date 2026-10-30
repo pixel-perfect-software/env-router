@@ -124,9 +124,11 @@ fn cli_installs(home: &Path) -> bool {
 
 /// Renders the MCP files of the config.json as it is now, as a save would, without saving
 /// anything. For an install that has just put a new shim and helper in place, so the files the
-/// servers start from match them. It takes the save lock, so a save in progress is rendered
-/// whole. A home with no config.json has nothing to render and is left as it is: the lock would
-/// make `~/.envrouter` and `config.lock`.
+/// servers start from match them. The agents get the registry's rules in memory
+/// ([`agents::with_agents`]), as `envrouter install` gives the shims, so a rule this release
+/// adds (`optionsBeforeSubcommand`, a skip rule) applies without a save. It takes the save lock,
+/// so a save in progress is rendered whole. A home with no config.json has nothing to render and
+/// is left as it is: the lock would make `~/.envrouter` and `config.lock`.
 pub fn render_saved(home: &Path) -> Result<()> {
     let root = paths::root(home);
     if !paths::config_file(home).exists() {
@@ -134,7 +136,7 @@ pub fn render_saved(home: &Path) -> Result<()> {
     }
     let _lock = config::lock(&root)?;
     match config::load(&root)? {
-        Some(config) => mcp::sync(&config, home),
+        Some(config) => mcp::sync(&agents::with_agents(config), home),
         None => Ok(()),
     }
 }
@@ -1284,10 +1286,11 @@ mod tests {
     }
 
     /// An install puts a new helper in place, and the files that name it have to follow: it
-    /// renders config.json as it is, so an install doesn't write one, and a home with no
-    /// config.json is left without even the folder the save lock would make.
+    /// renders config.json with the registry's agent rules, as a save would, but doesn't write
+    /// it, and a home with no config.json is left without even the folder the save lock would
+    /// make.
     #[test]
-    fn render_saved_renders_config_json_as_it_is_and_creates_nothing_without_one() {
+    fn render_saved_renders_config_json_with_the_registry_and_creates_nothing_without_one() {
         let home = tempfile::tempdir().unwrap();
         let home = home.path();
         render_saved(home).unwrap();
@@ -1295,6 +1298,10 @@ mod tests {
 
         let mut config = with_secret_server(&ConfigState::default(), "github", "7F3A");
         config.agents = agents::with_agents(ConfigState::default()).agents;
+        let registry = config.agents["codex"].mcp.clone().unwrap();
+        // Codex as a version 6 file names it, before the release that added this rule.
+        let codex = config.agents.get_mut("codex").unwrap();
+        codex.mcp.as_mut().unwrap().options_before_subcommand = None;
         std::fs::create_dir_all(paths::root(home)).unwrap();
         // Compact, which a save would not write: a rewrite shows.
         let written = serde_json::to_vec(&config).unwrap();
@@ -1304,6 +1311,13 @@ mod tests {
         let launch = paths::mcp_launch(home, "p1", "claude");
         assert!(launch.exists());
         assert!(launch.with_file_name("stdio/github.json").exists());
+        let codex: mcp::Launch =
+            serde_json::from_slice(&std::fs::read(paths::mcp_launch(home, "p1", "codex")).unwrap())
+                .unwrap();
+        assert_eq!(
+            codex.options_before_subcommand,
+            registry.options_before_subcommand
+        );
         assert_eq!(std::fs::read(paths::config_file(home)).unwrap(), written);
     }
 
