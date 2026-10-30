@@ -553,6 +553,15 @@ Parked.
     and the OAuth-clients shelf closed as won't-do. Decided on 2026-10-26: EnvRouter's features are
     about local configs, so export and import of profiles fits (M5, issue 9), while usage display,
     failover, provider routing and adopting a login, which belong to a control panel, don't.
+15. **#187: an option before the subcommand defeats `skipSubcommands`.** `Launch::applies_to`
+    looked only at the first argument, so `codex -C ~/proj queue` got the overrides `queue`
+    refuses, and `codex --profile work archive <id>` wrote session state through a second server.
+    Fixed in #198 (`CONFIG_VERSION` 7): an agent's `optionsBeforeSubcommand` names the options it
+    reads ahead of a subcommand that take a value (Codex's, from 0.164.0; `-i`/`--image` takes
+    several), and the shim steps past them to the first other word, `--` or a prompt meaning none.
+    Claude and Copilot keep the first-argument rule. An older CLI refuses a version 7 file rather
+    than save it without the key; after an update, Codex's manifest gets the options at the next
+    save in the app or `envrouter apply`.
 
 ---
 

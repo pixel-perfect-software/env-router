@@ -314,9 +314,11 @@ server, and nothing is written to disk for it. That has some consequences:
 - **In a folder with servers, Codex runs without its shared background server.** Given any
   configuration override, `codex`, `codex resume` and `codex fork` run the session themselves
   instead of handing it to the background server. `codex queue`,
-  `archive`, `unarchive`, `delete` and `remote-control` are left alone by EnvRouter, because they
-  refuse an override or would write session state through a second server; they get no servers
-  and need none.
+  `archive`, `unarchive`, `delete` and `remote-control` are left alone by EnvRouter, also with
+  your own options ahead of them (`codex -C ~/proj queue …`), because they refuse an override or
+  would write session state through a second server; they get no servers and need none. If
+  you've just updated EnvRouter, save once in the app (or run `envrouter apply`) so the
+  profiles' MCP files pick this up.
 - **A server named like one of yours in Codex's own `config.toml` merges with it.** Codex joins the
   two key by key, so the same transport works (EnvRouter's fields win, yours still apply). A
   different transport, say a command in one and a URL in the other, stops every `codex` command
@@ -406,7 +408,7 @@ with an ID of uppercase hex:
 
 ```json
 {
-  "version": 6,
+  "version": 7,
   "profiles": [
     {
       "id": "work",
