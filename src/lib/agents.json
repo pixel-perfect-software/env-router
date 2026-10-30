@@ -28,6 +28,7 @@
         "stop",
         "sync"
       ],
+      "optionsBeforeSubcommand": null,
       "skipIfPresent": ["/Library/Application Support/ClaudeCode/managed-mcp.json", "/etc/claude-code/managed-mcp.json"]
     },
     "mcpFiles": { "userFile": ".claude.json", "defaultDir": "~", "projectFiles": [".mcp.json"] },
@@ -50,6 +51,7 @@
       "denyArg": "--deny-tool=",
       "skipAnyArgs": [],
       "skipSubcommands": [],
+      "optionsBeforeSubcommand": null,
       "skipIfPresent": []
     },
     "mcpFiles": { "userFile": "mcp-config.json", "defaultDir": "~/.copilot", "projectFiles": [".mcp.json", ".github/mcp.json"] }
@@ -66,6 +68,29 @@
       "denyArg": null,
       "skipAnyArgs": [],
       "skipSubcommands": ["archive", "delete", "queue", "remote-control", "unarchive"],
+      "optionsBeforeSubcommand": {
+        "takeOne": [
+          "-c",
+          "--config",
+          "--enable",
+          "--disable",
+          "--remote",
+          "--remote-auth-token-env",
+          "-m",
+          "--model",
+          "--local-provider",
+          "-p",
+          "--profile",
+          "-s",
+          "--sandbox",
+          "-C",
+          "--cd",
+          "--add-dir",
+          "-a",
+          "--ask-for-approval"
+        ],
+        "takeMany": ["-i", "--image"]
+      },
       "skipIfPresent": []
     },
     "mcpFiles": { "userFile": "config.toml", "defaultDir": "~/.codex", "projectFiles": [".codex/config.toml"] },

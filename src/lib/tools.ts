@@ -17,6 +17,9 @@
 //   `import`, `install`, `mcp`, `purge`, `setup-token`, `ultrareview`, `update`/`upgrade`, and
 //   the hidden `design-login`, `project` and `sandbox`) run with one. `skipIfPresent`: Claude Code
 //   exits at startup when given servers on a machine with an enterprise managed-mcp.json.
+//   `optionsBeforeSubcommand` is null: Claude takes these as subcommands only as its first
+//   argument; with an option ahead they read as a prompt or refuse the user's own option, so the
+//   shim looks at the first argument alone.
 //   User and local scopes live in .claude.json in the config folder; project scope in .mcp.json.
 //   The editor hook was verified on the VS Code extension 2.1.301: it runs `<wrapper> <its
 //   bundled claude> <args>` in the workspace folder. The setting is machine-wide, which is fine,
@@ -31,6 +34,7 @@
 //   each with a top-level `mcpServers` or as a bare table of named servers (0.0.401). Not
 //   `servers`, and not `.vscode/mcp.json` (removed in 1.0.22). Import reads trigger folders only,
 //   with no walk up to the repository root and no trust check, as for Claude.
+//   `optionsBeforeSubcommand` is null; it skips no subcommand.
 // - codex: `CODEX_HOME` holds config.toml and its trust list, auth.json (or the keyring entry
 //   `Codex Auth`, keyed by a hash of the folder), sessions, history, logs and the SQLite state
 //   (0.164.0, run with a scratch home). Not MCP OAuth tokens, which the OS keyring keeps by server
@@ -55,9 +59,17 @@
 //   its shared background server, which `queue` refuses ("remove configuration overrides or use
 //   --remote"), `archive`, `unarchive` and `delete` would write session state through a second
 //   server for, and `remote-control` answers by running in the foreground instead of the daemon;
-//   none has an alias. Re-sweep on a new release. `skipIfPresent` is empty: an admin's
-//   requirements.toml `[mcp_servers]` allowlist turns unlisted servers off without exiting.
-//   Codex has no SSE transport, so an SSE server isn't handed to it.
+//   none has an alias. Re-sweep on a new release. `optionsBeforeSubcommand`: Codex's top-level
+//   parser (clap's `MultitoolCli`, with no `subcommand_precedence_over_arg`) reads a subcommand
+//   after its own options, so `codex -C ~/proj queue` runs `queue`. These are 0.164.0's options
+//   that take a value there (`CliConfigOverrides`, `FeatureToggles`, `InteractiveRemoteOptions`,
+//   `TuiCli` and its `SharedCliOptions`), in definition order: one value each, except
+//   `-i`/`--image` (`num_args = 1..`), which takes words up to the next one starting with `-`,
+//   so `codex -i a.png queue` attaches `queue` as an image and gets servers. Booleans need no
+//   entry, and an attached value (`--cd=dir`, `-Cdir`) is one word. `--` or a prompt ahead means
+//   no subcommand. `skipIfPresent` is empty: an admin's requirements.toml `[mcp_servers]`
+//   allowlist turns unlisted servers off without exiting. Codex has no SSE transport, so an SSE
+//   server isn't handed to it.
 // - `install` is each vendor's own one-line installer (claude: claude.ai/install.sh, the native
 //   installer in the Claude Code docs; copilot: gh.io/copilot-install, the install script in the
 //   Copilot CLI docs; both checked 2026-10-24; codex: chatgpt.com/codex/install.sh, in its README,

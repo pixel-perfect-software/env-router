@@ -20,7 +20,7 @@
 #[cfg(unix)]
 use std::collections::HashSet;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -30,7 +30,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
-use crate::config::{self, ConfigState, McpDialect, McpServer, McpUse, McpValue, Profile};
+use crate::config::{
+    self, ConfigState, LeadingOptions, McpDialect, McpServer, McpUse, McpValue, Profile,
+};
 use crate::error::{Error, Result};
 use crate::paths;
 use crate::secrets;
@@ -62,9 +64,16 @@ pub struct Launch {
     /// Any of these among the user's own arguments turns injection off for that run.
     #[serde(default)]
     pub skip_any_args: Vec<String>,
-    /// A run whose first argument is one of these subcommands gets no injection.
+    /// A run whose subcommand is one of these gets no injection. Where the subcommand sits is
+    /// `options_before_subcommand`'s to say.
     #[serde(default)]
     pub skip_subcommands: Vec<String>,
+    /// `None`: the agent reads a subcommand only as its first argument (Claude reads
+    /// `claude --debug daemon` as a prompt). `Some`: it reads one past the options ahead of it
+    /// (`codex -C ~/proj queue`), and these name the options that take a value. A manifest
+    /// without the key (one rendered by 0.10) reads as `None`.
+    #[serde(default)]
+    pub options_before_subcommand: Option<LeadingOptions>,
     /// While any of these files exists, no run gets injection: the agent refuses servers given
     /// at launch then.
     #[serde(default)]
@@ -98,17 +107,30 @@ pub struct Injection {
 }
 
 impl Launch {
-    /// Whether to inject into a run with these arguments.
+    /// Whether to inject into a run with these arguments: not when its subcommand is one of
+    /// [`Launch::skip_subcommands`], and not when any of [`Launch::skip_any_args`] is among them.
     pub fn applies_to(&self, user_args: &[OsString]) -> bool {
-        let skipped_subcommand = user_args.first().is_some_and(|first| {
-            self.skip_subcommands
-                .iter()
-                .any(|skip| first == skip.as_str())
-        });
-        !skipped_subcommand
+        !self.skips_subcommand(user_args)
             && !user_args
                 .iter()
                 .any(|arg| self.skip_any_args.iter().any(|skip| arg == skip.as_str()))
+    }
+
+    /// Whether the run's subcommand is a skipped one: its first argument, or, when
+    /// [`Launch::options_before_subcommand`] is set, the first word past the options ahead of it.
+    fn skips_subcommand(&self, user_args: &[OsString]) -> bool {
+        if self.skip_subcommands.is_empty() {
+            return false;
+        }
+        let word = match &self.options_before_subcommand {
+            None => user_args.first().map(OsString::as_os_str),
+            Some(options) => subcommand(user_args, options),
+        };
+        word.is_some_and(|word| {
+            self.skip_subcommands
+                .iter()
+                .any(|skip| word == skip.as_str())
+        })
     }
 
     /// The first of [`Launch::skip_if_present`] that exists. Checked on every run, since a
@@ -146,6 +168,48 @@ impl Launch {
         injection.env = env.into_iter().collect();
         injection
     }
+}
+
+/// The option [`subcommand`] has just stepped over, and so what the next word is.
+enum Open {
+    /// None: a word that isn't dashed is the subcommand (or a prompt).
+    Nothing,
+    /// One that takes a single value: the next word is that value.
+    One,
+    /// One that takes several (`-i a.png b.png`): words are values until a dashed one.
+    Many,
+}
+
+/// The word an agent reads as its subcommand past the leading options in `options`: the first
+/// word that is neither an option nor an option's value. It is a subcommand only if the agent
+/// knows it, and a prompt is as good a first word, so the scan stops there. `None` when `--`
+/// (every later word is a positional) or the end of the arguments comes first. One pass over the
+/// bytes, no allocation.
+///
+/// A lone `-` and `""` are words, as clap's `is_stdio` treats `-`. A dashed word that no entry
+/// equals, an attached value (`--cd=dir`, `-Cdir`) among them, takes no value. A dashed word
+/// while an option is open ends it, as clap parses it as an option before the open one's value.
+fn subcommand<'a>(args: &'a [OsString], options: &LeadingOptions) -> Option<&'a OsStr> {
+    let mut open = Open::Nothing;
+    for arg in args {
+        let word = arg.as_encoded_bytes();
+        if !matches!(word, [b'-', _, ..]) {
+            match open {
+                Open::Nothing => return Some(arg.as_os_str()),
+                Open::One => open = Open::Nothing,
+                Open::Many => {}
+            }
+        } else if word == b"--" {
+            return None;
+        } else if options.take_one.iter().any(|entry| arg == entry.as_str()) {
+            open = Open::One;
+        } else if options.take_many.iter().any(|entry| arg == entry.as_str()) {
+            open = Open::Many;
+        } else {
+            open = Open::Nothing;
+        }
+    }
+    None
 }
 
 /// What `envrouter-keychain exec` starts for one stdio server that needs a secret: the server's
@@ -371,6 +435,7 @@ pub fn render(config: &ConfigState, home: &Path) -> Vec<(PathBuf, String)> {
             let mut launch = Launch {
                 skip_any_args: injection.skip_any_args.clone(),
                 skip_subcommands: injection.skip_subcommands.clone(),
+                options_before_subcommand: injection.options_before_subcommand.clone(),
                 skip_if_present: injection.skip_if_present.clone(),
                 servers: Vec::new(),
             };
@@ -873,6 +938,7 @@ mod tests {
                 deny_arg: Some("--disallowedTools=".into()),
                 skip_any_args: vec!["--strict-mcp-config".into()],
                 skip_subcommands: vec!["plugin".into()],
+                options_before_subcommand: None,
                 skip_if_present: vec!["/etc/claude-code/managed-mcp.json".into()],
             }),
             ..Default::default()
@@ -887,6 +953,7 @@ mod tests {
                 deny_arg: Some("--deny-tool=".into()),
                 skip_any_args: Vec::new(),
                 skip_subcommands: Vec::new(),
+                options_before_subcommand: None,
                 skip_if_present: Vec::new(),
             }),
             ..Default::default()
@@ -900,7 +967,11 @@ mod tests {
                 config_arg: "--config=".into(),
                 deny_arg: None,
                 skip_any_args: Vec::new(),
-                skip_subcommands: Vec::new(),
+                skip_subcommands: vec!["queue".into()],
+                options_before_subcommand: Some(LeadingOptions {
+                    take_one: vec!["-C".into()],
+                    take_many: Vec::new(),
+                }),
                 skip_if_present: Vec::new(),
             }),
             ..Default::default()
@@ -1087,6 +1158,7 @@ mod tests {
             Launch {
                 skip_any_args: vec!["--strict-mcp-config".into()],
                 skip_subcommands: vec!["plugin".into()],
+                options_before_subcommand: None,
                 skip_if_present: vec!["/etc/claude-code/managed-mcp.json".into()],
                 servers: vec![
                     LaunchServer {
@@ -1213,6 +1285,11 @@ mod tests {
             ["work/codex/launch.json", "work/codex/stdio/github.json"]
         );
         let launch: Launch = serde_json::from_str(&files["work/codex/launch.json"]).unwrap();
+        // The shim reads these from the manifest alone.
+        assert_eq!(
+            launch.options_before_subcommand,
+            codex().mcp.unwrap().options_before_subcommand
+        );
         let by_name = |name: &str| launch.servers.iter().find(|s| s.name == name).unwrap();
         assert_eq!(
             by_name("fs").args,
@@ -1472,15 +1549,53 @@ mod tests {
     }
 
     #[test]
-    fn applies_to_skips_subcommands_that_take_no_injected_options() {
+    fn applies_to_reads_a_subcommand_only_as_the_first_argument_by_default() {
         let launch = Launch {
             skip_subcommands: vec!["plugin".into()],
             ..Default::default()
         };
         assert!(!launch.applies_to(&["plugin".into(), "test".into(), ".".into()]));
-        // Only as the first argument: the same word in a prompt is just a word.
+        // Past an option the word is a prompt to Claude, so the agent doesn't step.
         assert!(launch.applies_to(&["-p".into(), "plugin".into()]));
+        assert!(launch.applies_to(&["--debug".into(), "plugin".into()]));
         assert!(launch.applies_to(&[]));
+    }
+
+    #[test]
+    fn applies_to_finds_the_subcommand_past_the_options_ahead_of_it() {
+        let launch = Launch {
+            skip_subcommands: vec!["archive".into(), "queue".into()],
+            options_before_subcommand: Some(LeadingOptions {
+                take_one: ["-C", "--cd", "-p", "--profile", "-m"]
+                    .map(String::from)
+                    .to_vec(),
+                take_many: ["-i", "--image"].map(String::from).to_vec(),
+            }),
+            ..Default::default()
+        };
+        let cases: [(&[&str], bool); 10] = [
+            // The issue's evidence: an option and its value ahead of the subcommand.
+            (&["-C", "~/proj", "queue", "m"], false),
+            (&["--profile", "work", "archive", "id"], false),
+            // An attached value is one word, whatever the option.
+            (&["--cd=~/proj", "queue"], false),
+            (&["-C~/proj", "queue"], false),
+            // An option no entry names takes no value.
+            (&["--search", "queue"], false),
+            // `-i` takes `queue` as a second image, up to the next dashed word.
+            (&["-i", "a.png", "queue"], true),
+            (&["-i", "a.png", "-C", "~/proj", "queue"], false),
+            // After `--` every word is a positional.
+            (&["--", "queue"], true),
+            // The first other word is the subcommand or the prompt, nothing later.
+            (&["-m", "o3", "fix", "archive"], true),
+            // A lone `-` is a word, not an option.
+            (&["-", "queue"], true),
+        ];
+        for (args, injected) in cases {
+            let args: Vec<OsString> = args.iter().map(OsString::from).collect();
+            assert_eq!(launch.applies_to(&args), injected, "{args:?}");
+        }
     }
 
     #[cfg(unix)]

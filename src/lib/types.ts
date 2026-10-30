@@ -40,6 +40,14 @@ export type McpServer =
 /** `envrouter_core::config::McpDialect`: how an agent is handed MCP servers, named after the agent that defined it. */
 export type McpDialect = 'claude' | 'copilot' | 'codex'
 
+/** `envrouter_core::config::LeadingOptions`: the options an agent reads ahead of its subcommand that take a value. An attached value (`--cd=dir`, `-Cdir`) is a word of its own and is never listed; a dashed word listed nowhere takes no value. */
+export interface LeadingOptions {
+  /** Each takes the next word as its value. */
+  takeOne: string[]
+  /** Each takes every next word up to one starting with `-`. */
+  takeMany: string[]
+}
+
 /** `envrouter_core::config::McpInjection`: how the shim hands an agent its servers at launch. */
 export interface McpInjection {
   dialect: McpDialect
@@ -49,8 +57,10 @@ export interface McpInjection {
   denyArg: string | null
   /** Any of these among the user's arguments turns injection off for that run. */
   skipAnyArgs: string[]
-  /** A run whose first argument is one of these subcommands gets no injection: `claude plugin test` refuses any option before `plugin`. */
+  /** A run whose subcommand is one of these gets no injection: `claude plugin test` refuses any option before `plugin`. Where the subcommand sits is `optionsBeforeSubcommand`'s to say. */
   skipSubcommands: string[]
+  /** `null`: the agent reads a subcommand only as its first argument (Claude reads `claude --debug daemon` as a prompt). Set: it reads one past the options ahead of it (`codex -C ~/proj queue`), and these name the options that take a value. Added in config version 7. */
+  optionsBeforeSubcommand: LeadingOptions | null
   /** While any of these files exists, no run gets injection: Claude Code exits at startup when given servers on a machine with an enterprise `managed-mcp.json`. Absolute paths. */
   skipIfPresent: string[]
 }
