@@ -44,7 +44,7 @@
     "vite": "catalog:dev",
     "vitest": "catalog:dev"
   },
-  "packageManager": "pnpm@12.14.0",
+  "packageManager": "pnpm@12.16.1",
   "engines": {
     "node": ">=24"
   }
