@@ -38,3 +38,8 @@ dist-ssr
 
 # Impeccable decision boards: concept comps from design rounds (the chosen direction lives in .impeccable/surfaces)
 /.impeccable/mocks
+
+# The session handoff is local to each session, never committed.
+.claude/context/ai-context/handoff.md
+# Plans are working notes for a session, never committed.
+.claude/plans/*
