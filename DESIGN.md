@@ -385,6 +385,7 @@ The product's mark, "Points", carries the same idea into system chrome: a Finder
 Rejected, by the user: a web-app look, the System Settings sidebar-and-switches default, the flat ruled sheet, an inline profile editor in the grid, a slide-over drill-down three levels deep, and a sidebar app that would hide the map.
 
 **Key Characteristics:**
+
 - Two views, Profiles and Servers, under one segmented switch in the titlebar (⌘1, ⌘2).
 - Three surface layers (window ground, card, raised), each visibly distinct in light and dark; the ground lets macOS vibrancy through, cards stay opaque.
 - Neutrals tinted toward the icon's navy.
@@ -443,6 +444,7 @@ A server whose name, URL host or package names a known brand (Simple Icons, `src
 ### Mark
 
 The app icon's own fixed palette, defined only in the SVGs in `src-tauri/icons/`. The window shows the mark only as those images and never takes a colour from it; the mark never follows the theme, the system accent or a profile.
+
 - **Signal-Box Navy** (`mark-plate-top` to `mark-plate-bottom`, top to bottom): the 824 squircle plate. A radial glow of `mark-plate-glow` at 5% opacity falls from the top centre, and the same colour at 18% draws a 3px rim on the plate's edge.
 - **Finder Blue** (`mark-folder-back`; front `mark-folder-front-top` to `mark-folder-front-bottom`): the folder. The back carries the tab; the front panel has a 5px white 50% highlight along its top edge and a 14px black 10% band where it overlaps the back.
 - **Lit Route** (`mark-lit`): the branch the folder uses, drawn from the folder down through the pivot to the right-hand coin. In the regular cut it carries a pale rail sheen (#cfe8ff at 55%, 8.2 units wide). Its coin fills `mark-lit-coin-top` to `mark-lit-coin-bottom` with a 4px rim of #e6f3ff fading from 90% to nothing at 60% height. It was `profile-sky`'s hex until the profile colour was darkened to hold 3:1 on the card (below); the mark keeps this one, and in the mark it means "the route taken", not a profile.
@@ -527,15 +529,18 @@ Everything under the titlebar starts 8px below its edge, in both views and every
 - **Narrow window:** under 900px the app name hides (kept for screen readers); with three shells, under 760px the Shells control's names hide and its dots stay (the names kept for screen readers and in the popover). When the toolbar is still too tight (a text-spacing override at the minimum window), the Shells control is what gives way: its names truncate before Check Folder… would clip. Editors… is icon-only at every width. Check Folder… and the view switch always keep their text. The window's 680px minimum fits it all.
 
 **Viewports that matter** (instead of 390 / 768 / 1440):
+
 - **900 × 620**, the default window: a three-column grid; a 264px server list.
 - **680 × 460**, the minimum window: a two-column grid; a 232px server list; the docket's actions wrap below the verdict, and the inspector still fits at full height.
 - Check both views at both sizes in light and dark.
 
 **Platform chrome.** One visual world on every system; only the parts the system owns change. They follow `SetupStatus.platform` (the user agent stands in until it loads, so the first frame already uses the right modifier), through `usePlatform()` in `src/lib/platform.ts`. The browser mock shows Linux with `?platform=linux`.
+
 - **macOS:** the 52px band is the title bar: traffic lights, an 86px inset, the app icon and name. The ground is translucent over vibrancy. Shortcuts use ⌘ and read `⌘O`. Secrets are "In Keychain"; folders "Reveal in Finder". Closing the window keeps EnvRouter in the menu bar. The menu bar is the system's default with three changes: Settings… (⌘,) after About in the app menu, which opens the Shells popover since there's no Preferences window; EnvRouter's own Quit, which asks about unsaved edits; and a Help menu with EnvRouter Documentation and Report an Issue, which open without bringing the window forward: a failure brings it back, with a banner titled "Couldn't open Report an Issue" and Try Again.
 - **Linux (and WSL through WSLg):** the system draws a normal title bar that already names the app, so the band is only the toolbar: a 16px inset (the window gutter), no icon or name (the name stays for screen readers). The window is opaque, with the solid ground. Shortcuts use Ctrl and read `Ctrl+O`. The secret store is the "keyring" ("In the keyring", "Saved to the keyring"); folders "Show in Files". Closing the window quits, because a Linux desktop may have no tray to return from. There's no menu bar: Settings… is Ctrl+, and the help links are in the Shells popover. Fonts fall back to the desktop's own (`system-ui`, Cantarell, Ubuntu, Noto; DejaVu or Ubuntu Mono). The accent still follows the system's `AccentColor` where WebKitGTK reports one.
 
 **The mark's grid.** Both icon cuts sit on a 1024 grid with the plate as a continuous-corner squircle 824 wide (100 to 924 on both axes), centred, leaving the standard macOS margin for the system shadow.
+
 - **Regular cut** (`app-icon.svg`): folder 400 wide (x 312 to 712, y 186 to 486), top centre. The track leaves from under it at y 470, runs down to the pivot (r 22) at y 598, and curves out to two coins (r 58) centred at y 790, idle at x 330 and lit at x 694. Track width 34, round caps.
 - **Small cut** (`app-icon-small.svg`): the same composition drawn bolder. Folder 500 wide (x 262 to 762, y 150 to 530), track 72 wide from y 500, pivot r 40 at y 650, coins r 96 at y 800 (x 312 and 712). No account figures and no rail sheen.
 - **Menu bar glyph** (`tray.svg`): an 18 × 18 viewBox (origin 2, 2.15) that hugs the folder, because tray-icon draws the image 18 pt tall whatever its size. Rendered at 36 × 36 px (2x).
@@ -571,6 +576,7 @@ Carve-outs and slips indent 13px under their parent folder with a hairline left 
 ### Buttons
 
 Native push buttons, small and tactile.
+
 - **Sizes:** regular, the form control: gently rounded (6px), 26px tall, 12px horizontal padding, 6px icon gap. Large: a 28px capsule with 16px padding, for a hero's one action (the Welcome's New Profile). Toolbar: a 34px capsule with 14px padding, for the titlebar's controls. Plain buttons are always regular.
 - **Push:** button surface with the push shadow; hover darkens slightly (brightness 0.97), active to 0.9. A push button held open (the Shells control or Editors… while its popover is open) stays at 0.9.
 - **Primary:** system accent with on-accent text at 500 weight and the primary shadow's lit top edge; hover brightens (1.05). Only one per window state (see The One Accent Rule).
@@ -617,6 +623,7 @@ Native push buttons, small and tactile.
 ### Iconography
 
 One vocabulary, so a glance says what a row is:
+
 - **Agents** wear their own marks (Simple Icons, CC0): Claude's starburst and the Copilot face, monochrome in ink colour, at 14px in card footers and the inspector and 12px in the docket's Agent segments. An agent without a mark gets Lucide's bot.
 - **MCP** is the plug: the MCP Servers segment, a card footer's server line, and the Servers empty state's tile once the library has servers.
 - **Servers** wear a ServerMark (below), never the plug, wherever one server is listed.
@@ -639,6 +646,7 @@ The left card of the Servers view. Header: "Servers" (title) with its count in r
 ### Server Editor
 
 The detail card for one server, fading in over 160ms. Header under a hairline: a 36px ServerMark, the name in mono title and its command or URL in mono caption ("Not set up yet" until it has one). Body, in order:
+
 - **Used by:** the profile chips, then a caption naming what they do. First, because it's the part people change most.
 - **Name:** a mono field with a caption on the allowed characters.
 - **Connects with:** a small segmented control (Command, HTTP, SSE) with transport icons.
@@ -656,6 +664,7 @@ How the server answered. A 28px status tile and a body-strong headline and, unde
 ### Catalog and Import
 
 Shown in the server detail card, each with a header (title and a close button that takes focus on open, except in the Catalog, whose search does; Escape closes).
+
 - **Catalog:** the header counts the entries shown. Under it, fixed while the list scrolls: a search field (search icon inset, italic placeholder) that takes focus on open, where Escape clears a search before it closes the view; then two small segmented filters, All · Hosted · Runs locally and All · No sign-in · Sign-in · Secret. The list sits on the sealed `well` (8px, hairline-ruled rows), never a card inside the detail card, sorted by label: a 28px ServerMark, the label at 500, then in caption where it runs (globe Hosted, the vendor runs it at a URL; laptop Runs locally, the agent starts it on this machine, even when it calls the vendor's cloud; a loopback URL counts as local) and what it needs (lock "Needs a secret", sign-in arrow "Sign in with /mcp" or "Signs in" for a vendor's own sign-in, open lock "No sign-in"), "In the library" when the same server is already there, a description in small secondary ink, and a chevron. No match: a well with italic "No servers match" and a plain Clear Filters button. Picking one opens the editor prefilled, its secret fields empty and masked, with the expected format as the placeholder.
 - **Import:** a list on the `well`, like Catalog, of the servers the agents already define, one checkbox row each: the name in mono (with "`name` is taken" when it was renamed, `github-2`), its command or URL, "from" the file, and which values go to the Keychain. Ones already in the library fade their box and tile and read "In the library"; a value the library keeps in the secret store matches whatever the agent's file holds there, so a server imported once isn't offered again under a new name. Pasted servers have no "from" line. Footer on muted card: inline error, Cancel and "Import N Servers" as the accent button. Source files are never changed.
 - **Paste JSON:** a server's config as a README or an agent's file writes it (`mcpServers`, VS Code's `servers`, a bare table, one unnamed server, comments allowed). A mono text area in the field style fills the body, its example in the italic placeholder, with a one-line caption on what it reads. The search-style rule applies: the area takes focus on open. Footer on muted card: inline error, Cancel and Continue as the accent button (⌘Return too). One server opens the editor prefilled, named from its host or package; several open the Import review titled "Import Pasted Servers", with a line naming any it left out. Either way, credential-looking values head for the Keychain and containers get `--init`.
@@ -670,6 +679,7 @@ The shared status mark for the banner (32px) and the check result and Tools sect
 ### Docket
 
 The floating check result along the bottom of Profiles, one complete state at a time, never a log.
+
 - **Idle:** a dashed drop zone (1.5px dashed, tertiary ink at 45%) with the drop icon and a one-line instruction in secondary ink.
 - **Hovering a drag:** accent tint, accent text and a 1.5px accent ring: "Release to check" plus the path.
 - **Result:** raised surface, rises in over 180ms: status tile, headline and folder path, then a note and `label value` pairs in mono, then the verdict's single action, Agent and Shell segmented controls, and Dismiss.
@@ -694,6 +704,7 @@ A raised panel hanging from the Shells control, right edges aligned, that opens 
 ### The Mark
 
 The app icon and menu bar glyph, drawn by hand as SVG in `src-tauri/icons/` and rendered into every raster at its exact pixel size with a transparent background.
+
 - **Regular cut** (`app-icon.svg`): 128 px and up: `128x128.png`, `256x256.png`, `icon.png` (512), and the 128 to 1024 px members of `icon.icns`.
 - **Small cut** (`app-icon-small.svg`): 64 px and under: `32x32.png` and the 16, 32 and 64 px members of `icon.icns`, assembled through an `iconutil` iconset.
 - **Menu bar glyph** (`tray.svg` to `tray.png`, 36 × 36): loaded by `tray.rs` with `icon_as_template(true)`. A solid black folder masked by the fork: the lit branch (stem, curve) and a 1.8-radius coin are cut fully through (mask #000, alpha 0); the idle branch is half cut (mask #808080, alpha 0.5) and has no coin. Branch strokes are 1.6 wide with round caps.
@@ -705,6 +716,7 @@ The app icon and menu bar glyph, drawn by hand as SVG in `src-tauri/icons/` and 
 ### Illustrations
 
 Two drawings in `src/assets/` open the mark up where the window has nothing else to show, imported as images at fixed sizes. Both are drawn on the mark's 1024 grid with its folder, track, pivot and coins copied from `app-icon.svg`, and without its plate, so they sit on a card or the ground in either theme.
+
 - **Welcome** (`welcome.svg`, 136px): the folder, its track forking to two accounts with the right one lit, and a terminal window whose prompt is the lit route's blue: a command run there gets that account.
 - **Empty library** (`servers-library.svg`, 112px): the folder, its track forking three ways (all lit) to three servers drawn as app-icon tiles holding Lucide's plug, terminal and globe in white.
 - **Off the plate:** shadows are navy-tinted and lighter than the icon's (`#101830` at 24% for the drop, 28% for contact), since the icon's black ones are drawn for its dark plate. The near-white pivot takes a 6-unit ring of the lit route so it holds on a white card. The idle branch and coin take the small cut's lighter greys (#56627f; #5e6a87 to #4e5a76) so they read on the dark ground. Tiles and the terminal are a navy gradient (#2a3754 to #141c2e) with a 3-unit #9fb6ff rim at 30%, which separates them from a dark card; the terminal's window dots are a neutral grey, never red, amber and green, which would read as status.
