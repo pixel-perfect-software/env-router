@@ -1,5 +1,4 @@
 ---
-
 version: 1
 slug: "src-tauri-icons"
 primary_target: "src-tauri/icons"

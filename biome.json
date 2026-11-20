@@ -9,7 +9,7 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**/*", "!!**/node_modules", "!!**/dist", "!!target", "!!src-tauri/gen", "!!src-tauri/binaries"]
+    "includes": ["**/*", "!**/*.md", "!!**/node_modules", "!!**/dist", "!!target", "!!src-tauri/gen", "!!src-tauri/binaries"]
   },
   "formatter": {
     "enabled": true,

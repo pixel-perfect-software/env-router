@@ -1,373 +1,372 @@
 ---
-
 version: alpha
 name: EnvRouter Design System
 description: A quiet, precise Mac utility in two places, Profiles and Servers, where each profile is a card holding the folders it owns.
 colors:
-window-ground: "#eceef3"
-card-surface: "#ffffff"
-card-muted: "#f5f6f9"
-raised-surface: "#ffffff"
-field-surface: "#ffffff"
-button-surface: "#ffffff"
-hairline-border: "rgb(16 24 48 / 0.1)"
-rule: "#e3e6ec"
-field-edge: "#7f848e"
-select-edge: "#6c717b"
-track: "rgb(16 24 48 / 0.07)"
-well: "#f1f3f7"
-ink-primary: "#1b1d22"
-ink-secondary: "#5b5f69"
-ink-tertiary: "#959aa5"
-system-accent: "#0a64d8"
-accent-ink: "#0a64d8"
-on-accent: "#ffffff"
-accent-tint: "color-mix(in srgb, #0a64d8 9%, #ffffff)"
-status-ok: "#24a148"
-status-warn: "#c47f00"
-status-problem: "#c9332a"
-window-ground-dark: "#14161b"
-card-surface-dark: "#20232a"
-card-muted-dark: "#1a1d23"
-raised-surface-dark: "#272b33"
-field-surface-dark: "#171a1f"
-button-surface-dark: "#3a3f4a"
-hairline-border-dark: "rgb(255 255 255 / 0.09)"
-rule-dark: "#30343c"
-field-edge-dark: "#808693"
-select-edge-dark: "#9aa0ad"
-track-dark: "rgb(0 0 0 / 0.32)"
-well-dark: "#31353e"
-ink-primary-dark: "#eef0f4"
-ink-secondary-dark: "#a9aeb9"
-ink-tertiary-dark: "#6c717c"
-system-accent-dark: "#2a6fd9"
-accent-ink-dark: "#5aa2ff"
-accent-tint-dark: "color-mix(in srgb, #3d8af7 18%, #20232a)"
-status-ok-dark: "#3ec46d"
-status-warn-dark: "#e5a83a"
-status-problem-dark: "#ff6b61"
-profile-cobalt: "#4f7cf0"
-profile-orchid: "#c45ab8"
-profile-lagoon: "#038eac"
-profile-violet: "#8669ff"
-profile-slate: "#7082b4"
-profile-sky: "#3187cd"
-profile-amethyst: "#a860e1"
-profile-graphite: "#7e838d"
-mark-plate-top: "#202b42"
-mark-plate-bottom: "#0d1320"
-mark-plate-glow: "#9fb6ff"
-mark-folder-back: "#2b7be0"
-mark-folder-front-top: "#72b8fb"
-mark-folder-front-bottom: "#3d8ff0"
-mark-lit: "#4aa3e8"
-mark-lit-coin-top: "#6cbcf6"
-mark-lit-coin-bottom: "#3d93e0"
-mark-idle: "#3a4560"
-mark-idle-small: "#56627f"
-mark-pivot: "#e9eef8"
+  window-ground: "#eceef3"
+  card-surface: "#ffffff"
+  card-muted: "#f5f6f9"
+  raised-surface: "#ffffff"
+  field-surface: "#ffffff"
+  button-surface: "#ffffff"
+  hairline-border: "rgb(16 24 48 / 0.1)"
+  rule: "#e3e6ec"
+  field-edge: "#7f848e"
+  select-edge: "#6c717b"
+  track: "rgb(16 24 48 / 0.07)"
+  well: "#f1f3f7"
+  ink-primary: "#1b1d22"
+  ink-secondary: "#5b5f69"
+  ink-tertiary: "#959aa5"
+  system-accent: "#0a64d8"
+  accent-ink: "#0a64d8"
+  on-accent: "#ffffff"
+  accent-tint: "color-mix(in srgb, #0a64d8 9%, #ffffff)"
+  status-ok: "#24a148"
+  status-warn: "#c47f00"
+  status-problem: "#c9332a"
+  window-ground-dark: "#14161b"
+  card-surface-dark: "#20232a"
+  card-muted-dark: "#1a1d23"
+  raised-surface-dark: "#272b33"
+  field-surface-dark: "#171a1f"
+  button-surface-dark: "#3a3f4a"
+  hairline-border-dark: "rgb(255 255 255 / 0.09)"
+  rule-dark: "#30343c"
+  field-edge-dark: "#808693"
+  select-edge-dark: "#9aa0ad"
+  track-dark: "rgb(0 0 0 / 0.32)"
+  well-dark: "#31353e"
+  ink-primary-dark: "#eef0f4"
+  ink-secondary-dark: "#a9aeb9"
+  ink-tertiary-dark: "#6c717c"
+  system-accent-dark: "#2a6fd9"
+  accent-ink-dark: "#5aa2ff"
+  accent-tint-dark: "color-mix(in srgb, #3d8af7 18%, #20232a)"
+  status-ok-dark: "#3ec46d"
+  status-warn-dark: "#e5a83a"
+  status-problem-dark: "#ff6b61"
+  profile-cobalt: "#4f7cf0"
+  profile-orchid: "#c45ab8"
+  profile-lagoon: "#038eac"
+  profile-violet: "#8669ff"
+  profile-slate: "#7082b4"
+  profile-sky: "#3187cd"
+  profile-amethyst: "#a860e1"
+  profile-graphite: "#7e838d"
+  mark-plate-top: "#202b42"
+  mark-plate-bottom: "#0d1320"
+  mark-plate-glow: "#9fb6ff"
+  mark-folder-back: "#2b7be0"
+  mark-folder-front-top: "#72b8fb"
+  mark-folder-front-bottom: "#3d8ff0"
+  mark-lit: "#4aa3e8"
+  mark-lit-coin-top: "#6cbcf6"
+  mark-lit-coin-bottom: "#3d93e0"
+  mark-idle: "#3a4560"
+  mark-idle-small: "#56627f"
+  mark-pivot: "#e9eef8"
 typography:
-display:
-fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
-fontSize: 22px
-fontWeight: 600
-lineHeight: 28px
-letterSpacing: "-0.01em"
-heading:
-fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
-fontSize: 17px
-fontWeight: 600
-lineHeight: 22px
-title:
-fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
-fontSize: 14px
-fontWeight: 600
-lineHeight: 19px
-body:
-fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
-fontSize: 13px
-fontWeight: 400
-lineHeight: 18px
-body-strong:
-fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
-fontSize: 13px
-fontWeight: 500
-lineHeight: 18px
-app-name:
-fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
-fontSize: 13px
-fontWeight: 700
-lineHeight: 18px
-small:
-fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
-fontSize: 12px
-fontWeight: 400
-lineHeight: 16px
-label:
-fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
-fontSize: 12px
-fontWeight: 500
-lineHeight: 16px
-caption:
-fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
-fontSize: 11px
-fontWeight: 400
-lineHeight: 14px
-mono:
-fontFamily: "ui-monospace, SF Mono, SFMono-Regular, Menlo, monospace"
-fontSize: 12px
-fontWeight: 400
-lineHeight: 16px
-fontFeature: '"calt" 0, "tnum" 1'
+  display:
+    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
+    fontSize: 22px
+    fontWeight: 600
+    lineHeight: 28px
+    letterSpacing: "-0.01em"
+  heading:
+    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
+    fontSize: 17px
+    fontWeight: 600
+    lineHeight: 22px
+  title:
+    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
+    fontSize: 14px
+    fontWeight: 600
+    lineHeight: 19px
+  body:
+    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
+    fontSize: 13px
+    fontWeight: 400
+    lineHeight: 18px
+  body-strong:
+    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
+    fontSize: 13px
+    fontWeight: 500
+    lineHeight: 18px
+  app-name:
+    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
+    fontSize: 13px
+    fontWeight: 700
+    lineHeight: 18px
+  small:
+    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
+    fontSize: 12px
+    fontWeight: 400
+    lineHeight: 16px
+  label:
+    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
+    fontSize: 12px
+    fontWeight: 500
+    lineHeight: 16px
+  caption:
+    fontFamily: "-apple-system, BlinkMacSystemFont, SF Pro Text, Helvetica Neue, sans-serif"
+    fontSize: 11px
+    fontWeight: 400
+    lineHeight: 14px
+  mono:
+    fontFamily: "ui-monospace, SF Mono, SFMono-Regular, Menlo, monospace"
+    fontSize: 12px
+    fontWeight: 400
+    lineHeight: 16px
+    fontFeature: '"calt" 0, "tnum" 1'
 rounded:
-checkbox: 4px
-segment: 5px
-control: 6px
-row: 7px
-tile: 8px
-card: 12px
-pill: 9999px
+  checkbox: 4px
+  segment: 5px
+  control: 6px
+  row: 7px
+  tile: 8px
+  card: 12px
+  pill: 9999px
 spacing:
-xs: 4px
-sm: 8px
-md: 12px
-lg: 16px
-xl: 20px
-2xl: 24px
+  xs: 4px
+  sm: 8px
+  md: 12px
+  lg: 16px
+  xl: 20px
+  2xl: 24px
 components:
-button-push:
-backgroundColor: "{colors.button-surface}"
-textColor: "{colors.ink-primary}"
-typography: "{typography.body}"
-rounded: "{rounded.control}"
-padding: 0 12px
-height: 26px
-button-primary:
-backgroundColor: "{colors.system-accent}"
-textColor: "{colors.on-accent}"
-typography: "{typography.body-strong}"
-rounded: "{rounded.control}"
-padding: 0 12px
-height: 26px
-button-primary-large:
-backgroundColor: "{colors.system-accent}"
-textColor: "{colors.on-accent}"
-typography: "{typography.body-strong}"
-rounded: "{rounded.pill}"
-padding: 0 16px
-height: 28px
-button-toolbar:
-backgroundColor: "{colors.button-surface}"
-textColor: "{colors.ink-primary}"
-typography: "{typography.body}"
-rounded: "{rounded.pill}"
-padding: 0 14px
-height: 34px
-button-toolbar-icon:
-backgroundColor: "{colors.button-surface}"
-textColor: "{colors.ink-primary}"
-rounded: "{rounded.pill}"
-size: 34px
-button-plain:
-textColor: "{colors.system-accent}"
-typography: "{typography.body}"
-rounded: "{rounded.control}"
-padding: 0 8px
-height: 26px
-button-plain-hover:
-backgroundColor: "{colors.accent-tint}"
-icon-button:
-textColor: "{colors.ink-secondary}"
-rounded: "{rounded.control}"
-size: 26px
-text-field:
-backgroundColor: "{colors.field-surface}"
-textColor: "{colors.ink-primary}"
-typography: "{typography.body}"
-rounded: "{rounded.control}"
-padding: 0 8px
-height: 28px
-text-field-mono:
-backgroundColor: "{colors.field-surface}"
-textColor: "{colors.ink-primary}"
-typography: "{typography.mono}"
-rounded: "{rounded.control}"
-padding: 0 8px
-height: 28px
-sealed-well:
-backgroundColor: "{colors.well}"
-textColor: "{colors.ink-secondary}"
-typography: "{typography.small}"
-rounded: "{rounded.control}"
-height: 28px
-checkbox:
-backgroundColor: "{colors.field-surface}"
-rounded: "{rounded.checkbox}"
-size: 14px
-checkbox-on:
-backgroundColor: "{colors.system-accent}"
-textColor: "{colors.on-accent}"
-rounded: "{rounded.checkbox}"
-size: 14px
-switch-on:
-backgroundColor: "{colors.system-accent}"
-rounded: "{rounded.pill}"
-width: 28px
-height: 16px
-segmented-track:
-backgroundColor: "{colors.track}"
-rounded: "{rounded.row}"
-padding: 2px
-segmented-selected:
-backgroundColor: "{colors.button-surface}"
-textColor: "{colors.ink-primary}"
-typography: "{typography.small}"
-fontWeight: 600
-rounded: "{rounded.segment}"
-height: 22px
-padding: 0 10px
-segmented-toolbar-track:
-backgroundColor: "{colors.track}"
-rounded: "{rounded.pill}"
-padding: 2px
-segmented-toolbar-selected:
-backgroundColor: "{colors.button-surface}"
-textColor: "{colors.ink-primary}"
-typography: "{typography.body}"
-fontWeight: 600
-rounded: "{rounded.pill}"
-height: 30px
-padding: 0 14px
-profile-card:
-backgroundColor: "{colors.card-surface}"
-textColor: "{colors.ink-primary}"
-rounded: "{rounded.card}"
-profile-card-targeted:
-backgroundColor: "{colors.accent-tint}"
-everywhere-else-card:
-backgroundColor: "{colors.card-muted}"
-textColor: "{colors.ink-secondary}"
-rounded: "{rounded.card}"
-new-profile-card:
-textColor: "{colors.ink-secondary}"
-rounded: "{rounded.card}"
-status-tile:
-rounded: "{rounded.tile}"
-size: 32px
-status-badge:
-backgroundColor: "{colors.status-ok}"
-textColor: "{colors.on-accent}"
-rounded: "{rounded.pill}"
-size: 16px
-health-line:
-textColor: "{colors.ink-primary}"
-typography: "{typography.small}"
-height: 20px
-health-banner:
-backgroundColor: "{colors.card-surface}"
-rounded: "{rounded.card}"
-padding: 12px
-welcome:
-textColor: "{colors.ink-primary}"
-typography: "{typography.display}"
-width: 440px
-welcome-art:
-size: 136px
-library-art:
-size: 112px
-server-ways-list:
-backgroundColor: "{colors.well}"
-rounded: 10px
-width: 420px
-server-way-tile:
-backgroundColor: "{colors.button-surface}"
-textColor: "{colors.ink-secondary}"
-rounded: "{rounded.row}"
-size: 28px
-docket-result:
-backgroundColor: "{colors.raised-surface}"
-rounded: "{rounded.card}"
-padding: 12px 16px
-docket-idle:
-textColor: "{colors.ink-secondary}"
-rounded: "{rounded.card}"
-padding: 12px 16px
-slip-row:
-backgroundColor: "{colors.accent-tint}"
-typography: "{typography.mono}"
-rounded: "{rounded.control}"
-padding: 4px 6px
-inspector:
-backgroundColor: "{colors.raised-surface}"
-width: min(440px, calc(100% - 40px))
-padding: 20px
-inspector-footer:
-backgroundColor: "{colors.card-muted}"
-padding: 12px 20px
-shells-popover:
-backgroundColor: "{colors.raised-surface}"
-rounded: "{rounded.card}"
-padding: 6px
-width: min(440px, calc(100vw - 32px))
-chip-login-shell:
-backgroundColor: "{colors.accent-tint}"
-textColor: "{colors.system-accent}"
-typography: "{typography.caption}"
-rounded: "{rounded.pill}"
-padding: 1px 6px
-server-list:
-backgroundColor: "{colors.card-surface}"
-rounded: "{rounded.card}"
-width: 232px
-server-row:
-textColor: "{colors.ink-primary}"
-typography: "{typography.mono}"
-rounded: "{rounded.row}"
-padding: 6px 8px
-server-row-selected:
-backgroundColor: "{colors.accent-tint}"
-textColor: "{colors.system-accent}"
-typography: "{typography.mono}"
-fontWeight: 600
-rounded: "{rounded.row}"
-server-detail:
-backgroundColor: "{colors.card-surface}"
-rounded: "{rounded.card}"
-padding: 16px 20px 20px
-server-detail-footer:
-backgroundColor: "{colors.card-muted}"
-padding: 12px 20px
-server-mark:
-size: 28px
-rounded: "{rounded.row}"
-server-mark-monogram:
-backgroundColor: "{colors.track}"
-textColor: "{colors.ink-secondary}"
-size: 28px
-rounded: "{rounded.row}"
-used-by-chip:
-textColor: "{colors.ink-secondary}"
-typography: "{typography.small}"
-rounded: "{rounded.pill}"
-padding: 0 12px 0 10px
-height: 28px
-used-by-chip-on:
-textColor: "{colors.ink-primary}"
-rounded: "{rounded.pill}"
-tools-list:
-backgroundColor: "{colors.well}"
-rounded: "{rounded.tile}"
-padding: 6px 12px
-app-icon:
-backgroundColor: "{colors.mark-plate-top}"
-size: 824px
-app-icon-small:
-backgroundColor: "{colors.mark-plate-top}"
-size: 824px
-menu-bar-glyph:
-height: 18pt
-size: 36px
+  button-push:
+    backgroundColor: "{colors.button-surface}"
+    textColor: "{colors.ink-primary}"
+    typography: "{typography.body}"
+    rounded: "{rounded.control}"
+    padding: 0 12px
+    height: 26px
+  button-primary:
+    backgroundColor: "{colors.system-accent}"
+    textColor: "{colors.on-accent}"
+    typography: "{typography.body-strong}"
+    rounded: "{rounded.control}"
+    padding: 0 12px
+    height: 26px
+  button-primary-large:
+    backgroundColor: "{colors.system-accent}"
+    textColor: "{colors.on-accent}"
+    typography: "{typography.body-strong}"
+    rounded: "{rounded.pill}"
+    padding: 0 16px
+    height: 28px
+  button-toolbar:
+    backgroundColor: "{colors.button-surface}"
+    textColor: "{colors.ink-primary}"
+    typography: "{typography.body}"
+    rounded: "{rounded.pill}"
+    padding: 0 14px
+    height: 34px
+  button-toolbar-icon:
+    backgroundColor: "{colors.button-surface}"
+    textColor: "{colors.ink-primary}"
+    rounded: "{rounded.pill}"
+    size: 34px
+  button-plain:
+    textColor: "{colors.system-accent}"
+    typography: "{typography.body}"
+    rounded: "{rounded.control}"
+    padding: 0 8px
+    height: 26px
+  button-plain-hover:
+    backgroundColor: "{colors.accent-tint}"
+  icon-button:
+    textColor: "{colors.ink-secondary}"
+    rounded: "{rounded.control}"
+    size: 26px
+  text-field:
+    backgroundColor: "{colors.field-surface}"
+    textColor: "{colors.ink-primary}"
+    typography: "{typography.body}"
+    rounded: "{rounded.control}"
+    padding: 0 8px
+    height: 28px
+  text-field-mono:
+    backgroundColor: "{colors.field-surface}"
+    textColor: "{colors.ink-primary}"
+    typography: "{typography.mono}"
+    rounded: "{rounded.control}"
+    padding: 0 8px
+    height: 28px
+  sealed-well:
+    backgroundColor: "{colors.well}"
+    textColor: "{colors.ink-secondary}"
+    typography: "{typography.small}"
+    rounded: "{rounded.control}"
+    height: 28px
+  checkbox:
+    backgroundColor: "{colors.field-surface}"
+    rounded: "{rounded.checkbox}"
+    size: 14px
+  checkbox-on:
+    backgroundColor: "{colors.system-accent}"
+    textColor: "{colors.on-accent}"
+    rounded: "{rounded.checkbox}"
+    size: 14px
+  switch-on:
+    backgroundColor: "{colors.system-accent}"
+    rounded: "{rounded.pill}"
+    width: 28px
+    height: 16px
+  segmented-track:
+    backgroundColor: "{colors.track}"
+    rounded: "{rounded.row}"
+    padding: 2px
+  segmented-selected:
+    backgroundColor: "{colors.button-surface}"
+    textColor: "{colors.ink-primary}"
+    typography: "{typography.small}"
+    fontWeight: 600
+    rounded: "{rounded.segment}"
+    height: 22px
+    padding: 0 10px
+  segmented-toolbar-track:
+    backgroundColor: "{colors.track}"
+    rounded: "{rounded.pill}"
+    padding: 2px
+  segmented-toolbar-selected:
+    backgroundColor: "{colors.button-surface}"
+    textColor: "{colors.ink-primary}"
+    typography: "{typography.body}"
+    fontWeight: 600
+    rounded: "{rounded.pill}"
+    height: 30px
+    padding: 0 14px
+  profile-card:
+    backgroundColor: "{colors.card-surface}"
+    textColor: "{colors.ink-primary}"
+    rounded: "{rounded.card}"
+  profile-card-targeted:
+    backgroundColor: "{colors.accent-tint}"
+  everywhere-else-card:
+    backgroundColor: "{colors.card-muted}"
+    textColor: "{colors.ink-secondary}"
+    rounded: "{rounded.card}"
+  new-profile-card:
+    textColor: "{colors.ink-secondary}"
+    rounded: "{rounded.card}"
+  status-tile:
+    rounded: "{rounded.tile}"
+    size: 32px
+  status-badge:
+    backgroundColor: "{colors.status-ok}"
+    textColor: "{colors.on-accent}"
+    rounded: "{rounded.pill}"
+    size: 16px
+  health-line:
+    textColor: "{colors.ink-primary}"
+    typography: "{typography.small}"
+    height: 20px
+  health-banner:
+    backgroundColor: "{colors.card-surface}"
+    rounded: "{rounded.card}"
+    padding: 12px
+  welcome:
+    textColor: "{colors.ink-primary}"
+    typography: "{typography.display}"
+    width: 440px
+  welcome-art:
+    size: 136px
+  library-art:
+    size: 112px
+  server-ways-list:
+    backgroundColor: "{colors.well}"
+    rounded: 10px
+    width: 420px
+  server-way-tile:
+    backgroundColor: "{colors.button-surface}"
+    textColor: "{colors.ink-secondary}"
+    rounded: "{rounded.row}"
+    size: 28px
+  docket-result:
+    backgroundColor: "{colors.raised-surface}"
+    rounded: "{rounded.card}"
+    padding: 12px 16px
+  docket-idle:
+    textColor: "{colors.ink-secondary}"
+    rounded: "{rounded.card}"
+    padding: 12px 16px
+  slip-row:
+    backgroundColor: "{colors.accent-tint}"
+    typography: "{typography.mono}"
+    rounded: "{rounded.control}"
+    padding: 4px 6px
+  inspector:
+    backgroundColor: "{colors.raised-surface}"
+    width: min(440px, calc(100% - 40px))
+    padding: 20px
+  inspector-footer:
+    backgroundColor: "{colors.card-muted}"
+    padding: 12px 20px
+  shells-popover:
+    backgroundColor: "{colors.raised-surface}"
+    rounded: "{rounded.card}"
+    padding: 6px
+    width: min(440px, calc(100vw - 32px))
+  chip-login-shell:
+    backgroundColor: "{colors.accent-tint}"
+    textColor: "{colors.system-accent}"
+    typography: "{typography.caption}"
+    rounded: "{rounded.pill}"
+    padding: 1px 6px
+  server-list:
+    backgroundColor: "{colors.card-surface}"
+    rounded: "{rounded.card}"
+    width: 232px
+  server-row:
+    textColor: "{colors.ink-primary}"
+    typography: "{typography.mono}"
+    rounded: "{rounded.row}"
+    padding: 6px 8px
+  server-row-selected:
+    backgroundColor: "{colors.accent-tint}"
+    textColor: "{colors.system-accent}"
+    typography: "{typography.mono}"
+    fontWeight: 600
+    rounded: "{rounded.row}"
+  server-detail:
+    backgroundColor: "{colors.card-surface}"
+    rounded: "{rounded.card}"
+    padding: 16px 20px 20px
+  server-detail-footer:
+    backgroundColor: "{colors.card-muted}"
+    padding: 12px 20px
+  server-mark:
+    size: 28px
+    rounded: "{rounded.row}"
+  server-mark-monogram:
+    backgroundColor: "{colors.track}"
+    textColor: "{colors.ink-secondary}"
+    size: 28px
+    rounded: "{rounded.row}"
+  used-by-chip:
+    textColor: "{colors.ink-secondary}"
+    typography: "{typography.small}"
+    rounded: "{rounded.pill}"
+    padding: 0 12px 0 10px
+    height: 28px
+  used-by-chip-on:
+    textColor: "{colors.ink-primary}"
+    rounded: "{rounded.pill}"
+  tools-list:
+    backgroundColor: "{colors.well}"
+    rounded: "{rounded.tile}"
+    padding: 6px 12px
+  app-icon:
+    backgroundColor: "{colors.mark-plate-top}"
+    size: 824px
+  app-icon-small:
+    backgroundColor: "{colors.mark-plate-top}"
+    size: 824px
+  menu-bar-glyph:
+    height: 18pt
+    size: 36px
 ---
 
 # Design System: EnvRouter

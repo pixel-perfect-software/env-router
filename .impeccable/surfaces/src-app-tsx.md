@@ -1,5 +1,4 @@
 ---
-
 version: 1
 slug: "src-app-tsx"
 primary_target: "src/App.tsx"

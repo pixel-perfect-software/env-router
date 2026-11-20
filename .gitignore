@@ -27,6 +27,9 @@ dist-ssr
 # Personal Claude Code settings
 .claude/settings.local.json
 
+# Worktrees the build skills create
+.claude/worktrees/
+
 # Rust build output (Cargo workspace) and the shim staged by src-tauri/build.rs
 /target
 /src-tauri/binaries
