@@ -28,6 +28,10 @@ ignore = [
   # A proc macro, so build time only, from gtk-rs 0.18 (glib-macros, gtk3-macros), the GTK 3
   # bindings under Tauri's Linux webview. Gone when Tauri moves off gtk-rs 0.18.
   { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: build-time only, through gtk-rs 0.18 under Tauri on Linux" },
+  # chrono, unmaintained (chronotope/chrono#1768; jiff and time are the suggested replacements).
+  # Reached only through rmcp, the MCP client behind the server check, which requires it in every
+  # 3.x release (3.11.0 the latest). Gone when rmcp moves off chrono.
+  { id = "RUSTSEC-2026-0543", reason = "chrono: a required dependency of every rmcp 3.x, the server check's MCP client" },
 ]
 
 [licenses]
