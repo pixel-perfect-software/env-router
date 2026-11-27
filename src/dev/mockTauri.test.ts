@@ -2,7 +2,7 @@
 // Each test boots the mock for one URL and calls it through Tauri's own `invoke`.
 
 import { invoke } from '@tauri-apps/api/core'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, resetModules, spyOn, stubGlobal, timers } from 'provino'
 import type {
   ConfigState,
   Editor,
@@ -17,27 +17,26 @@ import type {
 } from '../lib/types'
 
 const boot = async (search: string) => {
-  vi.resetModules()
-  vi.stubGlobal('location', { search })
-  vi.stubGlobal('localStorage', { setItem: () => {}, removeItem: () => {} })
-  vi.stubGlobal('document', { addEventListener: () => {} })
-  vi.stubGlobal('window', globalThis)
+  resetModules()
+  stubGlobal('location', { search })
+  stubGlobal('localStorage', { setItem: () => {}, removeItem: () => {} })
+  stubGlobal('document', { addEventListener: () => {} })
+  stubGlobal('window', globalThis)
   await import('./mockTauri')
   // The mock waits as the real commands take time; fake timers skip that.
   return async <T>(cmd: string, args?: Record<string, unknown>) => {
     const answer = invoke<T>(cmd, args)
     answer.catch(() => {})
-    await vi.runAllTimersAsync()
+    await timers.runAllTimersAsync()
     return answer
   }
 }
 
 beforeEach(() => {
-  vi.useFakeTimers()
+  timers.useFakeTimers()
 })
 afterEach(() => {
-  vi.useRealTimers()
-  vi.unstubAllGlobals()
+  timers.useRealTimers()
 })
 
 describe('server tool lists', () => {
@@ -239,7 +238,7 @@ describe('saving', () => {
 describe('quitting', () => {
   it('quits at once with nothing unsaved, and asks once with unsaved edits, as quit::may_quit does', async () => {
     const call = await boot('?scenario=populated')
-    const log = vi.spyOn(console, 'info').mockImplementation(() => {})
+    const log = spyOn(console, 'info').mockImplementation(() => {})
     await window.__mockQuit()
     expect(log).toHaveBeenCalledWith('quit')
     log.mockClear()

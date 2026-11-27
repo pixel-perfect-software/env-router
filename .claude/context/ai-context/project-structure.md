@@ -82,6 +82,7 @@ env-router/
 ├── .claude/                   # Claude Code settings and context docs
 ├── .vscode/                   # Biome-on-save settings, recommended extensions
 ├── biome.json
+├── provino.config.ts          # the frontend test runner: a node project and a jsdom window project, and `define`, which supplies import.meta.env (see docs/contributing.md)
 ├── rust-toolchain.toml        # pins the Rust toolchain rustup installs
 ├── deny.toml                  # cargo deny: permissive licences only, RustSec advisories
 └── .tool-versions             # asdf: Node and pnpm versions (CI reads Node from it)
@@ -130,7 +131,7 @@ command of the same name and arguments.
 | Frontend        | React 19, TypeScript 7, Vite 8                                                                                                                                                                                                                                                         |
 | Styling         | Tailwind CSS 4 via `@tailwindcss/vite`                                                                                                                                                                                                                                                 |
 | Lint / format   | Biome (TS/JSON/CSS; version in `biome.json`'s `$schema`); `cargo fmt` and clippy (Rust)                                                                                                                                                                                                                                 |
-| Tests           | `cargo test` (Rust, including the built shim and real zsh, bash and fish); Vitest: `src/**/*.test.ts` in node, and `src/**/*.test.tsx` (the window rendered against `mockTauri` with Testing Library) in happy-dom, chosen by a `// @vitest-environment happy-dom` comment on the file |
+| Tests           | `cargo test` (Rust, including the built shim and real zsh, bash and fish); Provino (native, `provino.config.ts`): `src/**/*.test.ts` in node, and `src/**/*.test.tsx` (the window rendered against `mockTauri` with Testing Library) in jsdom, as the config's two projects |
 | Package manager | pnpm and Node (versions pinned in `.tool-versions`; pnpm also in `packageManager`)                                                                                                                                                                                              |
 | Platform        | macOS 11+ on Apple Silicon with Safari 16.4+ (the window's WebKit; `vite.config.ts` targets it); Linux x86_64 and aarch64 (glibc of Ubuntu 22.04 or later), WSL 2 included                                                                                                             |
 
@@ -143,7 +144,7 @@ command of the same name and arguments.
 | Run the CLI              | `cargo run -p envrouter-cli -- <command>` (with `HOME` set to a scratch folder)                                                           |
 | All Rust tests           | `cargo test --workspace`                                                                                                                  |
 | Secrets round trip       | `cargo test -p envrouter-keychain -- --ignored` (uses the machine's real store)                                                           |
-| Frontend tests           | `pnpm test`                                                                                                                               |
+| Frontend tests (Provino) | `pnpm test`                                                                                                                               |
 | Rust lint                | `cargo clippy --workspace --all-targets` (workspace lints in the root `Cargo.toml`)                                                       |
 | Linux and Windows checks | `podman compose -f dev/containers/compose.yaml run --rm <linux-test\|linux-app\|linux-bundle\|windows-helper-build\|windows-helper-wine>` |
 | Licences and advisories  | `cargo deny check` (`deny.toml`)                                                                                                          |

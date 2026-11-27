@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'provino'
 import { ideHooks, toolByCommand, withAgents } from './tools'
 import type { AgentDef, ConfigState } from './types'
 

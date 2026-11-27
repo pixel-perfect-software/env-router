@@ -1,10 +1,10 @@
+import { describe, expect, it, mock } from 'provino'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { siClaude } from 'simple-icons'
-import { describe, expect, it, vi } from 'vitest'
 import { AgentMark } from './icons'
 
 // `toString` is the kind of name a lookup in a plain object would find on its own prototype.
-vi.mock('../lib/tools', () => ({
+mock('../lib/tools', () => ({
   toolByCommand: (command: string) =>
     ({ claude: { mark: 'claude' }, odd: { mark: 'nobody-drew-this' }, proto: { mark: 'toString' }, bare: {} })[command],
 }))

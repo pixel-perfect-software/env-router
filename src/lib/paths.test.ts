@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'provino'
 import { isInside, owningTrigger, splitLeaf, tildify, triggerBase } from './paths'
 
 const HOME = '/Users/sam'

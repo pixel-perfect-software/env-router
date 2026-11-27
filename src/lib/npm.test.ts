@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'provino'
 import { compareVersions, newerRelease, npxPackage, pinnedArg, pinnedVersion, pinTarget } from './npm'
 
 describe('npxPackage', () => {

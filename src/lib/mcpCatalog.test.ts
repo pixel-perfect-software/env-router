@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'provino'
 import { draftOf, plainCredentials, SECRET_NAME } from './mcp'
 import { accessOf, catalog, filterCatalog, isLocal } from './mcpCatalog'
 import { serverLogo } from './serverLogo'

@@ -37,7 +37,7 @@ recommends its extension and turns on format-on-save.
 | Review the UI in a browser, with the backend mocked                                                                                  | `pnpm dev`, then open `http://localhost:1420/?scenario=populated` (add `&platform=linux` for Linux chrome)                                                                   |
 | Run the CLI against a scratch home                                                                                                   | `HOME=/tmp/envrouter-home cargo run -p envrouter-cli -- status`                                                                                                              |
 | Build the release app, with LICENSE and the notices inside (needs cargo-about)                                                       | `pnpm bundle` (a bare `pnpm tauri build` leaves them out)                                                                                                                    |
-| Frontend tests (Vitest): `*.test.ts` run in node, `*.test.tsx` render the window in happy-dom                                        | `pnpm test`                                                                                                                                                                  |
+| Frontend tests (Provino): `*.test.ts` run in node, `*.test.tsx` render the window in jsdom                                           | `pnpm test`                                                                                                                                                                  |
 | Rust tests, including the built shim and real zsh, bash and fish                                                                     | `cargo test --workspace`                                                                                                                                                     |
 | The secrets round trip through this machine's real store                                                                             | `cargo test -p envrouter-keychain -- --ignored`                                                                                                                              |
 | Type check                                                                                                                           | `pnpm check-types`                                                                                                                                                           |
@@ -149,13 +149,17 @@ shell startup files. Two ways to avoid that:
   real backend does.
 
   The window's component tests (`src/App.test.tsx`) render `<App />` against this same mock, so
-  they never reach your home folder either. A `*.test.tsx` file starts with
-  `// @vitest-environment happy-dom` (every other test stays in node), and each test boots the
-  mock for one URL: `vi.resetModules()`, `history.replaceState(null, '', '?scenario=populated')`,
-  `await import('./dev/mockTauri')`, then `render(<App />)`. happy-dom loads no CSS, so a test
+  they never reach your home folder either. `provino.config.ts` runs every `*.test.tsx` file in its
+  `window` project, in jsdom (every other test stays in node), and its `define` supplies the
+  `import.meta.env` that Vite fills in when it builds. Each test boots the mock for one URL:
+  `resetModules()`, `history.replaceState(null, '', '?scenario=populated')`,
+  `await import('./dev/mockTauri')`, then `render(<App />)`. jsdom loads no CSS, so a test
   reads what a rule means on screen from the DOM (`inert`, the accent fill's `bg-accent` class),
-  and it has no `window.confirm`, which the mock uses for the native sheets: answer them with
-  `vi.stubGlobal('confirm', …)`.
+  and its `window.confirm` only says it isn't implemented, while the mock uses it for the native
+  sheets: answer them with `stubGlobal('confirm', …)` from `provino`, which puts the global back
+  when the test ends. Provino's jsdom brings the stand-ins the window needs (`matchMedia`,
+  `scrollIntoView`, `ResizeObserver`, `animate`, a client rect for a displayed element) and
+  answers an image import with its URL.
 - **A scratch home folder**, for the real app. Build it, then launch the binary with `HOME`
   pointing somewhere disposable:
 

@@ -1,20 +1,18 @@
-// @vitest-environment happy-dom
-
 // The whole window against the dev mock, which answers every command as the real backend does. Each test boots
-// the mock for one URL, renders App and drives it as a user would. happy-dom loads no CSS, so what a rule means
+// the mock for one URL, renders App and drives it as a user would. jsdom loads no CSS, so what a rule means
 // on screen is read from the DOM: `inert` and the accent fill's `bg-accent` class.
 
 import { emit } from '@tauri-apps/api/event'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, fn, it, resetModules, spyOn, stubGlobal } from 'provino'
 import App from './App'
 import { hasUnsaved } from './lib/unsaved'
 
 type User = ReturnType<typeof userEvent.setup>
 
 const open = async (search: string) => {
-  vi.resetModules()
+  resetModules()
   history.replaceState(null, '', search)
   await import('./dev/mockTauri')
   render(<App />)
@@ -23,7 +21,6 @@ const open = async (search: string) => {
 
 afterEach(() => {
   cleanup()
-  vi.unstubAllGlobals()
   // The window remembers its view there; a test mustn't open on the last one's.
   localStorage.clear()
 })
@@ -131,12 +128,12 @@ describe('an unreadable config.json', () => {
   })
 
   it('backs it up and starts over only once the user agrees, as a push button beside the one accent', async () => {
-    // The mock stands the browser's confirm in for the native sheet; happy-dom has none, so this is the user's answer.
-    const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true)
-    vi.stubGlobal('confirm', confirm)
+    // The mock stands the browser's confirm in for the native sheet; jsdom's only says it isn't implemented, so this is the user's answer.
+    const confirm = fn().mockReturnValueOnce(false).mockReturnValueOnce(true)
+    stubGlobal('confirm', confirm)
     const user = await open('?scenario=broken')
     const { __TAURI_INTERNALS__: internals } = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string) => Promise<unknown> } }
-    const invoked = vi.spyOn(internals, 'invoke')
+    const invoked = spyOn(internals, 'invoke')
     const startOver = await screen.findByRole('button', { name: 'Back Up and Start Over…' })
     expect(reachableAccents()).toEqual([screen.getByRole('button', { name: 'Open config.json' })])
 
@@ -149,9 +146,7 @@ describe('an unreadable config.json', () => {
     await user.click(startOver)
     await screen.findByText('The folder decides')
     expect(invoked.mock.calls.map(([command]) => command)).toContain('reset_unreadable_config')
-    await vi.waitFor(() =>
-      expect(confirm).toHaveBeenLastCalledWith(expect.stringContaining('Your old config.json is at ~/.envrouter/config.json.bak.')),
-    )
+    await waitFor(() => expect(confirm).toHaveBeenLastCalledWith(expect.stringContaining('Your old config.json is at ~/.envrouter/config.json.bak.')))
   })
 })
 
@@ -160,7 +155,7 @@ const spyOnInvoke = () => {
   const { __TAURI_INTERNALS__: internals } = window as unknown as {
     __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> }
   }
-  return vi.spyOn(internals, 'invoke')
+  return spyOn(internals, 'invoke')
 }
 
 describe("a folder row's actions button", () => {
@@ -196,7 +191,7 @@ describe("a folder row's menu as a native menu", () => {
       await user.click(await screen.findByRole('button', { name: 'Actions for ~/dev/work' }))
       await screen.findByRole('menu')
       const [popup] = popups(invoked) as { at: unknown }[]
-      // As IPC serializes it; happy-dom lays nothing out, so the button sits at the origin.
+      // As IPC serializes it; jsdom lays nothing out, so the button sits at the origin.
       expect(JSON.parse(JSON.stringify(popup.at ?? null))).toEqual(expected)
       cleanup()
     }
@@ -259,7 +254,7 @@ describe('native menus asked for in quick succession', () => {
     let slow = true
     let building = (): void => {}
     const started = new Promise<void>((resolve) => (building = resolve))
-    const invoked = vi.spyOn(internals, 'invoke').mockImplementation(async (command, ...rest) => {
+    const invoked = spyOn(internals, 'invoke').mockImplementation(async (command, ...rest) => {
       if (command === 'plugin:menu|new' && slow) {
         slow = false
         building()
@@ -302,8 +297,8 @@ describe('MCP folder', () => {
       __TAURI_INTERNALS__: { invoke: (command: string, ...rest: unknown[]) => Promise<unknown> }
     }
     const real = internals.invoke
-    const revealed = vi.fn()
-    vi.spyOn(internals, 'invoke').mockImplementation((command, ...rest) => {
+    const revealed = fn()
+    spyOn(internals, 'invoke').mockImplementation((command, ...rest) => {
       if (command !== 'reveal_place') return real.call(internals, command, ...rest)
       revealed()
       return new Promise(() => {})
@@ -505,13 +500,13 @@ describe('the server list', () => {
     await user.keyboard('{Escape}')
     await user.pointer({ keys: '[MouseRight]', target: row('github') })
     await screen.findByRole('menu')
-    // happy-dom lays nothing out, so the row sits at the origin.
+    // jsdom lays nothing out, so the row sits at the origin.
     expect(popped()).toEqual([{ Logical: { x: 0, y: 0 } }, null])
   })
 
   it('asks before it deletes, saying who stops loading the server, and deletes only once the user agrees', async () => {
-    const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true)
-    vi.stubGlobal('confirm', confirm)
+    const confirm = fn().mockReturnValueOnce(false).mockReturnValueOnce(true)
+    stubGlobal('confirm', confirm)
     const user = await openServers()
     await user.click((await menuOf(user, 'playwright')).getByRole('menuitem', { name: 'Delete…' }))
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Delete the MCP server “playwright”?'))
@@ -523,7 +518,7 @@ describe('the server list', () => {
   })
 
   it("goes to the neighbour the filter shows when the open server is one it hides, not to the filter's first row", async () => {
-    vi.stubGlobal('confirm', () => true)
+    stubGlobal('confirm', () => true)
     const user = await openServers()
     await user.click(row('playwright'))
     await user.type(filter(), '@modelcontext')
@@ -546,7 +541,7 @@ describe('the server list', () => {
   })
 
   it('leaves Delete… usable when the user declines it in the editor', async () => {
-    vi.stubGlobal('confirm', () => false)
+    stubGlobal('confirm', () => false)
     const user = await openServers()
     await user.click(row('sentry'))
     const del = within(screen.getByRole('form', { name: 'Edit sentry' })).getByRole('button', { name: /^Delete/ })
@@ -556,8 +551,8 @@ describe('the server list', () => {
   })
 
   it('forgets the edits of a server deleted from the list, so the next one opens clean', async () => {
-    const confirm = vi.fn(() => true)
-    vi.stubGlobal('confirm', confirm)
+    const confirm = fn(() => true)
+    stubGlobal('confirm', confirm)
     const user = await openServers()
     await user.click(row('playwright'))
     await user.type(within(screen.getByRole('form', { name: 'Edit playwright' })).getByLabelText('Command'), 'x')
@@ -579,8 +574,8 @@ describe('the server list', () => {
     }
 
     it('asks before Duplicate leaves them, and keeps them unless the user agrees', async () => {
-      const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true)
-      vi.stubGlobal('confirm', confirm)
+      const confirm = fn().mockReturnValueOnce(false).mockReturnValueOnce(true)
+      stubGlobal('confirm', confirm)
       const user = await openServers()
       await editPlaywright(user)
 
@@ -594,8 +589,8 @@ describe('the server list', () => {
     })
 
     it('asks before Check Server on another server leaves them', async () => {
-      const confirm = vi.fn().mockReturnValue(false)
-      vi.stubGlobal('confirm', confirm)
+      const confirm = fn().mockReturnValue(false)
+      stubGlobal('confirm', confirm)
       const user = await openServers()
       await editPlaywright(user)
       const invoked = spyOnInvoke()
@@ -607,7 +602,7 @@ describe('the server list', () => {
     })
 
     it('are kept when another server is deleted', async () => {
-      vi.stubGlobal('confirm', () => true)
+      stubGlobal('confirm', () => true)
       const user = await openServers()
       await editPlaywright(user)
 
@@ -658,8 +653,8 @@ describe('a reveal from the menu bar that failed', () => {
   })
 
   it('is told natively when the banner has no room for it: behind the inspector, or beside an unreadable config.json for another place', async () => {
-    const confirm = vi.fn().mockReturnValue(true)
-    vi.stubGlobal('confirm', confirm)
+    const confirm = fn().mockReturnValue(true)
+    stubGlobal('confirm', confirm)
     const user = await open('?scenario=mcp&fail=reveal')
     await user.click(await screen.findByRole('button', { name: 'Edit Personal' }))
     await window.__mockMenuReveal({ kind: 'root' })
@@ -688,7 +683,7 @@ describe('a reveal from the menu bar that failed', () => {
     }
     const real = internals.invoke
     let answer = () => {}
-    vi.spyOn(internals, 'invoke').mockImplementation((command, ...rest) =>
+    spyOn(internals, 'invoke').mockImplementation((command, ...rest) =>
       command === 'reveal_place' ? new Promise((resolve) => (answer = () => resolve(null))) : real.call(internals, command, ...rest),
     )
     await user.click(tryAgain)
@@ -786,9 +781,9 @@ describe('unsaved edits', () => {
   })
 
   it('make closing the inspector ask first, and are dropped only once the user agrees', async () => {
-    // The mock stands the browser's confirm in for the native sheet; happy-dom has none, so this is the user's answer.
-    const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true)
-    vi.stubGlobal('confirm', confirm)
+    // The mock stands the browser's confirm in for the native sheet; jsdom's only says it isn't implemented, so this is the user's answer.
+    const confirm = fn().mockReturnValueOnce(false).mockReturnValueOnce(true)
+    stubGlobal('confirm', confirm)
     const user = await open('?scenario=populated')
     await renameProfile(user, 'Personal')
 
@@ -828,7 +823,7 @@ describe('focus', () => {
   })
 
   it('goes to New Profile when the inspector deletes its profile', async () => {
-    vi.stubGlobal('confirm', () => true)
+    stubGlobal('confirm', () => true)
     const user = await open('?scenario=populated')
     await user.click(await screen.findByRole('button', { name: 'Edit Work' }))
     await user.click(inspector().getByRole('button', { name: /^Delete/ }))
@@ -854,7 +849,7 @@ describe('focus', () => {
   })
 
   it('goes to the next server when one is deleted', async () => {
-    vi.stubGlobal('confirm', () => true)
+    stubGlobal('confirm', () => true)
     const user = await open('?scenario=mcp')
     await user.click(await screen.findByRole('button', { name: 'MCP Servers' }))
     await user.click(screen.getByRole('button', { name: /^playwright/ }))
@@ -883,7 +878,7 @@ describe('focus', () => {
     await user.click(await screen.findByRole('button', { name: /Shells/ }))
     const toggle = screen.getByRole('switch', { name: 'EnvRouter in bash' })
     await user.click(toggle)
-    // A browser moves focus off a button that turns `disabled`; happy-dom doesn't, so this reads the cause.
+    // A browser moves focus off a button that turns `disabled`; jsdom doesn't, so this reads the cause.
     expect(toggle.getAttribute('aria-disabled')).toBe('true')
     expect(toggle.hasAttribute('disabled')).toBe(false)
     await waitFor(() => expect(toggle.hasAttribute('aria-disabled')).toBe(false))
@@ -941,14 +936,14 @@ describe('Uninstall EnvRouter…', () => {
   }
 
   it('is a push button, and nothing changes unless the user agrees', async () => {
-    const confirm = vi.fn().mockReturnValue(false)
-    vi.stubGlobal('confirm', confirm)
+    const confirm = fn().mockReturnValue(false)
+    stubGlobal('confirm', confirm)
     const user = await open('?scenario=populated')
     await user.click(await screen.findByRole('button', { name: /Shells/ }))
     const button = screen.getByRole('button', { name: 'Uninstall EnvRouter…' })
     expect(isAccent(button)).toBe(false)
     const { __TAURI_INTERNALS__: internals } = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string) => Promise<unknown> } }
-    const invoked = vi.spyOn(internals, 'invoke')
+    const invoked = spyOn(internals, 'invoke')
 
     await user.click(button)
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Uninstall EnvRouter?'))
@@ -960,15 +955,15 @@ describe('Uninstall EnvRouter…', () => {
   })
 
   it('names what is left to remove, then quits', async () => {
-    const confirm = vi.fn().mockReturnValue(true)
-    vi.stubGlobal('confirm', confirm)
-    const log = vi.spyOn(console, 'info').mockImplementation(() => {})
+    const confirm = fn().mockReturnValue(true)
+    stubGlobal('confirm', confirm)
+    const log = spyOn(console, 'info').mockImplementation(() => {})
     const user = await open('?scenario=populated')
     const { __TAURI_INTERNALS__: internals } = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string) => Promise<unknown> } }
-    const invoked = vi.spyOn(internals, 'invoke')
+    const invoked = spyOn(internals, 'invoke')
     await uninstallFromShells(user)
 
-    await vi.waitFor(() => expect(log).toHaveBeenCalledWith('quit'))
+    await waitFor(() => expect(log).toHaveBeenCalledWith('quit'))
     // The note giving focus back to the window must not read the folder that was just deleted.
     invoked.mockClear()
     window.dispatchEvent(new Event('focus'))
@@ -981,9 +976,9 @@ describe('Uninstall EnvRouter…', () => {
   })
 
   it('stays open when it stops, with the reason and Try Again, and finishes when asked again', async () => {
-    const confirm = vi.fn().mockReturnValue(true)
-    vi.stubGlobal('confirm', confirm)
-    const log = vi.spyOn(console, 'info').mockImplementation(() => {})
+    const confirm = fn().mockReturnValue(true)
+    stubGlobal('confirm', confirm)
+    const log = spyOn(console, 'info').mockImplementation(() => {})
     const user = await open('?scenario=populated&fail=uninstall')
     await uninstallFromShells(user)
 
@@ -994,11 +989,11 @@ describe('Uninstall EnvRouter…', () => {
 
     window.__mockFix()
     await user.click(screen.getByRole('button', { name: 'Try Again' }))
-    await vi.waitFor(() => expect(log).toHaveBeenCalledWith('quit'))
+    await waitFor(() => expect(log).toHaveBeenCalledWith('quit'))
   })
 
   it('titles the stop as the uninstall, with a line and mono values for each problem', async () => {
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    stubGlobal('confirm', fn().mockReturnValue(true))
     const user = await open('?scenario=populated&fail=uninstall')
     await uninstallFromShells(user)
 
@@ -1014,19 +1009,17 @@ describe('Uninstall EnvRouter…', () => {
   })
 
   it('says it is uninstalled when only quitting fails, and Try Again quits instead of uninstalling again', async () => {
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
-    const log = vi.spyOn(console, 'info').mockImplementation(() => {})
+    stubGlobal('confirm', fn().mockReturnValue(true))
+    const log = spyOn(console, 'info').mockImplementation(() => {})
     const user = await open('?scenario=populated')
     const { __TAURI_INTERNALS__: internals } = window as unknown as {
       __TAURI_INTERNALS__: { invoke: (command: string, ...rest: unknown[]) => Promise<unknown> }
     }
     const real = internals.invoke
     let stuck = true
-    const invoked = vi
-      .spyOn(internals, 'invoke')
-      .mockImplementation((command, ...rest) =>
-        command === 'quit_app' && stuck ? Promise.reject('the window is stuck') : real.call(internals, command, ...rest),
-      )
+    const invoked = spyOn(internals, 'invoke').mockImplementation((command, ...rest) =>
+      command === 'quit_app' && stuck ? Promise.reject('the window is stuck') : real.call(internals, command, ...rest),
+    )
     await uninstallFromShells(user)
 
     await screen.findByText('EnvRouter is uninstalled')
@@ -1037,19 +1030,19 @@ describe('Uninstall EnvRouter…', () => {
     stuck = false
     invoked.mockClear()
     await user.click(screen.getByRole('button', { name: 'Try Again' }))
-    await vi.waitFor(() => expect(log).toHaveBeenCalledWith('quit'))
+    await waitFor(() => expect(log).toHaveBeenCalledWith('quit'))
     expect(invoked.mock.calls.map(([command]) => command)).toEqual(['quit_app'])
   })
 
   it('keeps its banner when a reveal from the menu bar fails meanwhile, with the uninstall as its reason', async () => {
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
-    vi.spyOn(console, 'info').mockImplementation(() => {})
+    stubGlobal('confirm', fn().mockReturnValue(true))
+    spyOn(console, 'info').mockImplementation(() => {})
     const user = await open('?scenario=populated')
     const { __TAURI_INTERNALS__: internals } = window as unknown as {
       __TAURI_INTERNALS__: { invoke: (command: string, ...rest: unknown[]) => Promise<unknown> }
     }
     const real = internals.invoke
-    vi.spyOn(internals, 'invoke').mockImplementation((command, ...rest) =>
+    spyOn(internals, 'invoke').mockImplementation((command, ...rest) =>
       command === 'quit_app' ? Promise.reject('the window is stuck') : real.call(internals, command, ...rest),
     )
     await uninstallFromShells(user)
@@ -1063,7 +1056,7 @@ describe('Uninstall EnvRouter…', () => {
   })
 
   it('moves focus to Try Again when it stops, since the button that held it is gone', async () => {
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    stubGlobal('confirm', fn().mockReturnValue(true))
     const user = await open('?scenario=populated&fail=uninstall')
     await uninstallFromShells(user)
 
@@ -1072,7 +1065,7 @@ describe('Uninstall EnvRouter…', () => {
   })
 
   it('holds one state while it runs, with no accent and no way to turn a shell on, and keeps the stop up while it runs again', async () => {
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    stubGlobal('confirm', fn().mockReturnValue(true))
     const user = await open('?scenario=populated&fail=uninstall')
     await uninstallFromShells(user)
 
@@ -1264,7 +1257,7 @@ describe("the menu bar's Check Last Folder", () => {
 
 describe("the menu bar's requests", () => {
   it('reach a window that was not listening yet, when it starts', async () => {
-    vi.resetModules()
+    resetModules()
     history.replaceState(null, '', '?scenario=populated')
     await import('./dev/mockTauri')
     // Left before the window exists, as on the first show after a launch with it hidden: the event goes nowhere.
@@ -1289,8 +1282,8 @@ describe("the menu bar's requests", () => {
 
 describe("the menu bar's Check Last Folder, when the window can't do it", () => {
   it('says why instead of doing nothing, since the menu bar has brought the window forward', async () => {
-    const confirm = vi.fn().mockReturnValue(true)
-    vi.stubGlobal('confirm', confirm)
+    const confirm = fn().mockReturnValue(true)
+    stubGlobal('confirm', confirm)
     const user = await open('?scenario=populated')
     await user.click(await screen.findByRole('button', { name: 'Edit Personal' }))
     await window.__mockMenuRequest({ kind: 'checkLastFolder', folder: '/Users/sam/dev/work' })
@@ -1354,11 +1347,11 @@ describe('arrow keys in a list', () => {
     fireEvent.keyDown(document.activeElement as Element, { key: 'Home' })
     expect(document.activeElement).toBe(personal)
 
-    // happy-dom lays nothing out: three columns, as a 900px window has, with each card's name 40px below its card's top (the header) and
+    // jsdom lays nothing out: three columns, as a 900px window has, with each card's name 40px below its card's top (the header) and
     // New Profile, which is its own card, at the top. Measuring the names' tops would take Down from Personal to New Profile, which is
     // nearer the top of the second row than Scratch's name is.
     const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-card]'))
-    const place = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const place = spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       const card = this.closest<HTMLElement>('[data-card]')
       const at = card ? cards.indexOf(card) : -1
       return { left: (at % 3) * 300, top: Math.floor(at / 3) * 200 + (card && card !== this ? 40 : 0) } as DOMRect
@@ -1449,8 +1442,8 @@ describe('⌘N', () => {
   })
 
   it('and Add by Hand leave a blank server that is already open as it is, with its draft, and focus its name', async () => {
-    const confirm = vi.fn().mockReturnValue(false)
-    vi.stubGlobal('confirm', confirm)
+    const confirm = fn().mockReturnValue(false)
+    stubGlobal('confirm', confirm)
     const user = await open('?scenario=mcp&view=servers')
     await user.click(await screen.findByRole('button', { name: 'Add by Hand' }))
     const name = within(screen.getByRole('form', { name: 'New MCP server' })).getByLabelText('Name') as HTMLInputElement
@@ -1600,8 +1593,8 @@ describe('the import review', () => {
 
 describe('Check Folder… when the window cannot do it', () => {
   it('says why for ⌘O and the menu bar while the profile editor is open, as Check Last Folder does', async () => {
-    const confirm = vi.fn().mockReturnValue(true)
-    vi.stubGlobal('confirm', confirm)
+    const confirm = fn().mockReturnValue(true)
+    stubGlobal('confirm', confirm)
     const user = await open('?scenario=populated')
     await user.click(await screen.findByRole('button', { name: 'Edit Personal' }))
     fireEvent.keyDown(window, { key: 'o', metaKey: true })
@@ -1612,8 +1605,8 @@ describe('Check Folder… when the window cannot do it', () => {
   })
 
   it('says why when config.json cannot be read, since there is nothing to check a folder against', async () => {
-    const confirm = vi.fn().mockReturnValue(true)
-    vi.stubGlobal('confirm', confirm)
+    const confirm = fn().mockReturnValue(true)
+    stubGlobal('confirm', confirm)
     await open('?scenario=broken')
     await screen.findByRole('button', { name: 'Open config.json' })
     fireEvent.keyDown(window, { key: 'o', metaKey: true })
@@ -1637,7 +1630,7 @@ describe('a profile card’s context menu', () => {
     const popped = invoked.mock.calls
       .filter(([command]) => command === 'plugin:menu|popup')
       .map(([, args]) => JSON.parse(JSON.stringify((args as { at?: unknown }).at ?? null)))
-    // happy-dom lays nothing out, so the control sits at the origin.
+    // jsdom lays nothing out, so the control sits at the origin.
     expect(popped).toEqual([{ Logical: { x: 0, y: 0 } }, null])
   })
 
@@ -1706,7 +1699,7 @@ describe('a profile saved from a verdict', () => {
   })
 
   it('asks again after the profile it opened is deleted, too', async () => {
-    vi.stubGlobal('confirm', () => true)
+    stubGlobal('confirm', () => true)
     const user = await open('?scenario=unrouted')
     await screen.findByText(/Routing is on in zsh/)
     await window.__mockDrop('/Users/sam/dev/api', 400, 300)
