@@ -253,10 +253,7 @@ fn save(
     // failure from here on never leaves config.json naming a secret that's gone. A secret
     // Start Over's backup names stays too: restoring the backup would otherwise bring its
     // servers back with no secrets.
-    let before = previous
-        .as_ref()
-        .map(config::secret_ids)
-        .unwrap_or_default();
+    let before = previous.as_ref().map_or_default(config::secret_ids);
     let backed_up = config::backed_up_secret_ids(&root);
     let kept: BTreeSet<&str> = referenced
         .iter()

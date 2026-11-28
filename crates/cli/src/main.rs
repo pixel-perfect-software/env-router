@@ -648,8 +648,7 @@ fn set_secret(cli: &Cli, home: &Path, id: &str) -> Result<ExitCode> {
     }
     let servers = config::secret_users(&config)
         .remove(id)
-        .map(|servers| servers.into_iter().map(str::to_string).collect())
-        .unwrap_or_default();
+        .map_or_default(|servers| servers.into_iter().map(str::to_string).collect());
     let stored = SecretUse {
         id: id.to_string(),
         servers,

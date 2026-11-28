@@ -20,9 +20,7 @@ pub const NOT_FOUND: i32 = 3;
 /// empty name would look up another item than the one a terminal saved.
 fn distro(from_env: Option<OsString>, home: &Path) -> Result<String> {
     let note = paths::wsl_distro(home);
-    let noted = std::fs::read_to_string(&note)
-        .map(|text| text.trim().to_owned())
-        .unwrap_or_default();
+    let noted = std::fs::read_to_string(&note).map_or_default(|text| text.trim().to_owned());
     if let Some(name) = from_env
         .map(|name| name.to_string_lossy().into_owned())
         .filter(|name| !name.is_empty())
