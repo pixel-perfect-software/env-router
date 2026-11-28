@@ -1,14 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, stubGlobal } from 'provino'
 import { guessPlatform, isShortcut, platformInfo, shortcutLabel } from './platform'
-
-afterEach(() => {
-  vi.unstubAllGlobals()
-})
 
 describe('guessPlatform', () => {
   it('reads the platform from the user agent, until the backend has answered', () => {
     const guess = (userAgent: string) => {
-      vi.stubGlobal('navigator', { userAgent })
+      stubGlobal('navigator', { userAgent })
       return guessPlatform()
     }
     expect(guess('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15')).toBe('macos')

@@ -53,17 +53,18 @@ env-router/
 │   ├── icons/                 # app icon and menu bar glyph: SVG sources plus the PNGs and icon.icns rendered from them
 │   └── binaries/, gen/        # generated, gitignored
 ├── src/                       # React frontend (Vite)
-│   ├── App.tsx                # composition: view, inspector and popover state, the handlers that tie the hooks below to the components; App.test.tsx drives it against the mock (the one accent button, unsaved edits, focus)
+│   ├── App.tsx                # composition: view, inspector and popover state, the handlers that tie the hooks below to the components; App.test.tsx drives it against the mock (the one accent button, banners, unsaved edits, focus, the menu bar's requests)
 │   ├── index.css              # design tokens (light/dark, system accent), hairline utilities
 │   ├── assets/                # illustrations drawn from the mark's SVG: the first-run welcome and the empty server library
 │   ├── components/            # Titlebar, Health (banner and setup steps), Popovers (Shells and Editors), Frame (slots),
 │   │                          # ProfileInspector (slide-in editor), Servers (the MCP Servers view: list beside editor), ServerEditor (with ServerFields and ServerVersion), ServerSources (Catalog and Import), ServerMark (server logos), Welcome (first run),
-│   │                          # Docket (check result), ui (controls, status), icons (Lucide and agent marks)
+│   │                          # Docket (check result), ui (controls, status), icons (Lucide and agent marks); each *.test.tsx beside Frame, Docket, Servers, ServerTools, ServerSources, ServerFields, ProfileInspector and Popovers drives the window
+│   │                          # through that part against the mock, and ../dev/windowTest.tsx holds what they share
 │   ├── lib/                   # api.ts (typed commands), types.ts (wire types), agents.json (the agent registry: variables, MCP descriptors, editor hooks, logo marks; also read by crates/core/src/agents.rs), tools.ts (KNOWN_TOOLS from it, withAgents), platform.ts (usePlatform: shortcuts, store name),
 │   │                          # mcp.ts (server drafts, rename/remove, secret locking), mcpCatalog.ts (well-known servers), serverLogo.ts (logo matching),
 │   │                          # verdict.ts (check wording, tested in verdict.test.ts), health.ts (the health line and the one-accent rule, tested in health.test.ts), paths.ts, text.ts (plural, listOf), confirm.ts,
 │   │                          # lastView.ts (the view the window opens on), hooks the window composes: useConfigStore.ts (load, save and its merge loop), useFolderCheck.ts, useShortcuts.ts, useFolderDrop.ts
-│   └── dev/mockTauri.ts       # dev-only browser mock (?scenario=, ?platform=, ?check= and more; see docs/contributing.md); never bundled; mockTauri.test.ts pins it, and App.test.tsx boots it; miniToml.ts is its TOML reader for Paste
+│   └── dev/mockTauri.ts       # dev-only browser mock (?scenario=, ?platform=, ?check= and more; see docs/contributing.md); never bundled; mockTauri.test.ts pins it, and the window tests boot it (`&pace=real` keeps the backend's pace in a test run, which otherwise cuts it to 1/100); windowTest.tsx is their shared helper; miniToml.ts is its TOML reader for Paste
 ├── packaging/homebrew/        # cask and CLI formula templates; render.sh fills them from a release's SHA256SUMS
 ├── packaging/notices/         # `pnpm notices`: render.mjs and cargo-about's about.toml write THIRD-PARTY-NOTICES.txt for releases
 ├── dev/containers/            # compose.yaml (project envrouter-dev): Linux tests, app build, bundles, Windows helper under Wine
@@ -82,6 +83,7 @@ env-router/
 ├── .claude/                   # Claude Code settings and context docs
 ├── .vscode/                   # Biome-on-save settings, recommended extensions
 ├── biome.json
+├── provino.config.ts          # the frontend test runner: a node project and a jsdom window project, and `define`, which supplies import.meta.env (see docs/contributing.md)
 ├── rust-toolchain.toml        # pins the Rust toolchain rustup installs
 ├── deny.toml                  # cargo deny: permissive licences only, RustSec advisories
 └── .tool-versions             # asdf: Node and pnpm versions (CI reads Node from it)
@@ -130,7 +132,7 @@ command of the same name and arguments.
 | Frontend        | React 19, TypeScript 7, Vite 8                                                                                                                                                                                                                                                         |
 | Styling         | Tailwind CSS 4 via `@tailwindcss/vite`                                                                                                                                                                                                                                                 |
 | Lint / format   | Biome (TS/JSON/CSS; version in `biome.json`'s `$schema`); `cargo fmt` and clippy (Rust)                                                                                                                                                                                                                                 |
-| Tests           | `cargo test` (Rust, including the built shim and real zsh, bash and fish); Vitest: `src/**/*.test.ts` in node, and `src/**/*.test.tsx` (the window rendered against `mockTauri` with Testing Library) in happy-dom, chosen by a `// @vitest-environment happy-dom` comment on the file |
+| Tests           | `cargo test` (Rust, including the built shim and real zsh, bash and fish); Provino (native, `provino.config.ts`): `src/**/*.test.ts` in node, and `src/**/*.test.tsx` (the window rendered against `mockTauri` with Testing Library) in jsdom, as the config's two projects |
 | Package manager | pnpm and Node (versions pinned in `.tool-versions`; pnpm also in `packageManager`)                                                                                                                                                                                              |
 | Platform        | macOS 11+ on Apple Silicon with Safari 16.4+ (the window's WebKit; `vite.config.ts` targets it); Linux x86_64 and aarch64 (glibc of Ubuntu 22.04 or later), WSL 2 included                                                                                                             |
 
@@ -143,7 +145,7 @@ command of the same name and arguments.
 | Run the CLI              | `cargo run -p envrouter-cli -- <command>` (with `HOME` set to a scratch folder)                                                           |
 | All Rust tests           | `cargo test --workspace`                                                                                                                  |
 | Secrets round trip       | `cargo test -p envrouter-keychain -- --ignored` (uses the machine's real store)                                                           |
-| Frontend tests           | `pnpm test`                                                                                                                               |
+| Frontend tests (Provino) | `pnpm test`                                                                                                                               |
 | Rust lint                | `cargo clippy --workspace --all-targets` (workspace lints in the root `Cargo.toml`)                                                       |
 | Linux and Windows checks | `podman compose -f dev/containers/compose.yaml run --rm <linux-test\|linux-app\|linux-bundle\|windows-helper-build\|windows-helper-wine>` |
 | Licences and advisories  | `cargo deny check` (`deny.toml`)                                                                                                          |

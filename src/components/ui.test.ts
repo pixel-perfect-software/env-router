@@ -1,6 +1,6 @@
 // @ts-expect-error type error without @types/node package, as in vite.config.ts; this file runs in node
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'provino'
 import { PROFILE_FILL, profileColors } from './ui'
 
 // An id's preferred colour is its hash mod 8. `a` and `i` hash to the same one, and so do `aa`, `bb`, `cc` and the other doubled letters.
@@ -42,7 +42,7 @@ const contrast = (a: Rgb, b: Rgb) => {
   return (hi + 0.05) / (lo + 0.05)
 }
 
-/** `src/index.css`, read as text: vitest loads no CSS (`?raw` comes back empty), but this runs in node, so the file can be read. */
+/** `src/index.css`, read as text: no test loads CSS, but this runs in node, so the file can be read. */
 const css: string = readFileSync(new URL('../index.css', import.meta.url), 'utf8')
 const [lightCss, ...darkParts] = css.split('@media (prefers-color-scheme: dark)')
 

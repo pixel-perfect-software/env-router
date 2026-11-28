@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'provino'
 import { listOf, plural } from './text'
 
 describe('plural', () => {

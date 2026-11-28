@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'provino'
 import type { CheckState } from '../components/Docket'
 import { accentsOf, type Blocked, bannerHasPrimary, docketHasFix, type FileError, type Health, healthOf } from './health'
 import type { ConfigFault, ConfigState, FolderCheck, Profile, SetupStatus, Shell, ShellStatus } from './types'

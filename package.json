@@ -12,7 +12,7 @@
     "tauri": "tauri",
     "check-types": "tsc --noEmit",
     "check-deps": "autd check",
-    "test": "vitest run",
+    "test": "provino run",
     "format-and-lint": "biome check .",
     "format-and-lint:fix": "biome check . --write",
     "notices": "node packaging/notices/render.mjs",
@@ -38,11 +38,11 @@
     "@types/react": "catalog:dev",
     "@types/react-dom": "catalog:dev",
     "@vitejs/plugin-react": "catalog:dev",
-    "happy-dom": "catalog:dev",
+    "jsdom": "catalog:dev",
+    "provino": "catalog:dev",
     "tailwindcss": "catalog:dev",
     "typescript": "catalog:dev",
-    "vite": "catalog:dev",
-    "vitest": "catalog:dev"
+    "vite": "catalog:dev"
   },
   "packageManager": "pnpm@12.21.0",
   "engines": {

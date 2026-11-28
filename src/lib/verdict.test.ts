@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'provino'
 import type { FolderCheck, ShellStatus } from './types'
 import { type Owner, offersFix, routedAndStarts, verdictOf } from './verdict'
 

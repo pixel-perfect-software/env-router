@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'provino'
 import { mergeConfig } from './merge'
 import type { ConfigState, McpServer, Profile } from './types'
 
