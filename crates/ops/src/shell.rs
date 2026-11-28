@@ -1078,8 +1078,7 @@ pub fn preview(config: &ConfigState, home: &Path, folder: &Path, tool: &str) -> 
         value,
         mcp: resolution
             .profile
-            .map(|profile| mcp::servers_for(config, profile, tool))
-            .unwrap_or_default(),
+            .map_or_default(|profile| mcp::servers_for(config, profile, tool)),
     }
 }
 
