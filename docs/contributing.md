@@ -148,8 +148,11 @@ shell startup files. Two ways to avoid that:
   npm knows every package at `1.4.0` (`next` at `2.0.0-beta.2`), except a name ending in `-nope`. When you change a command's behaviour, keep the mock answering the way the
   real backend does.
 
-  The window's component tests (`src/App.test.tsx`) render `<App />` against this same mock, so
-  they never reach your home folder either. `provino.config.ts` runs every `*.test.tsx` file in its
+  The window's component tests render `<App />` against this same mock, so they never reach your home
+  folder either. They sit beside the component that owns what they drive (`src/components/Frame.test.tsx`,
+  `Servers`, `ServerTools`, `ServerSources`, `ServerFields`, `ProfileInspector`, `Popovers`, `Docket`), and `src/App.test.tsx`
+  keeps what belongs to the whole window; `src/dev/windowTest.tsx` holds what they share (`open`, the cleanup after each
+  test, `inspector`, `reachableAccents`, `spyOnInvoke`). `provino.config.ts` runs every `*.test.tsx` file in its
   `window` project, in jsdom (every other test stays in node), and its `define` supplies the
   `import.meta.env` that Vite fills in when it builds. Each test boots the mock for one URL:
   `resetModules()`, `history.replaceState(null, '', '?scenario=populated')`,
@@ -159,7 +162,8 @@ shell startup files. Two ways to avoid that:
   sheets: answer them with `stubGlobal('confirm', …)` from `provino`, which puts the global back
   when the test ends. Provino's jsdom brings the stand-ins the window needs (`matchMedia`,
   `scrollIntoView`, `ResizeObserver`, `animate`, a client rect for a displayed element) and
-  answers an image import with its URL.
+  answers an image import with its URL. In a test run the mock answers at 1/100 of the real backend's pace, in the same order
+  (the browser review keeps the full pace); a test that needs a command still running while it acts opens with `&pace=real`.
 - **A scratch home folder**, for the real app. Build it, then launch the binary with `HOME`
   pointing somewhere disposable:
 

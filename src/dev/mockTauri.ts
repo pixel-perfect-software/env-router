@@ -26,6 +26,8 @@
 // - `&store=off`: there's no secret store, so saving a secret (or checking a server that needs
 //   a saved one) fails as it does there, and a save that drops a secret goes through with a warning. Off macOS the setup status says so up front
 //   (`secretStoreProblem`); on macOS nothing can tell until a save, so it stays null.
+// - `&pace=real`: only in a test run, where the commands' waits are cut to 1/100 of their length (the browser review keeps them); this keeps them whole,
+//   for a test that needs a command still running while it acts.
 // - `&fail=home|status|shell|editor|reveal|uninstall`: the home folder can't be found (the unloaded banner, with no file to open),
 //   the setup status can't be read (the error banner), turning a shell on fails (an error
 //   banner with Dismiss), or no editor opens a file (use it with `?scenario=broken`: the unloaded
@@ -472,7 +474,9 @@ const mcpFor = (cfg: ConfigState, p: Profile | null, tool: string) => {
   return p && mcp ? sortedKeys(p.mcpServers).filter((name) => has(cfg.mcpServers, name) && dialectTakes(mcp.dialect, cfg.mcpServers[name])) : []
 }
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+/** The backend's pace, for the browser review. A test run (`MODE` is 'test' there, 'development' under Vite's dev server) keeps the order of the waits at 1/100 of their length, unless `&pace=real` asks for them whole. */
+const PACE = import.meta.env.MODE === 'test' && params.get('pace') !== 'real' ? 0.01 : 1
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms * PACE))
 
 // `config::validate`, check for check and message for message, in its order.
 

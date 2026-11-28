@@ -53,17 +53,18 @@ env-router/
 │   ├── icons/                 # app icon and menu bar glyph: SVG sources plus the PNGs and icon.icns rendered from them
 │   └── binaries/, gen/        # generated, gitignored
 ├── src/                       # React frontend (Vite)
-│   ├── App.tsx                # composition: view, inspector and popover state, the handlers that tie the hooks below to the components; App.test.tsx drives it against the mock (the one accent button, unsaved edits, focus)
+│   ├── App.tsx                # composition: view, inspector and popover state, the handlers that tie the hooks below to the components; App.test.tsx drives it against the mock (the one accent button, banners, unsaved edits, focus, the menu bar's requests)
 │   ├── index.css              # design tokens (light/dark, system accent), hairline utilities
 │   ├── assets/                # illustrations drawn from the mark's SVG: the first-run welcome and the empty server library
 │   ├── components/            # Titlebar, Health (banner and setup steps), Popovers (Shells and Editors), Frame (slots),
 │   │                          # ProfileInspector (slide-in editor), Servers (the MCP Servers view: list beside editor), ServerEditor (with ServerFields and ServerVersion), ServerSources (Catalog and Import), ServerMark (server logos), Welcome (first run),
-│   │                          # Docket (check result), ui (controls, status), icons (Lucide and agent marks)
+│   │                          # Docket (check result), ui (controls, status), icons (Lucide and agent marks); each *.test.tsx beside Frame, Docket, Servers, ServerTools, ServerSources, ServerFields, ProfileInspector and Popovers drives the window
+│   │                          # through that part against the mock, and ../dev/windowTest.tsx holds what they share
 │   ├── lib/                   # api.ts (typed commands), types.ts (wire types), agents.json (the agent registry: variables, MCP descriptors, editor hooks, logo marks; also read by crates/core/src/agents.rs), tools.ts (KNOWN_TOOLS from it, withAgents), platform.ts (usePlatform: shortcuts, store name),
 │   │                          # mcp.ts (server drafts, rename/remove, secret locking), mcpCatalog.ts (well-known servers), serverLogo.ts (logo matching),
 │   │                          # verdict.ts (check wording, tested in verdict.test.ts), health.ts (the health line and the one-accent rule, tested in health.test.ts), paths.ts, text.ts (plural, listOf), confirm.ts,
 │   │                          # lastView.ts (the view the window opens on), hooks the window composes: useConfigStore.ts (load, save and its merge loop), useFolderCheck.ts, useShortcuts.ts, useFolderDrop.ts
-│   └── dev/mockTauri.ts       # dev-only browser mock (?scenario=, ?platform=, ?check= and more; see docs/contributing.md); never bundled; mockTauri.test.ts pins it, and App.test.tsx boots it; miniToml.ts is its TOML reader for Paste
+│   └── dev/mockTauri.ts       # dev-only browser mock (?scenario=, ?platform=, ?check= and more; see docs/contributing.md); never bundled; mockTauri.test.ts pins it, and the window tests boot it (`&pace=real` keeps the backend's pace in a test run, which otherwise cuts it to 1/100); windowTest.tsx is their shared helper; miniToml.ts is its TOML reader for Paste
 ├── packaging/homebrew/        # cask and CLI formula templates; render.sh fills them from a release's SHA256SUMS
 ├── packaging/notices/         # `pnpm notices`: render.mjs and cargo-about's about.toml write THIRD-PARTY-NOTICES.txt for releases
 ├── dev/containers/            # compose.yaml (project envrouter-dev): Linux tests, app build, bundles, Windows helper under Wine
